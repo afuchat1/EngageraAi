@@ -29,6 +29,7 @@ import {
   AlignJustify,
   Paperclip,
   X,
+  ImageIcon,
 } from "lucide-react";
 
 type MessageContent = string | ContentPart[];
@@ -128,6 +129,7 @@ export default function Landing() {
   const [guestMessageCount, setGuestMessageCount] = useState(0);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [voiceOpen, setVoiceOpen] = useState(false);
+  const [isImageGen, setIsImageGen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [windowResetAt, setWindowResetAt] = useState<string | null>(null);
   const [countdown, setCountdown] = useState("");
@@ -321,6 +323,8 @@ export default function Landing() {
 
     const autoModel = detectModel(rawText, atts);
     setSelectedModel(autoModel);
+    const imageRequest = autoModel === "engagera-image";
+    setIsImageGen(imageRequest);
 
     const msgContent = buildContent(rawText, atts);
     const userMsg: Message = { role: "user", content: msgContent };
@@ -341,6 +345,7 @@ export default function Landing() {
       },
       {
         onSuccess: (res) => {
+          setIsImageGen(false);
           const withReply: Message[] = [...updated, { role: "assistant", content: res.message.content }];
           setMessages(withReply);
           if (res.conversationId) setActiveConversationId(res.conversationId);
@@ -349,6 +354,7 @@ export default function Landing() {
           refetchConversations();
         },
         onError: (err: unknown) => {
+          setIsImageGen(false);
           const e = err as { status?: number; data?: { error?: string; windowResetAt?: string; guestMessageCount?: number } };
           if (e?.status === 429) {
             if (e?.data?.windowResetAt) setWindowResetAt(e.data.windowResetAt);
@@ -658,11 +664,39 @@ export default function Landing() {
                   <div className="h-7 w-7 flex items-center justify-center shrink-0 mt-0.5">
                     <img src="/logo.png" alt="" className="h-4 w-4 object-contain opacity-70" />
                   </div>
-                  <div className="flex items-center gap-1.5 px-4 py-3">
-                    <span className="h-1.5 w-1.5 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                    <span className="h-1.5 w-1.5 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: "120ms" }} />
-                    <span className="h-1.5 w-1.5 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: "240ms" }} />
-                  </div>
+                  {isImageGen ? (
+                    /* ── Image generation loading state ─────────────────────── */
+                    <div className="flex items-start gap-3 px-1 py-2">
+                      {/* Animated canvas preview */}
+                      <div className="relative h-16 w-16 rounded-lg border border-primary/20 bg-[#0d0d0d] shrink-0 overflow-hidden">
+                        <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-primary/5 animate-pulse" />
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <ImageIcon className="h-6 w-6 text-primary/40" />
+                        </div>
+                        {/* Scanning line */}
+                        <div
+                          className="absolute left-0 right-0 h-0.5 bg-primary/30"
+                          style={{ animation: "scanLine 2s ease-in-out infinite" }}
+                        />
+                      </div>
+                      <div className="pt-1">
+                        <p className="text-sm font-medium text-foreground/80">Generating image…</p>
+                        <p className="text-[11px] text-muted-foreground/50 mt-0.5">Creating with DALL·E 3 · ~10–15s</p>
+                        <div className="flex gap-1 mt-2">
+                          <span className="h-1 w-1 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                          <span className="h-1 w-1 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                          <span className="h-1 w-1 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    /* ── Normal chat loading state ──────────────────────────── */
+                    <div className="flex items-center gap-1.5 px-4 py-3">
+                      <span className="h-1.5 w-1.5 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                      <span className="h-1.5 w-1.5 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: "120ms" }} />
+                      <span className="h-1.5 w-1.5 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: "240ms" }} />
+                    </div>
+                  )}
                 </div>
               )}
 

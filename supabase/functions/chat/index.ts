@@ -33,15 +33,62 @@ const WINDOW_MS   = 24 * 60 * 60 * 1000;
 
 // Keywords that trigger image generation (checked against last user message)
 const IMAGE_GEN_KEYWORDS = [
-  "generate image", "create image", "draw ", "illustrate",
-  "make a picture", "make an image", "design an image",
-  "show me a picture", "generate a picture", "paint ",
-  "sketch ", "render an image", "create a visual",
-  "design a logo", "generate a logo", "make art",
-  "create art", "show me art", "generate art",
-  "create an illustration", "generate an illustration",
-  "make me an image", "make me a picture", "draw me",
-  "generate a photo", "create a photo", "make a photo",
+  "generate image", "generate a image", "generate an image",
+  "generate picture", "generate a picture",
+  "generate photo", "generate a photo",
+  "generate art", "generate artwork",
+  "generate illustration", "generate an illustration",
+  "generate logo", "generate a logo",
+  "create image", "create a image", "create an image",
+  "create picture", "create a picture",
+  "create photo", "create a photo",
+  "create art", "create artwork",
+  "create illustration", "create an illustration",
+  "create logo", "create a logo",
+  "make image", "make a image", "make an image",
+  "make picture", "make a picture", "make me a picture",
+  "make photo", "make a photo", "make me a photo",
+  "make art", "make me art", "make artwork",
+  "make illustration", "make an illustration",
+  "make logo", "make a logo",
+  "make me an image", "make me a image",
+  "draw me", "draw a", "draw an",
+  "show me a picture", "show me an image", "show me a photo",
+  "show me a drawing", "show me a painting",
+  "show me an illustration", "show me a logo",
+  "paint a", "paint an", "paint me",
+  "sketch a", "sketch an", "sketch me",
+  "illustrate ", "illustrate a", "illustrate me",
+  "design a logo", "design an image", "design a poster",
+  "design a banner", "design a graphic",
+  "design a thumbnail", "design a wallpaper",
+  "render a", "render an", "render me",
+  "picture of", "image of", "photo of",
+  "drawing of", "painting of", "illustration of",
+  "portrait of", "artwork of", "sketch of",
+  "a picture of", "an image of", "a photo of",
+  "a drawing of", "a painting of", "a portrait of",
+  "can you draw", "can you paint", "can you sketch",
+  "can you illustrate", "can you create an image",
+  "can you make an image", "can you make a picture",
+  "can you generate an image", "can you generate a picture",
+  "could you draw", "could you paint", "could you sketch",
+  "please draw", "please paint", "please create an image",
+  "please generate", "please illustrate",
+  "generate wallpaper", "create wallpaper", "make wallpaper",
+  "generate poster", "create poster", "make poster",
+  "generate banner", "create banner", "make banner",
+  "generate thumbnail", "create thumbnail",
+];
+
+// Regex patterns for broader image detection
+const IMAGE_GEN_PATTERNS: RegExp[] = [
+  /\b(image|picture|photo|drawing|painting|illustration|portrait|artwork|sketch|graphic|poster|wallpaper|banner|logo|thumbnail)\s+of\b/i,
+  /\b(draw|paint|sketch|illustrate|render)\s+(me\s+)?(a|an|the|some|my)?\s*\w/i,
+  /\b(generate|create|make|produce|design)\b.{0,40}\b(image|picture|photo|drawing|illustration|artwork|logo|poster|wallpaper|banner|thumbnail|visual|graphic)\b/i,
+  /\bshow\s+me\s+(a|an|the|some)\b.{0,30}\b(image|picture|photo|drawing|painting|illustration|portrait|logo)\b/i,
+  /\b(can|could|please|would you|will you)\s+you\s+(draw|paint|sketch|illustrate|render|create|generate|make|design)\b/i,
+  /\b(i want|i need|i'd like|give me)\s+(a|an|the)\s+(image|picture|photo|drawing|illustration|painting|artwork|visual)\b/i,
 ];
 
 // Prefixes to strip so the raw user message becomes a clean image prompt
@@ -112,7 +159,9 @@ function isImageGenRequest(messages: IncomingMessage[]): boolean {
   const lastUser = [...messages].reverse().find((m) => m.role === "user");
   if (!lastUser) return false;
   const text = getTextPreview(lastUser.content).toLowerCase();
-  return IMAGE_GEN_KEYWORDS.some((k) => text.includes(k));
+  if (IMAGE_GEN_KEYWORDS.some((k) => text.includes(k))) return true;
+  if (IMAGE_GEN_PATTERNS.some((p) => p.test(text))) return true;
+  return false;
 }
 
 /** Strip image-request prefixes and return a clean prompt for the image API */
