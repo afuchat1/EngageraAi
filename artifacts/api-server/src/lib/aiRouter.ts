@@ -14,18 +14,18 @@ export interface ChatResult {
 }
 
 const ENGAGERA_MODEL_MAP: Record<string, { provider: string; model: string }> = {
-  "engagera-lite": { provider: "openrouter", model: "meta-llama/llama-3.1-8b-instruct:free" },
-  "engagera-pro": { provider: "openrouter", model: "meta-llama/llama-3.3-70b-instruct:free" },
-  "engagera-reason": { provider: "openrouter", model: "deepseek/deepseek-r1:free" },
-  "engagera-code": { provider: "openrouter", model: "qwen/qwen-2.5-coder-32b-instruct:free" },
-  "engagera-vision": { provider: "openrouter", model: "google/gemma-3-27b-it:free" },
-  "engagera-voice": { provider: "openrouter", model: "meta-llama/llama-3.1-8b-instruct:free" },
+  "engagera-lite":   { provider: "openrouter", model: "openai/gpt-oss-20b:free" },
+  "engagera-pro":    { provider: "openrouter", model: "openai/gpt-oss-120b:free" },
+  "engagera-reason": { provider: "openrouter", model: "nvidia/nemotron-3-ultra-550b-a55b:free" },
+  "engagera-code":   { provider: "openrouter", model: "nvidia/nemotron-3-super-120b-a12b:free" },
+  "engagera-vision": { provider: "openrouter", model: "openai/gpt-oss-120b:free" },
+  "engagera-voice":  { provider: "openrouter", model: "openai/gpt-oss-20b:free" },
 };
 
 const FALLBACK_MODELS = [
-  "meta-llama/llama-3.1-8b-instruct:free",
-  "google/gemma-3-12b-it:free",
-  "mistralai/mistral-7b-instruct:free",
+  "openai/gpt-oss-120b:free",
+  "openai/gpt-oss-20b:free",
+  "nvidia/nemotron-3-ultra-550b-a55b:free",
 ];
 
 async function callOpenRouter(
