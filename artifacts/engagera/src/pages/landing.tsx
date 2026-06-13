@@ -124,7 +124,7 @@ export default function Landing() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [selectedModel, setSelectedModel] = useState("engagera-lite");
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
   const [loadingConvId, setLoadingConvId] = useState<number | null>(null);
   const [guestMessageCount, setGuestMessageCount] = useState(0);
