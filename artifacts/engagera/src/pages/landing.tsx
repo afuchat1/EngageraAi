@@ -10,7 +10,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useUserPreferences } from "@/hooks/useUserPreferences";
 import { useEdgeChatCompletion, ContentPart } from "@/hooks/useEdgeChatCompletion";
-import { useVoice } from "@/hooks/useVoice";
+import { useConversationVoice, type ConvVoiceState } from "@/hooks/useConversationVoice";
 import { cn } from "@/lib/utils";
 import { detectModel } from "@/lib/autoModel";
 import { MessageContent } from "@/components/MessageContent";
@@ -22,15 +22,12 @@ import {
   Plus,
   LogIn,
   Mic,
-  MicOff,
   SquarePen,
   Trash2,
   Clock,
   AlignJustify,
   Paperclip,
   X,
-  Volume2,
-  VolumeX,
 } from "lucide-react";
 
 type MessageContent = string | ContentPart[];
@@ -129,7 +126,7 @@ export default function Landing() {
   const [loadingConvId, setLoadingConvId] = useState<number | null>(null);
   const [guestMessageCount, setGuestMessageCount] = useState(0);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [voiceMode, setVoiceMode] = useState(false);
+  const [voiceOpen, setVoiceOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [windowResetAt, setWindowResetAt] = useState<string | null>(null);
   const [countdown, setCountdown] = useState("");
@@ -245,11 +242,10 @@ export default function Landing() {
     textareaRef.current?.focus();
   };
 
-  // ── Voice hook ────────────────────────────────────────────────────────────
-  const voice = useVoice({
-    onTranscript: (text) => {
-      setInput(text);
-      setTimeout(() => handleSendWithContent(text, []), 80);
+  // ── Conversation voice hook ───────────────────────────────────────────────
+  const convVoice = useConversationVoice({
+    onSend: (text) => {
+      handleSendWithContent(text, []);
     },
   });
 
@@ -350,7 +346,7 @@ export default function Landing() {
           setMessages(withReply);
           if (res.conversationId) setActiveConversationId(res.conversationId);
           if (res.guestMessageCount !== undefined) setGuestMessageCount(res.guestMessageCount);
-          if (voiceMode) voice.speak(res.message.content);
+          if (voiceOpen) convVoice.speakResponse(res.message.content);
           refetchConversations();
         },
         onError: (err: unknown) => {
@@ -719,9 +715,7 @@ export default function Landing() {
               onChange={handleTextareaChange}
               onKeyDown={handleKeyDown}
               placeholder={
-                voice.listening
-                  ? "Listening…"
-                  : isLimited
+                isLimited
                   ? `Available in ${countdown}`
                   : isGuest && guestMessageCount >= GUEST_DAILY_LIMIT
                   ? "Sign up to continue..."
@@ -729,7 +723,7 @@ export default function Landing() {
                   ? "Add a message (optional)…"
                   : "Message Engagera..."
               }
-              disabled={chatMutation.isPending || isLimited || voice.listening}
+              disabled={chatMutation.isPending || isLimited}
               rows={1}
               className="flex-1 bg-transparent text-sm pl-4 pr-3 py-3 placeholder:text-muted-foreground/40 focus:outline-none resize-none max-h-[120px] min-h-0"
             />
@@ -746,47 +740,22 @@ export default function Landing() {
                 <Paperclip className="h-3.5 w-3.5" />
               </button>
 
-              {/* Voice */}
-              {voice.supported && (
+              {/* Voice Chat */}
+              {convVoice.supported && (
                 <button
                   onClick={() => {
-                    if (voice.listening) {
-                      voice.stopListening();
-                    } else {
-                      setVoiceMode(true);
-                      voice.startListening();
-                    }
+                    setVoiceOpen(true);
+                    convVoice.startConversation();
                   }}
                   disabled={chatMutation.isPending || isLimited}
-                  title={voice.listening ? "Stop listening" : "Voice input"}
+                  title="Start voice conversation"
                   className={cn(
                     "h-8 w-8 flex items-center justify-center rounded-full transition-all",
-                    voice.listening
-                      ? "bg-red-500/20 text-red-400 animate-pulse"
-                      : voiceMode
-                      ? "text-primary/70 hover:text-primary"
-                      : "text-muted-foreground/40 hover:text-muted-foreground",
+                    "text-muted-foreground/40 hover:text-primary",
                     (chatMutation.isPending || isLimited) && "opacity-20"
                   )}
                 >
-                  {voice.listening ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
-                </button>
-              )}
-
-              {/* TTS toggle when voice mode active */}
-              {voiceMode && (
-                <button
-                  onClick={() => {
-                    if (voice.speaking) voice.stopSpeaking();
-                    else setVoiceMode(false);
-                  }}
-                  title={voice.speaking ? "Stop speaking" : "Disable voice mode"}
-                  className={cn(
-                    "h-8 w-8 flex items-center justify-center rounded-full transition-colors",
-                    voice.speaking ? "text-primary animate-pulse" : "text-muted-foreground/40 hover:text-muted-foreground"
-                  )}
-                >
-                  {voice.speaking ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
+                  <Mic className="h-3.5 w-3.5" />
                 </button>
               )}
 
@@ -811,6 +780,150 @@ export default function Landing() {
         </div>
 
       </div>
+
+      {/* ── Voice Conversation Overlay ─────────────────────────────────────── */}
+      {voiceOpen && (
+        <VoiceOverlay
+          state={convVoice.state}
+          interimText={convVoice.interimText}
+          finalText={convVoice.finalText}
+          aiPending={chatMutation.isPending}
+          onClose={() => {
+            convVoice.stopConversation();
+            setVoiceOpen(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ── Voice Overlay Component ─────────────────────────────────────────────── */
+interface VoiceOverlayProps {
+  state: ConvVoiceState;
+  interimText: string;
+  finalText: string;
+  aiPending: boolean;
+  onClose: () => void;
+}
+
+function VoiceOverlay({ state, interimText, finalText, aiPending, onClose }: VoiceOverlayProps) {
+  const effectiveState = aiPending ? "thinking" : state;
+
+  const stateLabel: Record<string, string> = {
+    idle: "Starting…",
+    listening: "Listening",
+    thinking: "Thinking…",
+    speaking: "Speaking",
+  };
+
+  const transcript = finalText || interimText;
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/95 backdrop-blur-md">
+      {/* Close button */}
+      <button
+        onClick={onClose}
+        className="absolute top-5 right-5 h-10 w-10 flex items-center justify-center rounded-full bg-white/8 hover:bg-white/15 text-white/60 hover:text-white transition-all"
+        title="End voice conversation"
+      >
+        <X className="h-5 w-5" />
+      </button>
+
+      {/* Orb */}
+      <div className="relative flex items-center justify-center mb-10">
+        {/* Pulse rings — only when listening */}
+        {effectiveState === "listening" && (
+          <>
+            <span className="absolute inline-flex h-40 w-40 rounded-full bg-blue-500/20 animate-ping" style={{ animationDuration: "1.6s" }} />
+            <span className="absolute inline-flex h-32 w-32 rounded-full bg-blue-500/25 animate-ping" style={{ animationDuration: "1.2s", animationDelay: "0.3s" }} />
+          </>
+        )}
+        {/* Speaking rings */}
+        {effectiveState === "speaking" && (
+          <>
+            <span className="absolute inline-flex h-44 w-44 rounded-full bg-emerald-500/15 animate-ping" style={{ animationDuration: "0.9s" }} />
+            <span className="absolute inline-flex h-36 w-36 rounded-full bg-emerald-500/20 animate-ping" style={{ animationDuration: "0.7s", animationDelay: "0.2s" }} />
+          </>
+        )}
+        {/* Core orb */}
+        <div
+          className={cn(
+            "relative h-24 w-24 rounded-full flex items-center justify-center shadow-2xl transition-all duration-500",
+            effectiveState === "listening"
+              ? "bg-gradient-to-br from-blue-500 to-blue-700 shadow-blue-500/40"
+              : effectiveState === "thinking"
+              ? "bg-gradient-to-br from-violet-500 to-purple-700 shadow-purple-500/40 animate-pulse"
+              : effectiveState === "speaking"
+              ? "bg-gradient-to-br from-emerald-400 to-teal-600 shadow-emerald-500/40"
+              : "bg-gradient-to-br from-zinc-600 to-zinc-800"
+          )}
+        >
+          {/* Inner mic / wave icon */}
+          {effectiveState === "listening" && (
+            <Mic className="h-9 w-9 text-white drop-shadow" />
+          )}
+          {effectiveState === "thinking" && (
+            <span className="flex gap-1 items-end h-7">
+              {[0, 1, 2].map((i) => (
+                <span
+                  key={i}
+                  className="w-1.5 rounded-full bg-white/80 animate-bounce"
+                  style={{
+                    height: `${10 + i * 6}px`,
+                    animationDelay: `${i * 0.15}s`,
+                    animationDuration: "0.7s",
+                  }}
+                />
+              ))}
+            </span>
+          )}
+          {effectiveState === "speaking" && (
+            <span className="flex gap-1 items-center h-8">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <span
+                  key={i}
+                  className="w-1 rounded-full bg-white/90 animate-bounce"
+                  style={{
+                    height: `${8 + Math.sin(i * 1.2) * 8 + 8}px`,
+                    animationDelay: `${i * 0.1}s`,
+                    animationDuration: "0.6s",
+                  }}
+                />
+              ))}
+            </span>
+          )}
+          {effectiveState === "idle" && (
+            <Mic className="h-9 w-9 text-white/40" />
+          )}
+        </div>
+      </div>
+
+      {/* State label */}
+      <p className="text-white/80 text-lg font-medium tracking-wide mb-6">
+        {stateLabel[effectiveState] ?? ""}
+      </p>
+
+      {/* Live transcript */}
+      <div className="max-w-sm w-full px-6 min-h-[3.5rem] text-center">
+        {transcript ? (
+          <p className="text-white/60 text-sm leading-relaxed">
+            <span className="text-white/90">{finalText}</span>
+            {interimText && (
+              <span className="text-white/40 italic"> {interimText}</span>
+            )}
+          </p>
+        ) : (
+          effectiveState === "listening" && (
+            <p className="text-white/25 text-sm italic">Speak now…</p>
+          )
+        )}
+      </div>
+
+      {/* Hint */}
+      <p className="absolute bottom-8 text-white/20 text-xs">
+        Tap × to end conversation
+      </p>
     </div>
   );
 }
