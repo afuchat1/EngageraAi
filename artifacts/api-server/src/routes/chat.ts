@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { engageraDb } from "../lib/supabase";
-import { optionalAuth, type OptionalAuthRequest } from "../middlewares/optionalAuth";
-import { routeChat } from "../lib/aiRouter";
+import { engageraDb } from "../lib/supabase.js";
+import { optionalAuth, type OptionalAuthRequest } from "../middlewares/optionalAuth.js";
+import { routeChat } from "../lib/aiRouter.js";
 
 const router = Router();
 

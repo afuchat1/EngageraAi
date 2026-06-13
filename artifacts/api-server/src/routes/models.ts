@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getEngageraModels } from "../lib/aiRouter";
+import { getEngageraModels } from "../lib/aiRouter.js";
 
 const router = Router();
 

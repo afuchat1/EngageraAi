@@ -1,13 +1,13 @@
-import { Router, type IRouter } from "express";
-import healthRouter from "./health";
-import modelsRouter from "./models";
-import apiKeysRouter from "./apiKeys";
-import usageRouter from "./usage";
-import dashboardRouter from "./dashboard";
-import chatRouter from "./chat";
-import conversationsRouter from "./conversations";
+import { Router } from "express";
+import healthRouter from "./health.js";
+import modelsRouter from "./models.js";
+import apiKeysRouter from "./apiKeys.js";
+import usageRouter from "./usage.js";
+import dashboardRouter from "./dashboard.js";
+import chatRouter from "./chat.js";
+import conversationsRouter from "./conversations.js";
 
-const router: IRouter = Router();
+const router = Router();
 
 router.use(healthRouter);
 router.use(modelsRouter);

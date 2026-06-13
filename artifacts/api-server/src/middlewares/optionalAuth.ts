@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import { supabaseAdmin } from "../lib/supabase";
+import { supabaseAdmin } from "../lib/supabase.js";
 
 /**
  * Engagera optional auth middleware.
