@@ -380,11 +380,23 @@ export default function Landing() {
   const guestRemaining = Math.max(0, GUEST_DAILY_LIMIT - guestMessageCount);
 
   return (
-    <div className="flex h-screen h-dvh bg-[#0a0a0a] text-foreground overflow-hidden">
+    <div className="flex bg-[#0a0a0a] text-foreground overflow-hidden" style={{ height: "100dvh" }}>
+
+      {/* ── Mobile sidebar backdrop ──────────────────────────────────────────── */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/60 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
 
       {/* ── Sidebar ─────────────────────────────────────────────────────────── */}
+      {/* Mobile: fixed overlay (doesn't push main content).
+          Desktop: inline flex sibling that pushes content right. */}
       <aside className={cn(
-        "flex flex-col border-r border-[#1a1a1a] bg-[#0d0d0d] transition-all duration-200 shrink-0 overflow-hidden",
+        "flex flex-col border-r border-[#1a1a1a] bg-[#0d0d0d] overflow-hidden transition-all duration-200 shrink-0",
+        // Mobile: fixed full-height drawer on the left, sits above content
+        "max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:h-full",
         sidebarOpen ? "w-60" : "w-0"
       )}>
         {/* Logo */}
@@ -513,19 +525,27 @@ export default function Landing() {
       </aside>
 
       {/* ── Main ──────────────────────────────────────────────────────────────── */}
-      <div className="flex flex-col flex-1 min-w-0 min-h-0 relative overflow-hidden">
+      {/* On mobile: sidebar is fixed overlay, so this div takes full viewport width.
+          On desktop: flex-1 takes remaining width after the inline sidebar. */}
+      <div className="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden w-full">
 
-        {/* Top bar */}
-        <header className="h-12 border-b border-[#1a1a1a] flex items-center px-3 gap-2 shrink-0">
+        {/* Top bar — always visible, explicit bg so it's never transparent */}
+        <header className="shrink-0 h-12 border-b border-[#1a1a1a] bg-[#0a0a0a] flex items-center px-3 gap-2 z-10">
           <button
             onClick={() => setSidebarOpen((v) => !v)}
-            className="h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground hover:bg-[#1a1a1a] hover:text-foreground transition-colors"
+            className="h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:bg-[#1a1a1a] hover:text-foreground transition-colors"
+            aria-label="Toggle menu"
           >
             <AlignJustify className="h-4 w-4" />
           </button>
 
+          {/* Logo — always on mobile (sidebar is overlay so it's hidden); desktop: only when sidebar closed */}
+          <div className="flex items-center gap-2 md:hidden">
+            <img src="/logo.png" alt="Engagera" className="h-5 w-5 object-contain" />
+            <span className="font-semibold text-sm tracking-tight">Engagera</span>
+          </div>
           {!sidebarOpen && (
-            <div className="flex items-center gap-2">
+            <div className="hidden md:flex items-center gap-2">
               <img src="/logo.png" alt="Engagera" className="h-5 w-5 object-contain" />
               <span className="font-semibold text-sm tracking-tight">Engagera</span>
             </div>
