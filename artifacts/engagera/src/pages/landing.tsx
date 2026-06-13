@@ -10,6 +10,7 @@ import {
 } from "@workspace/api-client-react";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
+import { MessageContent } from "@/components/MessageContent";
 import {
   LayoutDashboard,
   Activity,
@@ -563,7 +564,11 @@ export default function Landing() {
                       ? "bg-[#1a1a1a] text-foreground"
                       : "text-foreground/90"
                   )}>
-                    <div className="whitespace-pre-wrap">{msg.content}</div>
+                    {msg.role === "user" ? (
+                      <div className="whitespace-pre-wrap">{msg.content}</div>
+                    ) : (
+                      <MessageContent content={msg.content} />
+                    )}
                   </div>
                   {msg.role === "user" && (
                     <div className="h-7 w-7 bg-[#1a1a1a] flex items-center justify-center shrink-0 mt-0.5">

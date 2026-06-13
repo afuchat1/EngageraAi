@@ -1,15 +1,15 @@
 import express from "express";
 import cors from "cors";
 import type { Options as PinoHttpOptions } from "pino-http";
+import pinoHttpModule from "pino-http";
 import path from "path";
 import router from "./routes/index.js";
 import { logger } from "./lib/logger.js";
 
-// pino-http ships as CJS; handle the ESM default-import interop at runtime
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const pinoHttp: (opts: PinoHttpOptions) => express.RequestHandler =
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (await import("pino-http").then((m) => m.default ?? m)) as any;
+// pino-http ships CJS; esbuild (local build) and @vercel/node (deployment) both
+// handle the default-import interop at bundle time — no dynamic await needed.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const pinoHttp = ((pinoHttpModule as any).default ?? pinoHttpModule) as (opts: PinoHttpOptions) => express.RequestHandler;
 
 const app = express();
 

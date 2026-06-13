@@ -75,6 +75,11 @@
     "zod": "catalog:"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.108.1"
+    "@supabase/supabase-js": "^2.108.1",
+    "@types/react-syntax-highlighter": "^15.5.13",
+    "react-markdown": "^10.1.0",
+    "react-syntax-highlighter": "^16.1.1",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.1"
   }
 }
