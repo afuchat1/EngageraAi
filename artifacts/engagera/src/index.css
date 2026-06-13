@@ -217,9 +217,16 @@
     text-rendering: optimizeLegibility;
   }
 
+  html, body, #root {
+    height: 100%;
+    overflow: hidden;
+  }
+
   body {
     @apply font-sans antialiased bg-background text-foreground;
     font-feature-settings: "cv11", "ss01";
+    overscroll-behavior: none;
+    touch-action: pan-x pan-y;
   }
 
   ::selection {

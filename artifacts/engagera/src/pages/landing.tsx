@@ -12,6 +12,7 @@ import { useUserPreferences } from "@/hooks/useUserPreferences";
 import { useEdgeChatCompletion, ContentPart } from "@/hooks/useEdgeChatCompletion";
 import { useVoice } from "@/hooks/useVoice";
 import { cn } from "@/lib/utils";
+import { detectModel } from "@/lib/autoModel";
 import { MessageContent } from "@/components/MessageContent";
 import {
   LayoutDashboard,
@@ -19,20 +20,13 @@ import {
   FileText,
   Send,
   Plus,
-  ChevronDown,
   LogIn,
-  Sparkles,
-  Zap,
-  Code2,
-  Eye,
-  Brain,
   Mic,
   MicOff,
   SquarePen,
   Trash2,
   Clock,
   AlignJustify,
-  ImageIcon,
   Paperclip,
   X,
   Volume2,
@@ -102,16 +96,6 @@ function formatCountdown(resetAt: string): string {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-const MODEL_ICONS: Record<string, React.ReactNode> = {
-  "engagera-lite": <Zap className="h-3.5 w-3.5" />,
-  "engagera-pro": <Sparkles className="h-3.5 w-3.5" />,
-  "engagera-reason": <Brain className="h-3.5 w-3.5" />,
-  "engagera-code": <Code2 className="h-3.5 w-3.5" />,
-  "engagera-vision": <Eye className="h-3.5 w-3.5" />,
-  "engagera-voice": <Mic className="h-3.5 w-3.5" />,
-  "engagera-image": <ImageIcon className="h-3.5 w-3.5" />,
-};
-
 const SUGGESTED_PROMPTS = [
   { label: "Explain quantum computing", sub: "in simple terms" },
   { label: "Write a Python function", sub: "to parse JSON from an API" },
@@ -140,7 +124,6 @@ export default function Landing() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [selectedModel, setSelectedModel] = useState("engagera-lite");
-  const [modelOpen, setModelOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
   const [loadingConvId, setLoadingConvId] = useState<number | null>(null);
@@ -153,8 +136,6 @@ export default function Landing() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const modelDropdownRef = useRef<HTMLDivElement>(null);
-  const sidebarModelRef  = useRef<HTMLDivElement>(null);
 
   const isGuest = !user && !authLoading;
   const isLimited = isGuest && !!windowResetAt;
@@ -228,18 +209,6 @@ export default function Landing() {
     }
   }, [models]);
 
-  // ── Close model dropdown on outside click ─────────────────────────────────
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      const t = e.target as Node;
-      const inBottom  = modelDropdownRef.current?.contains(t);
-      const inSidebar = sidebarModelRef.current?.contains(t);
-      if (!inBottom && !inSidebar) setModelOpen(false);
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
-
   const { data: conversations, refetch: refetchConversations } = useListConversations();
   const { data: loadedMessages } = useGetConversationMessages(loadingConvId ?? 0);
 
@@ -253,8 +222,6 @@ export default function Landing() {
       setLoadingConvId(null);
     }
   }, [loadedMessages, loadingConvId]);
-
-  const selectedModelData = Array.isArray(models) ? models.find((m) => m.id === selectedModel) : undefined;
 
   const handleSelectConversation = useCallback((id: number) => {
     setLoadingConvId(id);
@@ -357,6 +324,9 @@ export default function Landing() {
     if ((!rawText && atts.length === 0) || chatMutation.isPending || isLimited) return;
     if (isGuest && guestMessageCount >= GUEST_DAILY_LIMIT && !windowResetAt) return;
 
+    const autoModel = detectModel(rawText, atts);
+    setSelectedModel(autoModel);
+
     const msgContent = buildContent(rawText, atts);
     const userMsg: Message = { role: "user", content: msgContent };
     const updated = [...messages, userMsg];
@@ -364,7 +334,7 @@ export default function Landing() {
     setInput("");
     setAttachments([]);
     if (textareaRef.current) textareaRef.current.style.height = "auto";
-    recordMessage(rawText || "image", selectedModel);
+    recordMessage(rawText || "image", autoModel);
 
     const contextHint = getContextHint();
     chatMutation.mutate(
@@ -439,38 +409,6 @@ export default function Landing() {
           </button>
         </div>
 
-        {/* Model picker */}
-        <div className="px-3 pt-1 shrink-0">
-          <div ref={sidebarModelRef} className="relative">
-            <button
-              onClick={() => setModelOpen((v) => !v)}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-xs text-muted-foreground hover:bg-[#1a1a1a] hover:text-foreground transition-colors"
-            >
-              {MODEL_ICONS[selectedModel]}
-              <span className="flex-1 text-left">{selectedModelData?.name ?? selectedModel}</span>
-              <ChevronDown className={cn("h-3 w-3 transition-transform", modelOpen && "rotate-180")} />
-            </button>
-            {modelOpen && (
-              <div className="absolute top-full left-0 right-0 z-20 mt-1 border border-[#1a1a1a] bg-[#111] rounded-md overflow-hidden">
-                {Array.isArray(models) && models.map((m) => (
-                  <button
-                    key={m.id}
-                    onClick={() => { setSelectedModel(m.id); setModelOpen(false); }}
-                    className={cn(
-                      "w-full flex items-center gap-2 px-3 py-2 text-xs text-left transition-colors",
-                      m.id === selectedModel
-                        ? "bg-[#1a1a1a] text-foreground"
-                        : "text-muted-foreground hover:bg-[#161616] hover:text-foreground"
-                    )}
-                  >
-                    {MODEL_ICONS[m.id]}
-                    <span>{m.name}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
 
         {/* Conversations */}
         <div className="flex-1 overflow-y-auto px-3 pt-3 pb-2">
@@ -636,7 +574,7 @@ export default function Landing() {
                 </div>
                 <h1 className="text-xl font-semibold tracking-tight mb-1">What can I help with?</h1>
                 <p className="text-xs text-muted-foreground">
-                  Powered by <span className="text-foreground/80 font-medium">{selectedModelData?.name ?? "Engagera"}</span>
+                  Powered by <span className="text-foreground/80 font-medium">Engagera AI</span>
                 </p>
                 {isGuest && !windowResetAt && (
                   <p className="text-[11px] text-muted-foreground/50 mt-2">
@@ -767,34 +705,6 @@ export default function Landing() {
             onChange={handleFileChange}
           />
 
-          {/* Model dropdown (in-flow, above pill — avoids overflow-hidden clipping) */}
-          <div ref={modelDropdownRef}>
-            {modelOpen && (
-              <div className="mb-2 border border-[#1a1a1a] bg-[#111] rounded-md overflow-hidden">
-                {Array.isArray(models) && models.map((m) => (
-                  <button
-                    key={m.id}
-                    onClick={() => { setSelectedModel(m.id); setModelOpen(false); }}
-                    className={cn(
-                      "w-full flex items-center gap-2.5 px-4 py-2.5 text-xs text-left transition-colors",
-                      m.id === selectedModel
-                        ? "bg-[#1a1a1a] text-foreground"
-                        : "text-muted-foreground hover:bg-[#161616] hover:text-foreground"
-                    )}
-                  >
-                    {MODEL_ICONS[m.id]}
-                    <div>
-                      <p className="font-medium">{m.name}</p>
-                      {m.description && <p className="text-[10px] text-muted-foreground/60 mt-0.5">{m.description}</p>}
-                    </div>
-                    {m.id === selectedModel && (
-                      <span className="ml-auto text-[10px] text-primary font-medium">Active</span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-
           {/* Pill */}
           <div className={cn(
             "flex items-end rounded-full border transition-colors",
@@ -802,16 +712,6 @@ export default function Landing() {
               ? "border-[#1a1a1a] opacity-50 pointer-events-none"
               : "border-[#222] focus-within:border-[#333] bg-[#111]"
           )}>
-            {/* Model selector trigger */}
-            <button
-              onClick={() => setModelOpen((v) => !v)}
-              className="flex items-center gap-1.5 pl-4 pr-3 py-3 text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0 border-r border-[#1a1a1a]"
-            >
-              {MODEL_ICONS[selectedModel]}
-              <span className="hidden sm:inline">{selectedModelData?.name ?? "Model"}</span>
-              <ChevronDown className={cn("h-3 w-3 transition-transform", modelOpen && "rotate-180")} />
-            </button>
-
             {/* Textarea */}
             <textarea
               ref={textareaRef}
@@ -831,7 +731,7 @@ export default function Landing() {
               }
               disabled={chatMutation.isPending || isLimited || voice.listening}
               rows={1}
-              className="flex-1 bg-transparent text-sm px-3 py-3 placeholder:text-muted-foreground/40 focus:outline-none resize-none max-h-[120px] min-h-0"
+              className="flex-1 bg-transparent text-sm pl-4 pr-3 py-3 placeholder:text-muted-foreground/40 focus:outline-none resize-none max-h-[120px] min-h-0"
             />
 
             {/* Right-side controls */}
@@ -904,7 +804,6 @@ export default function Landing() {
               </button>
             </div>
           </div>
-          </div>{/* end modelDropdownRef wrapper */}
 
           <p className="text-center text-[11px] text-muted-foreground/30 mt-2">
             Engagera can make mistakes. Verify important information.

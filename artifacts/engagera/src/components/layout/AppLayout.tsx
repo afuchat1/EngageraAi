@@ -39,9 +39,9 @@ export function AppLayout({ children, requireAuth = false, showSidebar = false }
   }
 
   return (
-    <div className="relative flex min-h-screen flex-col bg-background">
+    <div className="relative flex h-screen flex-col bg-background overflow-hidden">
       <Navbar />
-      <div className="flex-1 flex">
+      <div className="flex-1 flex min-h-0">
         {showSidebar && user && <Sidebar />}
         <main className={cn("flex-1 overflow-y-auto min-w-0", showSidebar && user && "pb-16 md:pb-0")}>
           {children}

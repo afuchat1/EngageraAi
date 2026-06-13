@@ -2,20 +2,18 @@ import React, { useState, useRef, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useListModels } from "@workspace/api-client-react";
 import { useEdgeChatCompletion } from "@/hooks/useEdgeChatCompletion";
 import { MessageContent } from "@/components/MessageContent";
+import { detectModel } from "@/lib/autoModel";
 import { Send, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Message = { role: "user" | "assistant"; content: string };
 
 export default function Playground() {
-  const { data: models, isLoading: modelsLoading } = useListModels();
   const chatMutation = useEdgeChatCompletion();
 
-  const [selectedModel, setSelectedModel] = useState<string>("");
+  const [activeModel, setActiveModel] = useState<string>("engagera-lite");
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [lastUsage, setLastUsage] = useState<{ inputTokens: number; outputTokens: number; totalTokens: number } | null>(null);
@@ -24,18 +22,15 @@ export default function Playground() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    if (Array.isArray(models) && models.length > 0 && !selectedModel) {
-      setSelectedModel(models[0].id);
-    }
-  }, [models, selectedModel]);
-
-  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, chatMutation.isPending]);
 
   const handleSend = (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!input.trim() || !selectedModel || chatMutation.isPending) return;
+    if (!input.trim() || chatMutation.isPending) return;
+
+    const autoModel = detectModel(input.trim());
+    setActiveModel(autoModel);
 
     const userMessage: Message = { role: "user", content: input.trim() };
     const updatedMessages = [...messages, userMessage];
@@ -45,7 +40,7 @@ export default function Playground() {
     if (textareaRef.current) textareaRef.current.style.height = "auto";
 
     chatMutation.mutate(
-      { messages: updatedMessages, model: selectedModel },
+      { messages: updatedMessages, model: autoModel },
       {
         onSuccess: (response) => {
           setMessages([...updatedMessages, { role: "assistant", content: response.message.content }]);
@@ -89,23 +84,16 @@ export default function Playground() {
           </div>
           <div className="flex items-center gap-3">
             {messages.length > 0 && (
-              <Button variant="ghost" size="sm" onClick={handleReset} className="gap-1.5 h-8 text-xs text-muted-foreground">
-                <RotateCcw className="h-3 w-3" />
-                Reset
-              </Button>
+              <>
+                <span className="text-[11px] text-muted-foreground/50 hidden sm:inline">
+                  Auto: <span className="text-muted-foreground font-medium">{activeModel}</span>
+                </span>
+                <Button variant="ghost" size="sm" onClick={handleReset} className="gap-1.5 h-8 text-xs text-muted-foreground">
+                  <RotateCcw className="h-3 w-3" />
+                  Reset
+                </Button>
+              </>
             )}
-            <Select value={selectedModel} onValueChange={setSelectedModel} disabled={modelsLoading}>
-              <SelectTrigger className="w-[180px] h-8 text-xs">
-                <SelectValue placeholder="Select model" />
-              </SelectTrigger>
-              <SelectContent>
-                {Array.isArray(models) && models.map((model) => (
-                  <SelectItem key={model.id} value={model.id} className="text-xs">
-                    {model.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
         </div>
 
@@ -115,7 +103,7 @@ export default function Playground() {
             <div className="flex flex-col items-center justify-center h-full text-center px-6">
               <img src="/logo.png" alt="Engagera" className="h-12 w-12 object-contain opacity-20 mb-5" />
               <p className="text-sm font-medium text-muted-foreground">Start a conversation</p>
-              <p className="text-xs text-muted-foreground/60 mt-1">Select a model and send a message</p>
+              <p className="text-xs text-muted-foreground/60 mt-1">Type a message — the best model is chosen automatically</p>
             </div>
           ) : (
             <div className="max-w-3xl mx-auto px-4 md:px-6 py-6 space-y-6">
@@ -184,7 +172,7 @@ export default function Playground() {
               value={input}
               onChange={handleTextareaChange}
               onKeyDown={handleKeyDown}
-              disabled={chatMutation.isPending || !selectedModel}
+              disabled={chatMutation.isPending}
               rows={1}
               className="resize-none pr-12 text-sm min-h-[42px] max-h-40 scrollbar-thin"
             />
@@ -192,7 +180,7 @@ export default function Playground() {
               type="button"
               size="icon"
               onClick={() => handleSend()}
-              disabled={!input.trim() || chatMutation.isPending || !selectedModel}
+              disabled={!input.trim() || chatMutation.isPending}
               className="absolute right-2 bottom-2 h-7 w-7"
             >
               <Send className="h-3.5 w-3.5" />
