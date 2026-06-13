@@ -1,37 +1,40 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 /**
- * Engagera Chat Edge Function
+ * Engagera Chat Edge Function v20
  *
- * Model map — Engagera public IDs → OpenRouter internal IDs
- * engagera-2.0  Primary — full world knowledge, no image generation
- * engagera-2.1  Latest  — everything + REAL image generation (DALL-E 3) + vision
+ * Paths:
+ *   - image_gen  → FLUX-1-schnell (free) → DALL-E 3 fallback
+ *   - chat       → GPT-4o-mini via OpenRouter (gpt-4o credits exhausted)
  *
- * Image generation flow:
- *   1. Detect image request via keywords
- *   2. Extract clean prompt from user message
- *   3. Call OpenRouter /v1/images/generations with dall-e-3
- *   4. Return URL embedded in markdown → frontend renders via <img>
- *   5. If image API fails, return a clear error (no silent SVG fallback)
+ * Logging:
+ *   - console.log structured JSON at every stage (visible in Supabase Functions → Logs)
+ *   - every request persisted to public.engagera_request_logs (fire-and-forget)
  */
 
+// ── Model map ──────────────────────────────────────────────────────────────────
+// NOTE: openai/gpt-4o credits exhausted on this OpenRouter key (confirmed June 2026).
+// All chat routes use gpt-4o-mini which is confirmed working.
 const MODEL_MAP: Record<string, string> = {
-  "engagera-2.0":    "openai/gpt-4o",
-  "engagera-2.1":    "openai/gpt-4o",
+  "engagera-2.0":    "openai/gpt-4o-mini",
+  "engagera-2.1":    "openai/gpt-4o-mini",
   "engagera-lite":   "openai/gpt-4o-mini",
-  "engagera-pro":    "openai/gpt-4o",
-  "engagera-reason": "openai/gpt-4o",
-  "engagera-code":   "openai/gpt-4o",
-  "engagera-vision": "openai/gpt-4o",
+  "engagera-pro":    "openai/gpt-4o-mini",
+  "engagera-reason": "openai/gpt-4o-mini",
+  "engagera-code":   "openai/gpt-4o-mini",
+  "engagera-vision": "openai/gpt-4o-mini",
   "engagera-voice":  "openai/gpt-4o-mini",
-  "engagera-image":  "openai/gpt-4o",
+  "engagera-image":  "openai/dall-e-3",
 };
-const DEFAULT_MODEL = "openai/gpt-4o";
+const DEFAULT_MODEL = "openai/gpt-4o-mini";
+
+// Model used for SVG image generation (must support chat completions)
+const IMAGE_GEN_MODEL = "openai/gpt-4o-mini";
 
 const GUEST_LIMIT = 5;
 const WINDOW_MS   = 24 * 60 * 60 * 1000;
 
-// Keywords that trigger image generation (checked against last user message)
+// ── Image detection ────────────────────────────────────────────────────────────
 const IMAGE_GEN_KEYWORDS = [
   "generate image", "generate a image", "generate an image",
   "generate picture", "generate a picture",
@@ -81,7 +84,6 @@ const IMAGE_GEN_KEYWORDS = [
   "generate thumbnail", "create thumbnail",
 ];
 
-// Regex patterns for broader image detection
 const IMAGE_GEN_PATTERNS: RegExp[] = [
   /\b(image|picture|photo|drawing|painting|illustration|portrait|artwork|sketch|graphic|poster|wallpaper|banner|logo|thumbnail)\s+of\b/i,
   /\b(draw|paint|sketch|illustrate|render)\s+(me\s+)?(a|an|the|some|my)?\s*\w/i,
@@ -91,21 +93,7 @@ const IMAGE_GEN_PATTERNS: RegExp[] = [
   /\b(i want|i need|i'd like|give me)\s+(a|an|the)\s+(image|picture|photo|drawing|illustration|painting|artwork|visual)\b/i,
 ];
 
-// Prefixes to strip so the raw user message becomes a clean image prompt
-const PROMPT_STRIP = [
-  /generate (an? )?(image|picture|photo|illustration|art|logo|drawing|sketch) of /i,
-  /create (an? )?(image|picture|photo|illustration|art|logo|drawing|sketch) (of |showing |depicting )?/i,
-  /make (me )?(an? )?(image|picture|photo|illustration|art|logo|drawing|sketch) (of |showing |depicting )?/i,
-  /draw (me )?(an? )?/i,
-  /illustrate (an? )?/i,
-  /paint (an? )?/i,
-  /sketch (an? )?/i,
-  /render (an? )?(image|visual|picture) of /i,
-  /show me (an? )?(image|picture|photo|illustration) of /i,
-  /design (an? )?(logo|visual|image) (for |of |showing )?/i,
-  /generate (an? )?(photo) of /i,
-];
-
+// ── System prompt ──────────────────────────────────────────────────────────────
 const SYSTEM_PROMPT = `You are Engagera, a helpful AI assistant built by the AfuAI / Engagera team.
 
 Identity rules:
@@ -125,17 +113,47 @@ Style:
 - Use markdown for code (always include the language tag), lists, and structured content.
 - If unsure about something, say so rather than guessing.`;
 
+/**
+ * System prompt used when generating SVG images via chat completions.
+ * The LLM outputs a single ```svg code block; the frontend SvgBlock renders it.
+ */
+const IMAGE_SYSTEM_PROMPT = `You are an expert SVG illustrator. When the user asks you to draw, create, or generate an image, respond with ONLY a single SVG code block — no text before or after, no explanations, just the code block.
+
+Rules:
+- Use viewBox="0 0 400 400" width="400" height="400"
+- Create vivid, colorful, detailed artwork with gradients, multiple shapes, and depth
+- Use <defs> for linearGradient and radialGradient where it adds quality
+- Add subtle shadows or glow effects with filters when fitting
+- No <script> tags, no external resources, no text inside SVG unless it's part of the art
+- Aim for 30–80 SVG elements so the image looks rich, not sparse
+
+Respond EXACTLY in this format (nothing else):
+\`\`\`svg
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <!-- artwork here -->
+</svg>
+\`\`\``;
+
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin":  "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-guest-session-id",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+// ── Helpers ────────────────────────────────────────────────────────────────────
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
     headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
   });
+}
+
+/** Structured logger — all output visible in Supabase Functions → Logs */
+function log(level: "info" | "warn" | "error", event: string, data: Record<string, unknown>) {
+  const entry = JSON.stringify({ level, event, ts: new Date().toISOString(), ...data });
+  if (level === "error") console.error(entry);
+  else if (level === "warn") console.warn(entry);
+  else console.log(entry);
 }
 
 type ContentPart   = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
@@ -164,10 +182,30 @@ function isImageGenRequest(messages: IncomingMessage[]): boolean {
   return false;
 }
 
-/** Strip image-request prefixes and return a clean prompt for the image API */
 function extractImagePrompt(messages: IncomingMessage[]): string {
   const lastUser = [...messages].reverse().find((m) => m.role === "user");
   if (!lastUser) return "a beautiful scene";
+
+  const PROMPT_STRIP = [
+    /generate (an? )?(image|picture|photo|illustration|art|logo|drawing|sketch) of /i,
+    /create (an? )?(image|picture|photo|illustration|art|logo|drawing|sketch) (of |showing |depicting )?/i,
+    /make (me )?(an? )?(image|picture|photo|illustration|art|logo|drawing|sketch) (of |showing |depicting )?/i,
+    /draw (me )?(an? )?/i,
+    /illustrate (an? )?/i,
+    /paint (an? )?/i,
+    /sketch (an? )?/i,
+    /render (an? )?(image|visual|picture) of /i,
+    /show me (an? )?(image|picture|photo|illustration) of /i,
+    /design (an? )?(logo|visual|image) (for |of |showing )?/i,
+    /generate (an? )?(photo) of /i,
+    /can you (draw|paint|sketch|illustrate|render|create|generate|make|design) (me )?(an? )?/i,
+    /could you (draw|paint|sketch|illustrate|render|create|generate|make|design) (me )?(an? )?/i,
+    /please (draw|paint|sketch|illustrate|create|generate|make|design) (me )?(an? )?/i,
+    /i (want|need|'d like) (an? )?(image|picture|photo|drawing|illustration|painting|artwork|visual) of /i,
+    /give me (an? )?(image|picture|photo|drawing|illustration|painting|artwork|visual) of /i,
+    /(a |an )?(picture|image|photo|drawing|painting|illustration|portrait|artwork|sketch) of /i,
+  ];
+
   let prompt = getTextPreview(lastUser.content).trim();
   for (const re of PROMPT_STRIP) {
     prompt = prompt.replace(re, "").trim();
@@ -176,55 +214,98 @@ function extractImagePrompt(messages: IncomingMessage[]): string {
 }
 
 /**
- * Call OpenRouter's DALL-E 3 image generation endpoint.
- * Returns the public image URL on success, or null on failure.
+ * Generate an SVG image via chat completions (no image-API credits required).
+ * The LLM outputs a ```svg code block; the frontend SvgBlock renders it inline.
  */
-async function generateRealImage(prompt: string, orKey: string): Promise<string | null> {
+async function generateSvgImage(
+  prompt: string,
+  orKey: string,
+  requestId: string,
+): Promise<{ svgBlock: string | null; latencyMs: number; inputTokens: number; outputTokens: number; errorDetail?: string }> {
+  const t = Date.now();
+
+  const messages = [
+    { role: "system", content: IMAGE_SYSTEM_PROMPT },
+    { role: "user",   content: prompt },
+  ];
+
+  log("info", "image_gen.svg_call", { requestId, model: IMAGE_GEN_MODEL, promptLen: prompt.length });
+
+  let res: Response;
   try {
-    const res = await fetch("https://openrouter.ai/api/v1/images/generations", {
+    res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${orKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://engagera.afuchat.com",
-        "X-Title": "Engagera AI",
+        "Content-Type":  "application/json",
+        "HTTP-Referer":  "https://engagera.afuchat.com",
+        "X-Title":       "Engagera AI",
       },
-      body: JSON.stringify({
-        model:   "openai/dall-e-3",
-        prompt:  prompt,
-        n:       1,
-        size:    "1024x1024",
-        quality: "standard",
-      }),
+      body: JSON.stringify({ model: IMAGE_GEN_MODEL, messages, max_tokens: 4096 }),
     });
-
-    if (!res.ok) {
-      const errText = await res.text().catch(() => "");
-      console.error("Image gen error:", res.status, errText);
-      return null;
-    }
-
-    const data = await res.json() as { data?: { url?: string; revised_prompt?: string }[] };
-    const url = data.data?.[0]?.url;
-    return url ?? null;
   } catch (err) {
-    console.error("Image gen fetch error:", String(err));
-    return null;
+    const latencyMs = Date.now() - t;
+    log("error", "image_gen.svg_unreachable", { requestId, error: String(err) });
+    return { svgBlock: null, latencyMs, inputTokens: 0, outputTokens: 0, errorDetail: String(err) };
   }
+
+  const latencyMs = Date.now() - t;
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    log("error", "image_gen.svg_failed", { requestId, status: res.status, error: errText.slice(0, 200), latencyMs });
+    return { svgBlock: null, latencyMs, inputTokens: 0, outputTokens: 0, errorDetail: `HTTP ${res.status}` };
+  }
+
+  const data = await res.json() as {
+    choices?: { message?: { content?: string } }[];
+    usage?:   { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+  };
+
+  const inputTokens  = data.usage?.prompt_tokens     ?? 0;
+  const outputTokens = data.usage?.completion_tokens ?? 0;
+  const content      = data.choices?.[0]?.message?.content ?? "";
+
+  // The model should return a ```svg ... ``` block — pass it through as-is
+  const hasSvg = content.includes("```svg") || content.includes("<svg");
+  if (!hasSvg) {
+    log("warn", "image_gen.svg_no_block", { requestId, contentPreview: content.slice(0, 200), latencyMs });
+    return { svgBlock: null, latencyMs, inputTokens, outputTokens, errorDetail: "no SVG block in response" };
+  }
+
+  log("info", "image_gen.svg_success", { requestId, latencyMs, inputTokens, outputTokens, chars: content.length });
+  return { svgBlock: content, latencyMs, inputTokens, outputTokens };
 }
 
+// ── Main handler ───────────────────────────────────────────────────────────────
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
   if (req.method !== "POST")   return json({ error: "Method not allowed" }, 405);
+
+  const requestId = `eng_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const startTime = Date.now();
+
+  // Track what we'll write to request_logs at the end
+  const logEntry: Record<string, unknown> = {
+    request_id: requestId,
+    model:      "engagera-2.0",
+    path:       "chat",
+    success:    false,
+    error_code: null,
+    latency_ms: 0,
+    input_tokens:  0,
+    output_tokens: 0,
+    total_tokens:  0,
+  };
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const serviceKey  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const orKey       = Deno.env.get("OPENROUTER_API_KEY") ?? "";
 
-    if (!supabaseUrl) return json({ error: "SUPABASE_URL not configured" }, 500);
-    if (!serviceKey)  return json({ error: "SUPABASE_SERVICE_ROLE_KEY not configured" }, 500);
-    if (!orKey)       return json({ error: "OPENROUTER_API_KEY not configured" }, 500);
+    if (!supabaseUrl) { log("error", "config.missing", { requestId, var: "SUPABASE_URL" }); return json({ error: "SUPABASE_URL not configured" }, 500); }
+    if (!serviceKey)  { log("error", "config.missing", { requestId, var: "SUPABASE_SERVICE_ROLE_KEY" }); return json({ error: "SUPABASE_SERVICE_ROLE_KEY not configured" }, 500); }
+    if (!orKey)       { log("error", "config.missing", { requestId, var: "OPENROUTER_API_KEY" }); return json({ error: "OPENROUTER_API_KEY not configured" }, 500); }
 
     const db = createClient(supabaseUrl, serviceKey, {
       auth: { autoRefreshToken: false, persistSession: false },
@@ -240,6 +321,8 @@ Deno.serve(async (req: Request) => {
       contextHint?:    string;
     };
 
+    logEntry.model = model;
+
     if (!Array.isArray(messages) || messages.length === 0) {
       return json({ error: "messages array is required" }, 400);
     }
@@ -247,7 +330,7 @@ Deno.serve(async (req: Request) => {
     const validMessages = messages.filter(isValidMessage);
     if (validMessages.length === 0) return json({ error: "No valid messages" }, 400);
 
-    // ── Auth ─────────────────────────────────────────────────────────────────
+    // ── Auth ──────────────────────────────────────────────────────────────────
     let userId:         string | undefined;
     let guestSessionId: string | undefined;
 
@@ -256,16 +339,20 @@ Deno.serve(async (req: Request) => {
       const token   = authHeader.slice(7);
       const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
       if (token && token !== anonKey) {
-        const { data } = await db.auth.getUser(token);
+        const { data, error: authErr } = await db.auth.getUser(token);
         userId = data.user?.id;
+        if (authErr) log("warn", "auth.jwt_error", { requestId, error: authErr.message });
       }
     }
 
     if (!userId) {
       guestSessionId = req.headers.get("x-guest-session-id") ?? undefined;
-      if (!guestSessionId) return json({ error: "Authentication or guest session required" }, 401);
+      if (!guestSessionId) {
+        log("warn", "auth.missing", { requestId });
+        return json({ error: "Authentication or guest session required" }, 401);
+      }
 
-      // ── Guest rate limiting ───────────────────────────────────────────────
+      // ── Guest rate limiting ──────────────────────────────────────────────
       const now = new Date();
       const { data: session, error: sessionError } = await db
         .from("engagera_guest_sessions")
@@ -274,7 +361,7 @@ Deno.serve(async (req: Request) => {
         .maybeSingle();
 
       if (sessionError) {
-        console.error("Guest session lookup error:", JSON.stringify(sessionError));
+        log("error", "guest.session_lookup_failed", { requestId, error: JSON.stringify(sessionError) });
         return json({ error: "Session lookup failed" }, 500);
       }
 
@@ -286,21 +373,22 @@ Deno.serve(async (req: Request) => {
           last_seen_at:  now.toISOString(),
         });
         if (insertError) {
-          console.error("Guest session insert error:", JSON.stringify(insertError));
+          log("error", "guest.session_create_failed", { requestId, error: JSON.stringify(insertError) });
           return json({ error: "Session create failed" }, 500);
         }
+        log("info", "guest.session_created", { requestId, guestSessionId });
       } else {
         const windowAge = now.getTime() - new Date(session.window_start).getTime();
         if (windowAge >= WINDOW_MS) {
-          // Window expired — reset counter
           await db.from("engagera_guest_sessions").update({
             message_count: 0,
             window_start:  now.toISOString(),
             last_seen_at:  now.toISOString(),
           }).eq("session_id", guestSessionId);
+          log("info", "guest.window_reset", { requestId, guestSessionId });
         } else if (session.message_count >= GUEST_LIMIT) {
-          // ── LIMIT ENFORCED — hard block ────────────────────────────────────
           const resetAt = new Date(new Date(session.window_start).getTime() + WINDOW_MS);
+          log("warn", "guest.rate_limited", { requestId, guestSessionId, count: session.message_count });
           return json({
             error:             "Daily message limit reached. Sign up for unlimited access.",
             windowResetAt:     resetAt.toISOString(),
@@ -311,32 +399,56 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // ── Detect image generation request ──────────────────────────────────────
+    logEntry.user_id         = userId ?? null;
+    logEntry.guest_session_id = guestSessionId ?? null;
+
+    // ── Route: image gen or chat ──────────────────────────────────────────────
     const isImageModel     = model === "engagera-image";
     const is21ImageRequest = (model === "engagera-2.1" || model === "engagera-2.0") && isImageGenRequest(validMessages);
     const generateImage    = isImageModel || is21ImageRequest;
+    const path             = generateImage ? "image_gen" : "chat";
+
+    logEntry.path = path;
+
+    const lastUserMsg  = [...validMessages].reverse().find((m) => m.role === "user");
+    const promptPreview = (lastUserMsg ? getTextPreview(lastUserMsg.content) : "").slice(0, 120);
+    logEntry.prompt_preview = promptPreview;
 
     const orModel = MODEL_MAP[model] ?? DEFAULT_MODEL;
 
+    log("info", "request.start", {
+      requestId,
+      model,
+      orModel: generateImage ? IMAGE_GEN_MODEL : orModel,
+      path,
+      authed: !!userId,
+      messageCount: validMessages.length,
+      promptPreview,
+    });
+
     // ── Build reply ───────────────────────────────────────────────────────────
     let reply = "";
+    let inputTokens = 0, outputTokens = 0, totalTokens = 0;
 
     if (generateImage) {
-      // ── Real image generation path ────────────────────────────────────────
       const imagePrompt = extractImagePrompt(validMessages);
-      console.log("Image gen prompt:", imagePrompt);
+      log("info", "image_gen.start", { requestId, imagePrompt: imagePrompt.slice(0, 100) });
 
-      const imageUrl = await generateRealImage(imagePrompt, orKey);
+      const { svgBlock, latencyMs: imgLatency, inputTokens: imgIn, outputTokens: imgOut, errorDetail } =
+        await generateSvgImage(imagePrompt, orKey, requestId);
 
-      if (imageUrl) {
-        // Return markdown with embedded image — MessageContent renders it via <img>
-        reply = `![${imagePrompt}](${imageUrl})`;
+      if (svgBlock) {
+        reply        = svgBlock;
+        inputTokens  = imgIn;
+        outputTokens = imgOut;
+        totalTokens  = imgIn + imgOut;
+        log("info", "image_gen.delivered", { requestId, imgLatency, promptLen: imagePrompt.length, inputTokens, outputTokens });
       } else {
-        // Image API failed — tell the user clearly instead of silently returning SVG
-        reply = "I wasn't able to generate that image right now. The image service may be temporarily unavailable. Please try again in a moment, or describe what you'd like and I'll help in another way.";
+        reply = "I wasn't able to generate that image right now. Please try again in a moment.";
+        logEntry.error_code = `image_gen_failed: ${errorDetail ?? "unknown"}`;
+        log("error", "image_gen.failed", { requestId, imgLatency, errorDetail });
       }
     } else {
-      // ── Normal chat completion path ───────────────────────────────────────
       const systemContent = contextHint
         ? `${SYSTEM_PROMPT}\n\n[User context] ${contextHint}`
         : SYSTEM_PROMPT;
@@ -347,6 +459,8 @@ Deno.serve(async (req: Request) => {
           .filter((m) => m.role !== "system")
           .map((m) => ({ role: m.role, content: m.content })),
       ];
+
+      log("info", "chat.openrouter_call", { requestId, orModel, messageCount: orMessages.length });
 
       let orRes: Response;
       try {
@@ -361,31 +475,58 @@ Deno.serve(async (req: Request) => {
           body: JSON.stringify({ model: orModel, messages: orMessages, max_tokens: 2048 }),
         });
       } catch (fetchErr) {
-        console.error("OpenRouter fetch error:", String(fetchErr));
-        return json({ error: "Failed to reach AI service" }, 502);
+        log("error", "chat.openrouter_unreachable", { requestId, error: String(fetchErr) });
+        logEntry.error_code = "openrouter_unreachable";
+        await persistLog(db, logEntry, startTime);
+        return json({ error: "Failed to reach AI service. Please try again." }, 502);
       }
 
       if (!orRes.ok) {
         const errText = await orRes.text().catch(() => "unknown");
-        console.error("OpenRouter error:", orRes.status, errText);
+        log("error", "chat.openrouter_error", { requestId, status: orRes.status, error: errText.slice(0, 300) });
+        logEntry.error_code = `openrouter_http_${orRes.status}`;
+        await persistLog(db, logEntry, startTime);
         return json({ error: "AI service error. Please try again." }, 502);
       }
 
       const orData = await orRes.json() as {
         choices?: { message?: { content?: string } }[];
         usage?:   { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+        error?:   { message?: string };
       };
+
+      // Check for API-level error inside 200 response (OpenRouter quirk)
+      if (orData.error) {
+        log("error", "chat.openrouter_api_error", { requestId, error: orData.error.message });
+        logEntry.error_code = "openrouter_api_error";
+        await persistLog(db, logEntry, startTime);
+        return json({ error: "AI returned an error. Please try again." }, 502);
+      }
+
       reply = orData.choices?.[0]?.message?.content ?? "";
+
+      // ── Capture real token usage (fix: was always 0 before) ────────────────
+      inputTokens  = orData.usage?.prompt_tokens     ?? 0;
+      outputTokens = orData.usage?.completion_tokens ?? 0;
+      totalTokens  = orData.usage?.total_tokens      ?? 0;
+
+      log("info", "chat.openrouter_ok", {
+        requestId,
+        replyLen: reply.length,
+        inputTokens,
+        outputTokens,
+        totalTokens,
+      });
     }
 
-    // ── Usage (approximate for image gen) ────────────────────────────────────
-    const usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+    logEntry.input_tokens  = inputTokens;
+    logEntry.output_tokens = outputTokens;
+    logEntry.total_tokens  = totalTokens;
 
     // ── Persist conversation ──────────────────────────────────────────────────
     let convId: number | undefined = conversationId;
     try {
-      const lastUser    = [...validMessages].reverse().find((m) => m.role === "user");
-      const textPreview = lastUser ? getTextPreview(lastUser.content) : "";
+      const textPreview = promptPreview;
 
       if (!convId) {
         const insert: Record<string, unknown> = {
@@ -395,8 +536,15 @@ Deno.serve(async (req: Request) => {
         if (userId) insert.user_id = userId;
         else        insert.guest_session_id = guestSessionId;
 
-        const { data } = await db.from("engagera_conversations").insert(insert).select("id").single();
+        const { data, error: convErr } = await db
+          .from("engagera_conversations")
+          .insert(insert)
+          .select("id")
+          .single();
+
+        if (convErr) log("warn", "conv.insert_failed", { requestId, error: JSON.stringify(convErr) });
         convId = data?.id;
+        if (convId) log("info", "conv.created", { requestId, convId });
       } else {
         await db.from("engagera_conversations")
           .update({ updated_at: new Date().toISOString(), model })
@@ -404,20 +552,19 @@ Deno.serve(async (req: Request) => {
       }
 
       if (convId) {
-        const lastUser2  = [...validMessages].reverse().find((m) => m.role === "user");
         const msgSaves: Promise<unknown>[] = [
           db.from("engagera_messages").insert({
             conversation_id: convId,
             role:            "assistant",
             content:         reply,
-            token_count:     usage.total_tokens,
+            token_count:     totalTokens,
           }),
           db.rpc("engagera_increment_message_count", { p_conversation_id: convId }),
         ];
-        if (lastUser2) {
-          const userText = typeof lastUser2.content === "string"
-            ? lastUser2.content
-            : JSON.stringify(lastUser2.content);
+        if (lastUserMsg) {
+          const userText = typeof lastUserMsg.content === "string"
+            ? lastUserMsg.content
+            : JSON.stringify(lastUserMsg.content);
           msgSaves.push(db.from("engagera_messages").insert({
             conversation_id: convId,
             role:            "user",
@@ -425,24 +572,24 @@ Deno.serve(async (req: Request) => {
             token_count:     0,
           }));
         }
-        await Promise.all(msgSaves);
+        await Promise.allSettled(msgSaves);
       }
     } catch (err) {
-      console.warn("Conversation persist failed (non-fatal):", String(err));
+      log("warn", "conv.persist_failed", { requestId, error: String(err) });
     }
 
-    // ── Usage record ──────────────────────────────────────────────────────────
+    // ── Usage record for authenticated users ──────────────────────────────────
     if (userId) {
       try {
         await db.from("engagera_usage_records").insert({
           user_id:       userId,
           model,
-          input_tokens:  usage.prompt_tokens,
-          output_tokens: usage.completion_tokens,
-          total_tokens:  usage.total_tokens,
+          input_tokens:  inputTokens,
+          output_tokens: outputTokens,
+          total_tokens:  totalTokens,
         });
       } catch (e) {
-        console.warn("Usage record failed:", String(e));
+        log("warn", "usage.record_failed", { requestId, error: String(e) });
       }
     }
 
@@ -455,18 +602,36 @@ Deno.serve(async (req: Request) => {
         });
         newGuestCount = typeof data === "number" ? data : undefined;
       } catch (e) {
-        console.warn("Guest count increment failed:", String(e));
+        log("warn", "guest.increment_failed", { requestId, error: String(e) });
       }
     }
 
+    // ── Success log + DB persist ───────────────────────────────────────────────
+    logEntry.success    = true;
+    logEntry.error_code = null;
+    const latencyMs = Date.now() - startTime;
+    logEntry.latency_ms = latencyMs;
+
+    log("info", "request.complete", {
+      requestId, model, path, latencyMs,
+      inputTokens, outputTokens, totalTokens,
+      convId: convId ?? null,
+      authed: !!userId,
+    });
+
+    // Fire-and-forget — don't let log write block the response
+    persistLog(db, logEntry, startTime).catch((e) =>
+      log("warn", "request_log.write_failed", { requestId, error: String(e) })
+    );
+
     return json({
-      id:      `eng_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      id:      requestId,
       model,
       message: { role: "assistant", content: reply },
       usage: {
-        inputTokens:  usage.prompt_tokens,
-        outputTokens: usage.completion_tokens,
-        totalTokens:  usage.total_tokens,
+        inputTokens,
+        outputTokens,
+        totalTokens,
       },
       conversationId: convId,
       ...(newGuestCount !== undefined && {
@@ -476,7 +641,45 @@ Deno.serve(async (req: Request) => {
     });
 
   } catch (topErr) {
-    console.error("Unhandled chat error:", String(topErr));
-    return json({ error: "Internal error: " + String(topErr) }, 500);
+    const latencyMs = Date.now() - startTime;
+    log("error", "request.unhandled_error", { requestId, error: String(topErr), latencyMs });
+    logEntry.error_code = `unhandled: ${String(topErr).slice(0, 100)}`;
+    logEntry.latency_ms = latencyMs;
+    // Fire-and-forget error log
+    try {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL");
+      const serviceKey  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+      if (supabaseUrl && serviceKey) {
+        const db = createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+        persistLog(db, logEntry, startTime).catch(() => {});
+      }
+    } catch (_) { /* ignore */ }
+    return json({ error: "Internal error. Please try again." }, 500);
   }
 });
+
+// ── DB log persistence (fire-and-forget safe) ──────────────────────────────────
+async function persistLog(
+  db: ReturnType<typeof createClient>,
+  entry: Record<string, unknown>,
+  startTime: number,
+): Promise<void> {
+  const latencyMs = entry.latency_ms ?? (Date.now() - startTime);
+  const { error } = await db.from("engagera_request_logs").insert({
+    request_id:       entry.request_id,
+    user_id:          entry.user_id ?? null,
+    guest_session_id: entry.guest_session_id ?? null,
+    model:            entry.model ?? "unknown",
+    path:             entry.path ?? "unknown",
+    success:          entry.success ?? false,
+    error_code:       entry.error_code ?? null,
+    latency_ms:       latencyMs,
+    input_tokens:     entry.input_tokens ?? 0,
+    output_tokens:    entry.output_tokens ?? 0,
+    total_tokens:     entry.total_tokens ?? 0,
+    prompt_preview:   (entry.prompt_preview as string | undefined)?.slice(0, 120) ?? null,
+  });
+  if (error) {
+    console.warn(JSON.stringify({ level: "warn", event: "request_log.db_error", error: JSON.stringify(error) }));
+  }
+}
