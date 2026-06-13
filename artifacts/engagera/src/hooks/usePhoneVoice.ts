@@ -1,15 +1,10 @@
 /**
  * usePhoneVoice — AI phone-call voice system.
  *
- * STT:  MediaRecorder (raw audio) → Supabase Edge Function → Groq Whisper → transcript
- * TTS:  AI reply text → browser SpeechSynthesis (fast-fail: tries OpenAI TTS Edge Function
- *        first with 3 s timeout; after first failure uses browser voice for the session)
- *
- * No Google Speech Recognition, no browser overlay, no Google APIs.
- * Pure MediaRecorder + Web Audio VAD + Groq Whisper + SpeechSynthesis.
- *
- * Stale-closure fix: mutually-referencing functions (startRecording ↔ commitRecording)
- * are stored in actionsRef so they always call the latest version.
+ * STT: MediaRecorder → Groq Whisper (Supabase Edge Function)
+ * TTS: Browser SpeechSynthesis — voices pre-loaded on mount via onvoiceschanged
+ *      and primed inside the beginCall() user-gesture context so Chrome allows
+ *      subsequent async speak() calls without silently failing.
  */
 import { useState, useRef, useCallback, useEffect } from "react";
 
@@ -25,20 +20,21 @@ interface Options {
   onSend: (text: string) => void;
 }
 
-// Web Audio RMS thresholds (0–255 Uint8 scale after FFT)
-const SPEECH_THRESHOLD   = 18;    // above → user is speaking
-const SILENCE_THRESHOLD  = 12;    // below → silence
-const SILENCE_DURATION_MS = 1400; // ms of silence before committing
+const SPEECH_THRESHOLD    = 18;
+const SILENCE_THRESHOLD   = 12;
+const SILENCE_DURATION_MS = 1400;
 
-// Supabase project Edge Function base
-const SUPABASE_BASE = "https://rhnsjqqtdzlkvqazfcbg.supabase.co/functions/v1";
-const STT_URL       = `${SUPABASE_BASE}/stt`;
-const TTS_URL       = `${SUPABASE_BASE}/elevenlabs-tts`;
+const STT_URL = "https://rhnsjqqtdzlkvqazfcbg.supabase.co/functions/v1/stt";
 
-// ElevenLabs voice — "Rachel" (clear, neutral, professional)
-const TTS_VOICE_ID  = "21m00Tcm4TlvDq8ikWAM";
+// Preferred TTS voices in order; falls back to any English voice
+const PREFERRED_VOICES = [
+  "Google US English",
+  "Microsoft Aria Online (Natural) - English (United States)",
+  "Microsoft Jenny Online (Natural) - English (United States)",
+  "Samantha", "Karen", "Alex",
+  "Google UK English Female",
+];
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
 function bestMimeType(): string {
   if (typeof MediaRecorder === "undefined") return "";
   if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) return "audio/webm;codecs=opus";
@@ -58,45 +54,49 @@ function stripMarkdown(text: string): string {
     .slice(0, 900);
 }
 
-// ── Hook ─────────────────────────────────────────────────────────────────────
 export function usePhoneVoice({ onSend }: Options) {
   const [state, setState]               = useState<PhoneState>("idle");
   const [transcript, setTranscript]     = useState("");
   const [callDuration, setCallDuration] = useState(0);
   const [whisperReady, setWhisperReady] = useState(true);
 
-  // Live refs — no re-render triggers
-  const stateRef   = useRef<PhoneState>("idle");
-  const activeRef  = useRef(false);
-  const onSendRef  = useRef(onSend);
+  const stateRef  = useRef<PhoneState>("idle");
+  const activeRef = useRef(false);
+  const onSendRef = useRef(onSend);
   useEffect(() => { onSendRef.current = onSend; }, [onSend]);
 
-  // Audio infrastructure
   const streamRef   = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef   = useRef<Blob[]>([]);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
 
-  // Timers
   const vadIntervalRef  = useRef<ReturnType<typeof setInterval>  | null>(null);
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout>   | null>(null);
   const callTimerRef    = useRef<ReturnType<typeof setInterval>  | null>(null);
 
-  // VAD flags
   const speechDetectedRef = useRef(false);
   const hasAudioRef       = useRef(false);
 
-  // TTS audio source — so we can cancel mid-speech
-  const ttsSourceRef    = useRef<AudioBufferSourceNode | null>(null);
-  // Fast-fail flag — set to false after first TTS Edge Function failure
-  // so subsequent calls skip straight to browser SpeechSynthesis
-  const ttsAvailableRef = useRef(true);
+  // Cached voices — populated eagerly so speak() never races with async load
+  const voicesRef = useRef<SpeechSynthesisVoice[]>([]);
 
-  // Actions table — breaks the mutual-recursion cycle between startRecording / commitRecording
+  // Mutual-recursion table
   const actionsRef = useRef({ startRecording: () => {}, commitRecording: () => {} });
 
-  // ── Shared state setter ─────────────────────────────────────────────────────
+  // ── Pre-load voices on mount ──────────────────────────────────────────────
+  useEffect(() => {
+    if (!("speechSynthesis" in window)) return;
+    const load = () => {
+      const v = window.speechSynthesis.getVoices();
+      if (v.length > 0) voicesRef.current = v;
+    };
+    load();
+    window.speechSynthesis.onvoiceschanged = load;
+    return () => { window.speechSynthesis.onvoiceschanged = null; };
+  }, []);
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
   const setStateBoth = useCallback((s: PhoneState) => {
     stateRef.current = s;
     setState(s);
@@ -107,14 +107,14 @@ export function usePhoneVoice({ onSend }: Options) {
     if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current);  silenceTimerRef.current = null; }
   }, []);
 
-  // ── STT — Groq Whisper via Supabase Edge Function ─────────────────────────
+  // ── STT — Groq Whisper via Edge Function ─────────────────────────────────
   const transcribeAudio = useCallback(async (blob: Blob): Promise<string | null> => {
     if (blob.size < 500) return null;
     try {
       const res = await fetch(STT_URL, {
-        method: "POST",
+        method:  "POST",
         headers: { "Content-Type": blob.type || "audio/webm" },
-        body: blob,
+        body:    blob,
       });
       if (res.status === 503) {
         setWhisperReady(false);
@@ -129,77 +129,64 @@ export function usePhoneVoice({ onSend }: Options) {
     }
   }, []);
 
-  // ── TTS helpers ──────────────────────────────────────────────────────────────
-  const speakViaBrowser = useCallback((plain: string, onDone: () => void) => {
-    if (!("speechSynthesis" in window)) { onDone(); return; }
-    window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(plain);
-    u.rate = 1.05; u.pitch = 1.0; u.volume = 1.0;
-    const voices = window.speechSynthesis.getVoices();
-    const preferred = [
-      "Microsoft Aria Online (Natural) - English (United States)",
-      "Microsoft Jenny Online (Natural) - English (United States)",
-      "Samantha", "Karen", "Google UK English Female",
-    ];
-    const voice = preferred.map(n => voices.find(v => v.name === n)).find(Boolean) ??
-      voices.find(v => v.lang.startsWith("en")) ?? null;
-    if (voice) u.voice = voice;
-    u.onend  = () => onDone();
-    u.onerror = () => onDone();
-    window.speechSynthesis.speak(u);
-  }, []);
-
-  // ── TTS — Edge Function (OpenAI TTS) with fast-fail + 3 s timeout ───────────
-  const speakText = useCallback(async (text: string, onDone: () => void) => {
+  // ── TTS — Browser SpeechSynthesis ─────────────────────────────────────────
+  //
+  // Chrome fix: getVoices() returns [] on first call (async load). We cache
+  // voices in voicesRef via onvoiceschanged above. We also prime the API inside
+  // beginCall() which runs within the user gesture, satisfying Chrome's autoplay
+  // policy for subsequent async speak() calls.
+  const speakText = useCallback((text: string, onDone: () => void) => {
     const plain = stripMarkdown(text);
     if (!plain) { onDone(); return; }
+    if (!("speechSynthesis" in window)) { onDone(); return; }
 
-    // Cancel any in-progress speech
-    ttsSourceRef.current?.stop();
-    ttsSourceRef.current = null;
+    window.speechSynthesis.cancel();
 
-    // If the Edge Function already failed this session, skip straight to browser TTS
-    if (!ttsAvailableRef.current) {
-      speakViaBrowser(plain, onDone);
-      return;
+    const doSpeak = () => {
+      const u = new SpeechSynthesisUtterance(plain);
+      u.rate   = 1.0;
+      u.pitch  = 1.0;
+      u.volume = 1.0;
+      u.lang   = "en-US";
+
+      const voices = voicesRef.current.length > 0
+        ? voicesRef.current
+        : window.speechSynthesis.getVoices();
+      const voice =
+        PREFERRED_VOICES.map(n => voices.find(v => v.name === n)).find(Boolean) ??
+        voices.find(v => v.lang.startsWith("en") && !v.localService) ??
+        voices.find(v => v.lang.startsWith("en")) ??
+        null;
+      if (voice) u.voice = voice;
+
+      u.onend   = () => { if (activeRef.current) onDone(); };
+      u.onerror = (e) => {
+        // "interrupted" is expected when we cancel() before next utterance — not an error
+        if ((e as SpeechSynthesisErrorEvent).error !== "interrupted") {
+          if (activeRef.current) onDone();
+        }
+      };
+
+      window.speechSynthesis.speak(u);
+    };
+
+    // Voices already loaded → speak immediately
+    if (voicesRef.current.length > 0 || window.speechSynthesis.getVoices().length > 0) {
+      doSpeak();
+    } else {
+      // Wait for Chrome's async voice load
+      const prev = window.speechSynthesis.onvoiceschanged;
+      window.speechSynthesis.onvoiceschanged = () => {
+        voicesRef.current = window.speechSynthesis.getVoices();
+        window.speechSynthesis.onvoiceschanged = prev ?? null;
+        doSpeak();
+      };
+      // Safety fallback: speak anyway after 500 ms even if event never fires
+      setTimeout(doSpeak, 500);
     }
+  }, []);
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 3000);
-
-    try {
-      const res = await fetch(TTS_URL, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ text: plain, voice_id: TTS_VOICE_ID }),
-        signal:  controller.signal,
-      });
-      clearTimeout(timeout);
-
-      if (!res.ok) throw new Error(`TTS ${res.status}`);
-
-      const mp3 = await res.arrayBuffer();
-      const ctx  = audioCtxRef.current;
-      if (!ctx || !activeRef.current) { onDone(); return; }
-
-      const audioBuf = await ctx.decodeAudioData(mp3);
-      if (!activeRef.current) { onDone(); return; }
-
-      const source = ctx.createBufferSource();
-      source.buffer = audioBuf;
-      source.connect(ctx.destination);
-      ttsSourceRef.current = source;
-      source.onended = () => { ttsSourceRef.current = null; onDone(); };
-      source.start();
-    } catch {
-      clearTimeout(timeout);
-      // Mark TTS Edge Function as unavailable for this session
-      ttsAvailableRef.current = false;
-      speakViaBrowser(plain, onDone);
-    }
-  }, [speakViaBrowser]);
-
-  // ── commitRecording — stop recorder + transcribe ────────────────────────────
+  // ── commitRecording ────────────────────────────────────────────────────────
   const commitRecording = useCallback(() => {
     if (!activeRef.current || stateRef.current !== "listening") return;
     clearVAD();
@@ -221,7 +208,6 @@ export function usePhoneVoice({ onSend }: Options) {
         setTranscript(text);
         setStateBoth("thinking");
         onSendRef.current(text);
-        // next state transition triggered by speakResponse() when AI replies
       } else {
         actionsRef.current.startRecording();
       }
@@ -230,12 +216,12 @@ export function usePhoneVoice({ onSend }: Options) {
     try { recorder.stop(); } catch {}
   }, [clearVAD, transcribeAudio, setStateBoth]);
 
-  // ── startRecording — init recorder + VAD ───────────────────────────────────
+  // ── startRecording ─────────────────────────────────────────────────────────
   const startRecording = useCallback(() => {
     if (!activeRef.current || !streamRef.current) return;
 
     setStateBoth("listening");
-    chunksRef.current       = [];
+    chunksRef.current         = [];
     speechDetectedRef.current = false;
     hasAudioRef.current       = false;
 
@@ -270,26 +256,26 @@ export function usePhoneVoice({ onSend }: Options) {
     }, 80);
   }, [setStateBoth]);
 
-  // Keep actionsRef up to date on every render
   useEffect(() => {
     actionsRef.current = { startRecording, commitRecording };
   }, [startRecording, commitRecording]);
 
-  // ── speakResponse — called by the page when the AI has replied ─────────────
+  // ── speakResponse — called from the page when AI replies ──────────────────
   const speakResponse = useCallback((text: string) => {
     if (!activeRef.current) return;
     setStateBoth("speaking");
     setTranscript("");
-    ttsSourceRef.current?.stop();
-    ttsSourceRef.current = null;
 
     speakText(text, () => {
       if (!activeRef.current) return;
-      actionsRef.current.startRecording();
+      // Brief pause so mic doesn't pick up TTS echo
+      setTimeout(() => {
+        if (activeRef.current) actionsRef.current.startRecording();
+      }, 300);
     });
   }, [setStateBoth, speakText]);
 
-  // ── startCall ───────────────────────────────────────────────────────────────
+  // ── startCall ──────────────────────────────────────────────────────────────
   const startCall = useCallback(async () => {
     setStateBoth("connecting");
     setTranscript("");
@@ -303,7 +289,6 @@ export function usePhoneVoice({ onSend }: Options) {
 
       streamRef.current = stream;
 
-      // AudioContext for both VAD (analyser) and TTS playback (destination)
       const ctx      = new AudioContext();
       const source   = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
@@ -328,14 +313,11 @@ export function usePhoneVoice({ onSend }: Options) {
 
     if (callTimerRef.current) { clearInterval(callTimerRef.current); callTimerRef.current = null; }
 
-    ttsSourceRef.current?.stop();
-    ttsSourceRef.current = null;
-
-    try { recorderRef.current?.stop(); } catch {}
     window.speechSynthesis?.cancel();
 
+    try { recorderRef.current?.stop(); } catch {}
     streamRef.current?.getTracks().forEach(t => t.stop());
-    streamRef.current  = null;
+    streamRef.current   = null;
     recorderRef.current = null;
     chunksRef.current   = [];
 
@@ -348,7 +330,14 @@ export function usePhoneVoice({ onSend }: Options) {
     setCallDuration(0);
   }, [clearVAD, setStateBoth]);
 
+  // ── beginCall — must run in user gesture context ──────────────────────────
   const beginCall = useCallback(() => {
+    // Prime speechSynthesis INSIDE the user gesture so Chrome grants audio
+    // permission for all subsequent async speak() calls this session.
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();          // clear any queue
+      window.speechSynthesis.getVoices();       // trigger async voice load
+    }
     activeRef.current = true;
     startCall();
   }, [startCall]);

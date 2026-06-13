@@ -22,6 +22,7 @@ import {
   Plus,
   LogIn,
   Mic,
+  PhoneOff,
   SquarePen,
   Trash2,
   Clock,
@@ -650,155 +651,145 @@ export default function Landing() {
           )}
         </div>
 
-        {/* ── Input bar — always visible, never shrinks ───────────────────────── */}
-        <div className="shrink-0 px-4 pb-4 pt-2 max-w-2xl mx-auto w-full">
-
-          {/* 24hr limit notice */}
-          {isGuest && windowResetAt && (
-            <div className="flex items-center justify-between mb-3 px-4 py-2 border border-[#1a1a1a] bg-[#0d0d0d] text-xs">
-              <div className="flex items-center gap-2 text-amber-400/80">
-                <Clock className="h-3.5 w-3.5 shrink-0" />
-                <span>Daily limit reached · Resets in <span className="font-semibold">{countdown}</span></span>
-              </div>
-              <Link href="/sign-up">
-                <span className="text-primary cursor-pointer hover:underline font-medium">Sign up free →</span>
-              </Link>
-            </div>
-          )}
-
-
-          {/* Attachment preview strip */}
-          {attachments.length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-2 px-1">
-              {attachments.map((att) => (
-                <div key={att.id} className="relative group flex items-center gap-1.5 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-2 py-1.5 text-xs text-muted-foreground">
-                  {att.kind === "image" && att.preview ? (
-                    <img src={att.preview} alt="" className="h-6 w-6 rounded object-cover shrink-0" />
-                  ) : (
-                    <Paperclip className="h-3 w-3 shrink-0" />
-                  )}
-                  <span className="max-w-[100px] truncate">{att.name}</span>
-                  <button
-                    onClick={() => setAttachments((prev) => prev.filter((a) => a.id !== att.id))}
-                    className="ml-0.5 text-muted-foreground/40 hover:text-foreground transition-colors"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Hidden file input */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*,.txt,.md,.csv,.json,.js,.ts,.py,.html,.css,.xml,.yaml,.yml"
-            multiple
-            className="hidden"
-            onChange={handleFileChange}
+        {/* ── Bottom: voice strip (during call) or text input ─────────────────── */}
+        {voiceOpen ? (
+          <VoiceCallStrip
+            state={phoneVoice.state}
+            callDuration={phoneVoice.callDuration}
+            transcript={phoneVoice.transcript}
+            whisperReady={phoneVoice.whisperReady}
+            aiPending={chatMutation.isPending}
+            onEnd={() => { phoneVoice.endCall(); setVoiceOpen(false); }}
           />
+        ) : (
+          <div className="shrink-0 px-4 pb-4 pt-2 max-w-2xl mx-auto w-full">
 
-          {/* Pill */}
-          <div className={cn(
-            "flex items-end rounded-full border transition-colors",
-            isLimited
-              ? "border-[#1a1a1a] opacity-50 pointer-events-none"
-              : "border-[#222] focus-within:border-[#333] bg-[#111]"
-          )}>
-            {/* Textarea */}
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={handleTextareaChange}
-              onKeyDown={handleKeyDown}
-              placeholder={
-                isLimited
-                  ? `Available in ${countdown}`
-                  : isGuest && guestMessageCount >= GUEST_DAILY_LIMIT
-                  ? "Sign up to continue..."
-                  : attachments.length > 0
-                  ? "Add a message (optional)…"
-                  : "Message Engagera..."
-              }
-              disabled={chatMutation.isPending || isLimited}
-              rows={1}
-              className="flex-1 bg-transparent text-sm pl-4 pr-3 py-3 placeholder:text-muted-foreground/40 focus:outline-none resize-none max-h-[120px] min-h-0"
+            {/* 24hr limit notice */}
+            {isGuest && windowResetAt && (
+              <div className="flex items-center justify-between mb-3 px-4 py-2 border border-[#1a1a1a] bg-[#0d0d0d] text-xs">
+                <div className="flex items-center gap-2 text-amber-400/80">
+                  <Clock className="h-3.5 w-3.5 shrink-0" />
+                  <span>Daily limit reached · Resets in <span className="font-semibold">{countdown}</span></span>
+                </div>
+                <Link href="/sign-up">
+                  <span className="text-primary cursor-pointer hover:underline font-medium">Sign up free →</span>
+                </Link>
+              </div>
+            )}
+
+            {/* Attachment preview strip */}
+            {attachments.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-2 px-1">
+                {attachments.map((att) => (
+                  <div key={att.id} className="relative group flex items-center gap-1.5 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-2 py-1.5 text-xs text-muted-foreground">
+                    {att.kind === "image" && att.preview ? (
+                      <img src={att.preview} alt="" className="h-6 w-6 rounded object-cover shrink-0" />
+                    ) : (
+                      <Paperclip className="h-3 w-3 shrink-0" />
+                    )}
+                    <span className="max-w-[100px] truncate">{att.name}</span>
+                    <button
+                      onClick={() => setAttachments((prev) => prev.filter((a) => a.id !== att.id))}
+                      className="ml-0.5 text-muted-foreground/40 hover:text-foreground transition-colors"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,.txt,.md,.csv,.json,.js,.ts,.py,.html,.css,.xml,.yaml,.yml"
+              multiple
+              className="hidden"
+              onChange={handleFileChange}
             />
 
-            {/* Right-side controls */}
-            <div className="pr-2 pb-2 pl-1 flex items-end gap-1">
-              {/* File upload */}
-              <button
-                onClick={() => fileInputRef.current?.click()}
+            {/* Pill input */}
+            <div className={cn(
+              "flex items-end rounded-full border transition-colors",
+              isLimited
+                ? "border-[#1a1a1a] opacity-50 pointer-events-none"
+                : "border-[#222] focus-within:border-[#333] bg-[#111]"
+            )}>
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={handleTextareaChange}
+                onKeyDown={handleKeyDown}
+                placeholder={
+                  isLimited
+                    ? `Available in ${countdown}`
+                    : isGuest && guestMessageCount >= GUEST_DAILY_LIMIT
+                    ? "Sign up to continue..."
+                    : attachments.length > 0
+                    ? "Add a message (optional)…"
+                    : "Message Engagera..."
+                }
                 disabled={chatMutation.isPending || isLimited}
-                title="Attach file"
-                className="h-8 w-8 flex items-center justify-center rounded-full text-muted-foreground/40 hover:text-muted-foreground disabled:opacity-20 transition-colors"
-              >
-                <Paperclip className="h-3.5 w-3.5" />
-              </button>
+                rows={1}
+                className="flex-1 bg-transparent text-sm pl-4 pr-3 py-3 placeholder:text-muted-foreground/40 focus:outline-none resize-none max-h-[120px] min-h-0"
+              />
 
-              {/* Phone Voice Call */}
-              {phoneVoice.supported && (
+              <div className="pr-2 pb-2 pl-1 flex items-end gap-1">
+                {/* File upload */}
                 <button
-                  onClick={() => {
-                    setVoiceOpen(true);
-                    phoneVoice.beginCall();
-                  }}
+                  onClick={() => fileInputRef.current?.click()}
                   disabled={chatMutation.isPending || isLimited}
-                  title="Start AI phone call"
-                  className={cn(
-                    "h-8 w-8 flex items-center justify-center rounded-full transition-all",
-                    "text-muted-foreground/40 hover:text-primary",
-                    (chatMutation.isPending || isLimited) && "opacity-20"
-                  )}
+                  title="Attach file"
+                  className="h-8 w-8 flex items-center justify-center rounded-full text-muted-foreground/40 hover:text-muted-foreground disabled:opacity-20 transition-colors"
                 >
-                  <Mic className="h-3.5 w-3.5" />
+                  <Paperclip className="h-3.5 w-3.5" />
                 </button>
-              )}
 
-              {/* Send */}
-              <button
-                onClick={() => handleSend()}
-                disabled={(!input.trim() && attachments.length === 0) || chatMutation.isPending || isLimited}
-                className="h-8 w-8 flex items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-30 disabled:cursor-not-allowed hover:bg-primary/90 transition-all"
-              >
-                {chatMutation.isPending ? (
-                  <span className="h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <Send className="h-3.5 w-3.5" />
+                {/* Voice call button */}
+                {phoneVoice.supported && (
+                  <button
+                    onClick={() => { setVoiceOpen(true); phoneVoice.beginCall(); }}
+                    disabled={chatMutation.isPending || isLimited}
+                    title="Start voice call"
+                    className={cn(
+                      "h-8 w-8 flex items-center justify-center rounded-full transition-all",
+                      "text-muted-foreground/40 hover:text-primary",
+                      (chatMutation.isPending || isLimited) && "opacity-20"
+                    )}
+                  >
+                    <Mic className="h-3.5 w-3.5" />
+                  </button>
                 )}
-              </button>
-            </div>
-          </div>
 
-          <p className="text-center text-[11px] text-muted-foreground/30 mt-2">
-            Engagera can make mistakes. Verify important information.
-          </p>
-        </div>
+                {/* Send */}
+                <button
+                  onClick={() => handleSend()}
+                  disabled={(!input.trim() && attachments.length === 0) || chatMutation.isPending || isLimited}
+                  className="h-8 w-8 flex items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-30 disabled:cursor-not-allowed hover:bg-primary/90 transition-all"
+                >
+                  {chatMutation.isPending ? (
+                    <span className="h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Send className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <p className="text-center text-[11px] text-muted-foreground/30 mt-2">
+              Engagera can make mistakes. Verify important information.
+            </p>
+          </div>
+        )}
 
       </div>
-
-      {/* ── Phone Call Overlay ──────────────────────────────────────────────── */}
-      {voiceOpen && (
-        <PhoneCallOverlay
-          state={phoneVoice.state}
-          transcript={phoneVoice.transcript}
-          callDuration={phoneVoice.callDuration}
-          whisperReady={phoneVoice.whisperReady}
-          aiPending={chatMutation.isPending}
-          onEnd={() => {
-            phoneVoice.endCall();
-            setVoiceOpen(false);
-          }}
-        />
-      )}
     </div>
   );
 }
 
-/* ── Phone Call Overlay ──────────────────────────────────────────────────── */
-interface PhoneCallOverlayProps {
+/* ── Voice Call Strip — inline, replaces the text input during a call ─────── */
+interface VoiceCallStripProps {
   state: PhoneState;
   transcript: string;
   callDuration: number;
@@ -808,160 +799,97 @@ interface PhoneCallOverlayProps {
 }
 
 function fmt(s: number) {
-  const m = Math.floor(s / 60).toString().padStart(2, "0");
-  const sec = (s % 60).toString().padStart(2, "0");
-  return `${m}:${sec}`;
+  return `${Math.floor(s / 60).toString().padStart(2, "0")}:${(s % 60).toString().padStart(2, "0")}`;
 }
 
-function PhoneCallOverlay({
+function VoiceCallStrip({
   state,
   transcript,
   callDuration,
   whisperReady,
   aiPending,
   onEnd,
-}: PhoneCallOverlayProps) {
+}: VoiceCallStripProps) {
   const effectiveState: PhoneState = aiPending ? "thinking" : state;
 
   const stateLabel: Record<PhoneState, string> = {
-    idle:        "Connecting…",
-    connecting:  "Connecting…",
-    listening:   "Listening…",
-    processing:  "Transcribing…",
-    thinking:    "Thinking…",
-    speaking:    "Speaking",
+    idle:       "Connecting…",
+    connecting: "Connecting…",
+    listening:  "Listening…",
+    processing: "Transcribing…",
+    thinking:   "Thinking…",
+    speaking:   "Speaking…",
   };
 
-  const isLive = effectiveState === "listening" || effectiveState === "speaking";
+  const dotColor =
+    effectiveState === "listening"  ? "bg-green-400 animate-pulse" :
+    effectiveState === "speaking"   ? "bg-emerald-400 animate-pulse" :
+    effectiveState === "thinking" || effectiveState === "processing"
+                                    ? "bg-yellow-400 animate-pulse" :
+    "bg-zinc-600";
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-[#080810]">
+    <div className="shrink-0 px-4 pb-4 pt-2 max-w-2xl mx-auto w-full">
+      <div className="flex items-center gap-3 px-4 py-3 rounded-full bg-[#111] border border-[#222]">
 
-      {/* ── Top bar ── */}
-      <div className="flex items-center justify-between px-6 pt-10 pb-4">
-        <div>
-          <p className="text-white/40 text-xs uppercase tracking-widest font-medium">Engagera AI</p>
-          <p className="text-white/20 text-[11px] mt-0.5">
-            {!whisperReady ? "Warming up voice…" : isLive ? fmt(callDuration) : stateLabel[effectiveState]}
-          </p>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className={cn(
-            "h-1.5 w-1.5 rounded-full",
-            effectiveState === "listening" ? "bg-green-400 animate-pulse" :
-            effectiveState === "speaking"  ? "bg-emerald-400 animate-pulse" :
-            effectiveState === "thinking" || effectiveState === "processing" ? "bg-yellow-400 animate-pulse" :
-            "bg-zinc-600"
-          )} />
-          <span className="text-white/30 text-[11px]">
-            {effectiveState === "listening" ? "Live" :
-             effectiveState === "speaking"  ? "Speaking" :
-             effectiveState === "thinking" || effectiveState === "processing" ? "Processing" :
-             "Connecting"}
-          </span>
-        </div>
-      </div>
+        {/* State dot */}
+        <span className={cn("h-2 w-2 rounded-full shrink-0", dotColor)} />
 
-      {/* ── AI avatar / waveform area ── */}
-      <div className="flex-1 flex flex-col items-center justify-center gap-8 px-6">
-
-        {/* Avatar circle */}
-        <div className="relative flex items-center justify-center">
-          {/* Pulse rings */}
-          {effectiveState === "listening" && (
-            <>
-              <span className="absolute h-48 w-48 rounded-full border border-blue-500/20 animate-ping" style={{ animationDuration: "2s" }} />
-              <span className="absolute h-36 w-36 rounded-full border border-blue-500/30 animate-ping" style={{ animationDuration: "1.5s", animationDelay: "0.3s" }} />
-            </>
+        {/* Middle: waveform animation OR transcript OR state label */}
+        <div className="flex-1 min-w-0 flex items-center">
+          {transcript ? (
+            <p className="text-xs text-muted-foreground/70 truncate italic">"{transcript}"</p>
+          ) : effectiveState === "listening" ? (
+            <div className="flex items-end gap-[2px] h-4">
+              {[3, 5, 4, 6, 3, 5, 4, 6, 3, 5].map((h, i) => (
+                <span
+                  key={i}
+                  className="w-[2px] rounded-full bg-green-400/60 animate-bounce"
+                  style={{ height: `${h * 2}px`, animationDelay: `${i * 0.07}s`, animationDuration: "0.7s" }}
+                />
+              ))}
+            </div>
+          ) : effectiveState === "speaking" ? (
+            <div className="flex items-end gap-[2px] h-4">
+              {[4, 7, 5, 8, 6, 4, 7, 5, 8, 6].map((h, i) => (
+                <span
+                  key={i}
+                  className="w-[2px] rounded-full bg-emerald-400/60 animate-bounce"
+                  style={{ height: `${h * 2}px`, animationDelay: `${i * 0.05}s`, animationDuration: "0.5s" }}
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground/40">
+              {!whisperReady ? "Warming up…" : stateLabel[effectiveState]}
+            </p>
           )}
-          {effectiveState === "speaking" && (
-            <>
-              <span className="absolute h-52 w-52 rounded-full border border-emerald-500/20 animate-ping" style={{ animationDuration: "1s" }} />
-              <span className="absolute h-40 w-40 rounded-full border border-emerald-500/30 animate-ping" style={{ animationDuration: "0.8s", animationDelay: "0.2s" }} />
-            </>
-          )}
-
-          {/* Main circle */}
-          <div className={cn(
-            "h-28 w-28 rounded-full flex items-center justify-center transition-all duration-700",
-            effectiveState === "listening"
-              ? "bg-gradient-to-br from-blue-600 to-indigo-700 shadow-[0_0_60px_rgba(99,102,241,0.4)]"
-              : effectiveState === "speaking"
-              ? "bg-gradient-to-br from-emerald-500 to-teal-600 shadow-[0_0_60px_rgba(16,185,129,0.4)]"
-              : effectiveState === "thinking" || effectiveState === "processing"
-              ? "bg-gradient-to-br from-violet-600 to-purple-700 shadow-[0_0_40px_rgba(139,92,246,0.3)] animate-pulse"
-              : "bg-gradient-to-br from-zinc-700 to-zinc-800"
-          )}>
-            {/* Inner animation */}
-            {effectiveState === "listening" && (
-              <div className="flex items-end gap-[3px] h-8">
-                {[3,5,8,5,3,6,4,7,5,3].map((h, i) => (
-                  <span key={i} className="w-[3px] rounded-full bg-white/70 animate-bounce"
-                    style={{ height: `${h * 3}px`, animationDelay: `${i * 0.07}s`, animationDuration: "0.8s" }} />
-                ))}
-              </div>
-            )}
-            {effectiveState === "speaking" && (
-              <div className="flex items-end gap-[3px] h-8">
-                {[6,10,14,10,6,8,12,9,5,7].map((h, i) => (
-                  <span key={i} className="w-[3px] rounded-full bg-white/90 animate-bounce"
-                    style={{ height: `${h * 2.5}px`, animationDelay: `${i * 0.06}s`, animationDuration: "0.5s" }} />
-                ))}
-              </div>
-            )}
-            {(effectiveState === "thinking" || effectiveState === "processing") && (
-              <div className="flex gap-1.5 items-center">
-                {[0,1,2].map(i => (
-                  <span key={i} className="h-2 w-2 rounded-full bg-white/70 animate-bounce"
-                    style={{ animationDelay: `${i * 0.15}s`, animationDuration: "0.7s" }} />
-                ))}
-              </div>
-            )}
-            {(effectiveState === "connecting" || effectiveState === "idle") && (
-              <Mic className="h-10 w-10 text-white/50" />
-            )}
-          </div>
         </div>
 
-        {/* State label */}
-        <div className="text-center">
-          <p className="text-white text-xl font-semibold tracking-tight">Engagera AI</p>
-          <p className="text-white/50 text-sm mt-1">
-            {!whisperReady ? "Warming up voice engine…" : stateLabel[effectiveState]}
-          </p>
-        </div>
+        {/* Timer */}
+        <span className="text-xs text-muted-foreground/30 shrink-0 font-mono tabular-nums">
+          {fmt(callDuration)}
+        </span>
 
-        {/* Live transcript */}
-        {transcript && (
-          <div className="w-full max-w-xs bg-white/5 border border-white/8 rounded-2xl px-5 py-3">
-            <p className="text-white/30 text-[10px] uppercase tracking-widest mb-1">You said</p>
-            <p className="text-white/80 text-sm leading-relaxed">{transcript}</p>
-          </div>
-        )}
+        {/* Mic indicator */}
+        <Mic className={cn(
+          "h-3.5 w-3.5 shrink-0 transition-colors",
+          effectiveState === "listening" ? "text-green-400" : "text-muted-foreground/20"
+        )} />
 
-        {!transcript && effectiveState === "listening" && (
-          <p className="text-white/20 text-sm italic">Start speaking…</p>
-        )}
-      </div>
-
-      {/* ── Bottom controls ── */}
-      <div className="flex flex-col items-center gap-4 pb-14 pt-6">
-        <p className="text-white/30 text-xs">
-          {isLive ? fmt(callDuration) : ""}
-        </p>
-        {/* End Call button */}
+        {/* Hang up */}
         <button
           onClick={onEnd}
-          className="h-16 w-16 rounded-full bg-red-500 hover:bg-red-600 active:bg-red-700 flex items-center justify-center shadow-[0_0_40px_rgba(239,68,68,0.4)] transition-all"
-          title="End call"
+          title="End voice call"
+          className="h-8 w-8 rounded-full bg-red-500 hover:bg-red-600 active:bg-red-700 flex items-center justify-center transition-colors shrink-0"
         >
-          {/* Phone hang-up icon */}
-          <svg viewBox="0 0 24 24" fill="none" className="h-7 w-7 text-white" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
-            <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.42 19.42 0 0 1 4.26 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.17 1.29h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.1 9.1a16 16 0 0 0 3.58 4.21z" />
-          </svg>
+          <PhoneOff className="h-3.5 w-3.5 text-white" />
         </button>
-        <p className="text-white/20 text-[11px]">Tap to end call</p>
       </div>
+
+      <p className="text-center text-[11px] text-muted-foreground/30 mt-2">
+        Engagera can make mistakes. Verify important information.
+      </p>
     </div>
   );
 }
