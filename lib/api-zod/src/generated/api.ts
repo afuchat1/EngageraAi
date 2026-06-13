@@ -154,10 +154,11 @@ export const GetDashboardStatsResponse = zod.object({
 
 
 /**
- * @summary Send a chat message to Engagera AI
+ * @summary Send a chat message to Engagera AI (auth or guest via x-guest-session-id)
  */
 export const ChatCompletionHeader = zod.object({
-  "x-user-id": zod.string().optional()
+  "x-user-id": zod.string().optional(),
+  "x-guest-session-id": zod.string().optional()
 })
 
 export const chatCompletionBodyModelDefault = `engagera-pro`;
@@ -169,6 +170,7 @@ export const ChatCompletionBody = zod.object({
   "content": zod.string()
 })),
   "model": zod.string().default(chatCompletionBodyModelDefault),
+  "conversationId": zod.number().optional().describe('Existing conversation to continue. Omit to auto-create a new one.'),
   "stream": zod.boolean().default(chatCompletionBodyStreamDefault)
 })
 
@@ -183,7 +185,65 @@ export const ChatCompletionResponse = zod.object({
   "inputTokens": zod.number(),
   "outputTokens": zod.number(),
   "totalTokens": zod.number()
+}),
+  "conversationId": zod.number(),
+  "guestMessageCount": zod.number().optional().describe('How many messages this guest session has used (guests only)'),
+  "guestMessageLimit": zod.number().optional().describe('Total free messages allowed for guests')
 })
+
+
+/**
+ * @summary List conversations for the current user or guest session
+ */
+export const ListConversationsHeader = zod.object({
+  "x-guest-session-id": zod.string().optional()
 })
+
+export const ListConversationsResponseItem = zod.object({
+  "id": zod.number(),
+  "title": zod.string(),
+  "model": zod.string(),
+  "messageCount": zod.number(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+export const ListConversationsResponse = zod.array(ListConversationsResponseItem)
+
+
+/**
+ * @summary Delete a conversation
+ */
+export const DeleteConversationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteConversationHeader = zod.object({
+  "x-guest-session-id": zod.string().optional()
+})
+
+export const DeleteConversationResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
+ * @summary Get all messages in a conversation
+ */
+export const GetConversationMessagesParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetConversationMessagesHeader = zod.object({
+  "x-guest-session-id": zod.string().optional()
+})
+
+export const GetConversationMessagesResponseItem = zod.object({
+  "id": zod.number(),
+  "role": zod.string(),
+  "content": zod.string(),
+  "createdAt": zod.string()
+})
+export const GetConversationMessagesResponse = zod.array(GetConversationMessagesResponseItem)
 
 

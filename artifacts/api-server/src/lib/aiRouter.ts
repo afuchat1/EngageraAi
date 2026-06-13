@@ -51,7 +51,10 @@ async function callOpenRouter(
     throw new Error(`OpenRouter error ${res.status}: ${err}`);
   }
 
-  const data = await res.json();
+  const data = await res.json() as {
+    choices?: { message?: { content?: string } }[];
+    usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+  };
   const choice = data.choices?.[0];
   const usage = data.usage ?? { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
 

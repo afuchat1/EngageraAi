@@ -1,6 +1,13 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Link, useLocation } from "wouter";
-import { useListModels, useChatCompletion } from "@workspace/api-client-react";
+import {
+  useListModels,
+  useChatCompletion,
+  useListConversations,
+  useGetConversationMessages,
+  useDeleteConversation,
+  setGuestSessionId,
+} from "@workspace/api-client-react";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import {
@@ -19,9 +26,23 @@ import {
   Brain,
   Mic,
   SquarePen,
+  Trash2,
+  MessageSquare,
 } from "lucide-react";
 
 type Message = { role: "user" | "assistant"; content: string };
+
+const GUEST_MESSAGE_LIMIT = 5;
+const GUEST_SESSION_KEY = "engagera_guest_session_id";
+
+function getOrCreateGuestSessionId(): string {
+  let id = localStorage.getItem(GUEST_SESSION_KEY);
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem(GUEST_SESSION_KEY, id);
+  }
+  return id;
+}
 
 const MODEL_ICONS: Record<string, React.ReactNode> = {
   "engagera-lite": <Zap className="h-3.5 w-3.5" />,
@@ -39,10 +60,21 @@ const SUGGESTED_PROMPTS = [
   { label: "Draft a project proposal", sub: "for a new feature" },
 ];
 
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
 export default function Landing() {
   const { user, loading: authLoading, signOut } = useAuth();
   const { data: models } = useListModels();
   const chatMutation = useChatCompletion();
+  const deleteConvMutation = useDeleteConversation();
   const [, navigate] = useLocation();
 
   const [messages, setMessages] = useState<Message[]>([]);
@@ -50,10 +82,44 @@ export default function Landing() {
   const [selectedModel, setSelectedModel] = useState("engagera-pro");
   const [modelOpen, setModelOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
+  const [loadingConvId, setLoadingConvId] = useState<number | null>(null);
+
+  const [guestSessionId] = useState<string>(() => getOrCreateGuestSessionId());
+  const [guestMessageCount, setGuestMessageCount] = useState<number>(0);
+  const [showGuestLimit, setShowGuestLimit] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
+
+  const isGuest = !user && !authLoading;
+
+  // ── Register guest session ID with the fetch client ───────────────────────
+  useEffect(() => {
+    if (!user && !authLoading) {
+      setGuestSessionId(guestSessionId);
+    } else {
+      setGuestSessionId(null);
+    }
+  }, [user, authLoading, guestSessionId]);
+
+  // ── Conversation list ──────────────────────────────────────────────────────
+  const { data: conversations, refetch: refetchConversations } = useListConversations();
+
+  // ── Load messages for a conversation when clicking it ─────────────────────
+  // Generated hook has enabled: !!(id) built-in; passing 0 disables it.
+  const { data: loadedMessages } = useGetConversationMessages(loadingConvId ?? 0);
+
+  useEffect(() => {
+    if (loadingConvId !== null && loadedMessages) {
+      setMessages(
+        loadedMessages.map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))
+      );
+      setActiveConversationId(loadingConvId);
+      setLoadingConvId(null);
+    }
+  }, [loadedMessages, loadingConvId]);
 
   useEffect(() => {
     if (models && models.length > 0 && !models.find((m) => m.id === selectedModel)) {
@@ -77,12 +143,28 @@ export default function Landing() {
 
   const selectedModelData = models?.find((m) => m.id === selectedModel);
 
+  const handleSelectConversation = useCallback((id: number) => {
+    setLoadingConvId(id);
+    setMessages([]);
+  }, []);
+
+  const handleDeleteConversation = useCallback(
+    async (e: React.MouseEvent, id: number) => {
+      e.stopPropagation();
+      deleteConvMutation.mutate(
+        { id },
+        { onSuccess: () => { refetchConversations(); if (activeConversationId === id) handleNewChat(); } }
+      );
+    },
+    [activeConversationId]
+  );
+
   const handleSend = (text?: string) => {
     const content = (text ?? input).trim();
     if (!content) return;
 
-    if (!user) {
-      navigate("/sign-in");
+    if (isGuest && guestMessageCount >= GUEST_MESSAGE_LIMIT) {
+      setShowGuestLimit(true);
       return;
     }
 
@@ -93,10 +175,29 @@ export default function Landing() {
     if (textareaRef.current) textareaRef.current.style.height = "auto";
 
     chatMutation.mutate(
-      { data: { messages: updated, model: selectedModel } },
+      {
+        data: {
+          messages: updated,
+          model: selectedModel,
+          ...(activeConversationId ? { conversationId: activeConversationId } : {}),
+        },
+      },
       {
         onSuccess: (res) => {
           setMessages([...updated, { role: "assistant", content: res.message.content }]);
+          if (res.conversationId) setActiveConversationId(res.conversationId);
+          if (res.guestMessageCount !== undefined) {
+            setGuestMessageCount(res.guestMessageCount);
+            if (res.guestMessageCount >= GUEST_MESSAGE_LIMIT) setShowGuestLimit(true);
+          }
+          refetchConversations();
+        },
+        onError: (err: unknown) => {
+          const e = err as { response?: { data?: { error?: string; guestMessageCount?: number } } };
+          if (e?.response?.data?.error === "GUEST_LIMIT_REACHED") {
+            setShowGuestLimit(true);
+            setGuestMessageCount(GUEST_MESSAGE_LIMIT);
+          }
         },
       }
     );
@@ -118,6 +219,8 @@ export default function Landing() {
   const handleNewChat = () => {
     setMessages([]);
     setInput("");
+    setActiveConversationId(null);
+    setShowGuestLimit(false);
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
       textareaRef.current.focus();
@@ -130,17 +233,19 @@ export default function Landing() {
     { href: "/docs", label: "Documentation", icon: FileText },
   ];
 
+  const guestRemaining = Math.max(0, GUEST_MESSAGE_LIMIT - guestMessageCount);
+
   return (
     <div className="flex h-screen bg-[#0a0a0a] text-foreground overflow-hidden">
-      {/* Sidebar */}
+      {/* ── Sidebar ──────────────────────────────────────────────────────────── */}
       <aside
         className={cn(
           "flex flex-col border-r border-white/[0.06] bg-[#111111] transition-all duration-200 shrink-0",
           sidebarOpen ? "w-64" : "w-0 overflow-hidden"
         )}
       >
-        {/* Top */}
-        <div className="flex items-center justify-between px-4 h-14 border-b border-white/[0.06]">
+        {/* Logo */}
+        <div className="flex items-center justify-between px-4 h-14 border-b border-white/[0.06] shrink-0">
           <div className="flex items-center gap-2">
             <div className="h-7 w-7 rounded-md bg-primary flex items-center justify-center shrink-0">
               <Sparkles className="h-4 w-4 text-primary-foreground" />
@@ -150,7 +255,7 @@ export default function Landing() {
         </div>
 
         {/* New Chat */}
-        <div className="px-3 pt-3">
+        <div className="px-3 pt-3 shrink-0">
           <button
             onClick={handleNewChat}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-white/[0.06] hover:text-foreground transition-colors"
@@ -161,7 +266,7 @@ export default function Landing() {
         </div>
 
         {/* Model picker */}
-        <div className="px-3 pt-2" ref={modelDropdownRef}>
+        <div className="px-3 pt-2 shrink-0" ref={modelDropdownRef}>
           <div className="relative">
             <button
               onClick={() => setModelOpen((v) => !v)}
@@ -171,7 +276,12 @@ export default function Landing() {
                 {MODEL_ICONS[selectedModel]}
                 <span className="text-foreground">{selectedModelData?.name ?? "Select model"}</span>
               </div>
-              <ChevronDown className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform", modelOpen && "rotate-180")} />
+              <ChevronDown
+                className={cn(
+                  "h-3.5 w-3.5 text-muted-foreground transition-transform",
+                  modelOpen && "rotate-180"
+                )}
+              />
             </button>
 
             {modelOpen && (
@@ -179,7 +289,10 @@ export default function Landing() {
                 {models?.map((m) => (
                   <button
                     key={m.id}
-                    onClick={() => { setSelectedModel(m.id); setModelOpen(false); }}
+                    onClick={() => {
+                      setSelectedModel(m.id);
+                      setModelOpen(false);
+                    }}
                     className={cn(
                       "w-full flex items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-white/[0.06] transition-colors text-left",
                       selectedModel === m.id ? "text-primary bg-primary/10" : "text-muted-foreground"
@@ -199,11 +312,87 @@ export default function Landing() {
           </div>
         </div>
 
-        {/* Spacer */}
-        <div className="flex-1" />
+        {/* ── Conversation history ──────────────────────────────────────────── */}
+        <div className="flex-1 overflow-y-auto px-2 py-3 min-h-0">
+          {conversations && conversations.length > 0 ? (
+            <div>
+              <p className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">
+                Recent chats
+              </p>
+              <div className="space-y-0.5">
+                {conversations.map((conv) => (
+                  <div
+                    key={conv.id}
+                    onClick={() => handleSelectConversation(conv.id)}
+                    className={cn(
+                      "group flex items-start gap-2 px-2.5 py-2 rounded-lg cursor-pointer transition-colors",
+                      activeConversationId === conv.id
+                        ? "bg-white/[0.08] text-foreground"
+                        : "hover:bg-white/[0.05] text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    <MessageSquare className="h-3.5 w-3.5 mt-0.5 shrink-0 opacity-60" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium truncate leading-tight">{conv.title}</p>
+                      <p className="text-[10px] text-muted-foreground/50 mt-0.5">
+                        {timeAgo(conv.updatedAt)}
+                      </p>
+                    </div>
+                    <button
+                      onClick={(e) => handleDeleteConversation(e, conv.id)}
+                      className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground/60 hover:text-red-400 p-0.5 rounded"
+                      title="Delete conversation"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full text-center px-3 py-6 opacity-40">
+              <MessageSquare className="h-6 w-6 mb-2 text-muted-foreground" />
+              <p className="text-xs text-muted-foreground">No conversations yet</p>
+            </div>
+          )}
+        </div>
+
+        {/* Guest usage meter */}
+        {isGuest && (
+          <div className="px-3 pb-2 shrink-0">
+            <div className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-3">
+              <div className="flex items-center justify-between mb-1.5">
+                <p className="text-[10px] font-medium text-muted-foreground">Free messages</p>
+                <p className="text-[10px] font-semibold text-foreground">
+                  {guestMessageCount}/{GUEST_MESSAGE_LIMIT}
+                </p>
+              </div>
+              <div className="h-1 w-full rounded-full bg-white/[0.06] overflow-hidden">
+                <div
+                  className={cn(
+                    "h-full rounded-full transition-all duration-500",
+                    guestMessageCount >= GUEST_MESSAGE_LIMIT ? "bg-red-500" : "bg-primary"
+                  )}
+                  style={{ width: `${Math.min(100, (guestMessageCount / GUEST_MESSAGE_LIMIT) * 100)}%` }}
+                />
+              </div>
+              {guestRemaining > 0 ? (
+                <p className="text-[10px] text-muted-foreground/60 mt-1.5">
+                  {guestRemaining} message{guestRemaining !== 1 ? "s" : ""} remaining
+                </p>
+              ) : (
+                <Link href="/sign-up">
+                  <p className="text-[10px] text-primary mt-1.5 cursor-pointer hover:underline font-medium">
+                    Sign up for unlimited access →
+                  </p>
+                </Link>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Nav links */}
-        <nav className="px-3 pb-2 space-y-0.5 border-t border-white/[0.06] pt-3">
+        <nav className="px-3 pb-2 space-y-0.5 border-t border-white/[0.06] pt-3 shrink-0">
           {navLinks.map(({ href, label, icon: Icon }) => (
             <Link key={href} href={href}>
               <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-white/[0.06] hover:text-foreground transition-colors cursor-pointer">
@@ -215,7 +404,7 @@ export default function Landing() {
         </nav>
 
         {/* Auth */}
-        <div className="px-3 pb-4 pt-1">
+        <div className="px-3 pb-4 pt-1 shrink-0">
           {authLoading ? null : user ? (
             <div className="flex items-center gap-2 px-3 py-2 rounded-lg">
               <div className="h-6 w-6 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
@@ -245,8 +434,8 @@ export default function Landing() {
         </div>
       </aside>
 
-      {/* Main */}
-      <div className="flex flex-col flex-1 min-w-0">
+      {/* ── Main ─────────────────────────────────────────────────────────────── */}
+      <div className="flex flex-col flex-1 min-w-0 relative">
         {/* Top bar */}
         <header className="h-14 border-b border-white/[0.06] flex items-center px-4 gap-3 shrink-0">
           <button
@@ -300,7 +489,6 @@ export default function Landing() {
         {/* Chat area */}
         <div className="flex-1 overflow-y-auto">
           {messages.length === 0 ? (
-            /* Empty state */
             <div className="flex flex-col items-center justify-center h-full px-4 pb-32">
               <div className="mb-8 text-center">
                 <div className="h-14 w-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto mb-5">
@@ -311,8 +499,20 @@ export default function Landing() {
                 </h1>
                 <p className="text-sm text-muted-foreground">
                   Powered by{" "}
-                  <span className="text-primary font-medium">{selectedModelData?.name ?? "Engagera"}</span>
+                  <span className="text-primary font-medium">
+                    {selectedModelData?.name ?? "Engagera"}
+                  </span>
                 </p>
+                {isGuest && (
+                  <p className="text-xs text-muted-foreground/50 mt-2">
+                    Try {guestRemaining} free message{guestRemaining !== 1 ? "s" : ""} ·{" "}
+                    <Link href="/sign-up">
+                      <span className="text-primary cursor-pointer hover:underline">
+                        Sign up for unlimited
+                      </span>
+                    </Link>
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-2 w-full max-w-xl">
@@ -322,17 +522,21 @@ export default function Landing() {
                     onClick={() => handleSend(p.label + " " + p.sub)}
                     className="text-left p-3.5 rounded-xl border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/[0.14] transition-all group"
                   >
-                    <p className="text-sm font-medium text-foreground/90 group-hover:text-foreground">{p.label}</p>
+                    <p className="text-sm font-medium text-foreground/90 group-hover:text-foreground">
+                      {p.label}
+                    </p>
                     <p className="text-xs text-muted-foreground mt-0.5">{p.sub}</p>
                   </button>
                 ))}
               </div>
             </div>
           ) : (
-            /* Messages */
             <div className="max-w-3xl mx-auto px-4 py-8 space-y-8">
               {messages.map((msg, i) => (
-                <div key={i} className={cn("flex gap-4", msg.role === "user" ? "justify-end" : "justify-start")}>
+                <div
+                  key={i}
+                  className={cn("flex gap-4", msg.role === "user" ? "justify-end" : "justify-start")}
+                >
                   {msg.role === "assistant" && (
                     <div className="h-8 w-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 mt-0.5">
                       <Sparkles className="h-4 w-4 text-primary" />
@@ -351,7 +555,7 @@ export default function Landing() {
                   {msg.role === "user" && (
                     <div className="h-8 w-8 rounded-lg bg-white/[0.08] flex items-center justify-center shrink-0 mt-0.5">
                       <span className="text-xs font-semibold">
-                        {user?.email?.[0]?.toUpperCase() ?? "U"}
+                        {user?.email?.[0]?.toUpperCase() ?? "G"}
                       </span>
                     </div>
                   )}
@@ -376,7 +580,7 @@ export default function Landing() {
           )}
         </div>
 
-        {/* Input */}
+        {/* Input area */}
         <div className="px-4 pb-6 pt-2 max-w-3xl mx-auto w-full">
           <div className="relative rounded-2xl border border-white/[0.1] bg-white/[0.04] focus-within:border-white/[0.2] focus-within:bg-white/[0.06] transition-all shadow-lg">
             <textarea
@@ -384,8 +588,12 @@ export default function Landing() {
               value={input}
               onChange={handleTextareaChange}
               onKeyDown={handleKeyDown}
-              placeholder={user ? "Message Engagera..." : "Sign in to start chatting..."}
-              disabled={chatMutation.isPending}
+              placeholder={
+                isGuest && guestMessageCount >= GUEST_MESSAGE_LIMIT
+                  ? "Sign up to continue chatting..."
+                  : "Message Engagera..."
+              }
+              disabled={chatMutation.isPending || (isGuest && guestMessageCount >= GUEST_MESSAGE_LIMIT)}
               rows={1}
               className="w-full resize-none bg-transparent px-4 pt-3.5 pb-12 text-sm placeholder:text-muted-foreground/50 focus:outline-none disabled:opacity-50 max-h-[200px]"
             />
@@ -400,7 +608,11 @@ export default function Landing() {
 
               <button
                 onClick={() => handleSend()}
-                disabled={!input.trim() || chatMutation.isPending}
+                disabled={
+                  !input.trim() ||
+                  chatMutation.isPending ||
+                  (isGuest && guestMessageCount >= GUEST_MESSAGE_LIMIT)
+                }
                 className="pointer-events-auto h-8 w-8 flex items-center justify-center rounded-lg bg-primary text-primary-foreground disabled:opacity-30 disabled:cursor-not-allowed hover:bg-primary/90 transition-all"
               >
                 <Send className="h-3.5 w-3.5" />
@@ -412,6 +624,41 @@ export default function Landing() {
             Engagera can make mistakes. Verify important information.
           </p>
         </div>
+
+        {/* ── Guest limit overlay ────────────────────────────────────────────── */}
+        {showGuestLimit && (
+          <div className="absolute inset-0 flex items-end justify-center pb-32 z-40 pointer-events-none">
+            <div className="pointer-events-auto w-full max-w-md mx-4">
+              <div className="rounded-2xl border border-white/[0.1] bg-[#161616] shadow-2xl p-6 text-center">
+                <div className="h-12 w-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto mb-4">
+                  <Sparkles className="h-6 w-6 text-primary" />
+                </div>
+                <h3 className="font-semibold text-lg mb-1">You've used your free messages</h3>
+                <p className="text-sm text-muted-foreground mb-5">
+                  Create a free account to unlock unlimited conversations, API access, and more.
+                </p>
+                <div className="flex gap-3">
+                  <Link href="/sign-up" className="flex-1">
+                    <button className="w-full px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors">
+                      Create free account
+                    </button>
+                  </Link>
+                  <Link href="/sign-in" className="flex-1">
+                    <button className="w-full px-4 py-2.5 rounded-xl border border-white/[0.1] bg-white/[0.04] text-sm font-medium hover:bg-white/[0.08] transition-colors">
+                      Sign in
+                    </button>
+                  </Link>
+                </div>
+                <button
+                  onClick={() => setShowGuestLimit(false)}
+                  className="mt-3 text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

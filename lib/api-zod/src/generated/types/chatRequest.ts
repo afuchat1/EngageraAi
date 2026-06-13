@@ -10,5 +10,7 @@ import type { ChatMessage } from './chatMessage';
 export interface ChatRequest {
   messages: ChatMessage[];
   model?: string;
+  /** Existing conversation to continue. Omit to auto-create a new one. */
+  conversationId?: number;
   stream?: boolean;
 }

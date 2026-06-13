@@ -122,6 +122,8 @@ export interface ChatMessage {
 export interface ChatRequest {
   messages: ChatMessage[];
   model?: string;
+  /** Existing conversation to continue. Omit to auto-create a new one. */
+  conversationId?: number;
   stream?: boolean;
 }
 
@@ -136,6 +138,33 @@ export interface ChatResponse {
   model: string;
   message: ChatMessage;
   usage: TokenUsage;
+  conversationId: number;
+  /** How many messages this guest session has used (guests only) */
+  guestMessageCount?: number;
+  /** Total free messages allowed for guests */
+  guestMessageLimit?: number;
+}
+
+export interface GuestLimitResponse {
+  error: string;
+  guestMessageCount: number;
+  guestMessageLimit: number;
+}
+
+export interface Conversation {
+  id: number;
+  title: string;
+  model: string;
+  messageCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ConversationMessage {
+  id: number;
+  role: string;
+  content: string;
+  createdAt: string;
 }
 
 export interface SuccessResponse {

@@ -18,6 +18,8 @@ tags:
     description: Available AI models
   - name: chat
     description: AI chat completions
+  - name: conversations
+    description: Conversation history
   - name: dashboard
     description: Dashboard summary data
 
@@ -197,10 +199,15 @@ paths:
     post:
       operationId: chatCompletion
       tags: [chat]
-      summary: Send a chat message to Engagera AI
+      summary: Send a chat message to Engagera AI (auth or guest via x-guest-session-id)
       parameters:
         - in: header
           name: x-user-id
+          schema:
+            type: string
+          required: false
+        - in: header
+          name: x-guest-session-id
           schema:
             type: string
           required: false
@@ -218,17 +225,92 @@ paths:
               schema:
                 $ref: "#/components/schemas/ChatResponse"
         "429":
-          description: Rate limited
+          description: Rate limited or guest limit reached
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/GuestLimitResponse"
         "500":
           description: AI error (safe fallback returned)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+
+  /conversations:
+    get:
+      operationId: listConversations
+      tags: [conversations]
+      summary: List conversations for the current user or guest session
+      parameters:
+        - in: header
+          name: x-guest-session-id
+          schema:
+            type: string
+          required: false
+      responses:
+        "200":
+          description: List of conversations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Conversation"
+
+  /conversations/{id}:
+    delete:
+      operationId: deleteConversation
+      tags: [conversations]
+      summary: Delete a conversation
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: integer
+          required: true
+        - in: header
+          name: x-guest-session-id
+          schema:
+            type: string
+          required: false
+      responses:
+        "200":
+          description: Conversation deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "404":
+          description: Not found
+
+  /conversations/{id}/messages:
+    get:
+      operationId: getConversationMessages
+      tags: [conversations]
+      summary: Get all messages in a conversation
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: integer
+          required: true
+        - in: header
+          name: x-guest-session-id
+          schema:
+            type: string
+          required: false
+      responses:
+        "200":
+          description: List of messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ConversationMessage"
+        "404":
+          description: Not found
 
 components:
   schemas:
@@ -414,13 +496,16 @@ components:
         model:
           type: string
           default: "engagera-pro"
+        conversationId:
+          type: integer
+          description: Existing conversation to continue. Omit to auto-create a new one.
         stream:
           type: boolean
           default: false
 
     ChatResponse:
       type: object
-      required: [id, model, message, usage]
+      required: [id, model, message, usage, conversationId]
       properties:
         id:
           type: string
@@ -430,6 +515,25 @@ components:
           $ref: "#/components/schemas/ChatMessage"
         usage:
           $ref: "#/components/schemas/TokenUsage"
+        conversationId:
+          type: integer
+        guestMessageCount:
+          type: integer
+          description: How many messages this guest session has used (guests only)
+        guestMessageLimit:
+          type: integer
+          description: Total free messages allowed for guests
+
+    GuestLimitResponse:
+      type: object
+      required: [error, guestMessageCount, guestMessageLimit]
+      properties:
+        error:
+          type: string
+        guestMessageCount:
+          type: integer
+        guestMessageLimit:
+          type: integer
 
     TokenUsage:
       type: object
@@ -441,6 +545,36 @@ components:
           type: integer
         totalTokens:
           type: integer
+
+    Conversation:
+      type: object
+      required: [id, title, model, messageCount, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        model:
+          type: string
+        messageCount:
+          type: integer
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+
+    ConversationMessage:
+      type: object
+      required: [id, role, content, createdAt]
+      properties:
+        id:
+          type: integer
+        role:
+          type: string
+        content:
+          type: string
+        createdAt:
+          type: string
 
     SuccessResponse:
       type: object

@@ -1,0 +1,3 @@
+- [Engagera DB convention](engagera-db-convention.md) — all tables in `public` schema with `engagera_` prefix; always use `engageraDb` alias
+- [Engagera guest access](engagera-guest-access.md) — guest session ID via `setGuestSessionId()` global, 5-message limit, 429 on breach
+- [OpenRouter free model status](openrouter-free-models.md) — working models as of June 2026; Venice-hosted ones rate-limit hard

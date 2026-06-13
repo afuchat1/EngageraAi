@@ -13,4 +13,9 @@ export interface ChatResponse {
   model: string;
   message: ChatMessage;
   usage: TokenUsage;
+  conversationId: number;
+  /** How many messages this guest session has used (guests only) */
+  guestMessageCount?: number;
+  /** Total free messages allowed for guests */
+  guestMessageLimit?: number;
 }
