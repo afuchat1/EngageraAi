@@ -1,20 +1,26 @@
-import express, { type Express } from "express";
+import express from "express";
 import cors from "cors";
-import pinoHttp from "pino-http";
+import type { Options as PinoHttpOptions } from "pino-http";
 import path from "path";
-import router from "./routes";
-import { logger } from "./lib/logger";
+import router from "./routes/index.js";
+import { logger } from "./lib/logger.js";
 
-const app: Express = express();
+// pino-http ships as CJS; handle the ESM default-import interop at runtime
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const pinoHttp: (opts: PinoHttpOptions) => express.RequestHandler =
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (await import("pino-http").then((m) => m.default ?? m)) as any;
+
+const app = express();
 
 app.use(
   pinoHttp({
     logger,
     serializers: {
-      req(req) {
+      req(req: { id: unknown; method: unknown; url?: string }) {
         return { id: req.id, method: req.method, url: req.url?.split("?")[0] };
       },
-      res(res) {
+      res(res: { statusCode: unknown }) {
         return { statusCode: res.statusCode };
       },
     },
@@ -47,7 +53,7 @@ if (process.env.NODE_ENV === "production" && !process.env.VERCEL) {
   app.use(express.static(frontendDist));
 
   // SPA fallback — any non-/api route serves index.html so client-side routing works
-  app.get("*", (_req, res) => {
+  app.get("*", (_req: express.Request, res: express.Response) => {
     res.sendFile(path.join(frontendDist, "index.html"));
   });
 }
