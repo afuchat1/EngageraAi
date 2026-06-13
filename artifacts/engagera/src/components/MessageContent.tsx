@@ -116,7 +116,6 @@ function ImageBlock({ src, alt }: { src: string; alt?: string }) {
           onError={() => setStatus("error")}
           style={{ display: status === "loaded" ? undefined : "none" }}
           className={`rounded-lg object-cover transition-all cursor-pointer ${expanded ? "max-w-full w-full" : "max-w-sm"}`}
-          crossOrigin="anonymous"
           onClick={() => setExpanded((v) => !v)}
         />
       )}
