@@ -28,6 +28,22 @@ app.use(
 );
 
 app.use(cors({ credentials: true, origin: true }));
+
+// Raw body for audio uploads — must be BEFORE express.json() so the stream
+// is not consumed by the JSON parser (which calls next() harmlessly on
+// non-JSON content-types, but leaves the stream position advanced on some
+// Express 5 builds). Matching /api/stt explicitly keeps the global JSON
+// parser available everywhere else.
+// Raw body for audio — must precede express.json(); uses a function type so
+// Express 5 reliably matches any audio/* content-type without regex quirks.
+app.use(
+  "/api/stt",
+  express.raw({
+    type: (req) => (req.headers["content-type"] ?? "").startsWith("audio/"),
+    limit: "12mb",
+  }),
+);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

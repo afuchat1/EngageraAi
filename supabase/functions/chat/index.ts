@@ -9,18 +9,19 @@ import { createClient } from "npm:@supabase/supabase-js@2";
  * Legacy IDs kept for backwards compatibility with older clients.
  */
 const MODEL_MAP: Record<string, string> = {
-  "engagera-2.0":    "anthropic/claude-sonnet-4-5",
-  "engagera-2.1":    "openai/gpt-4o",
-  // Legacy
+  // Current public lineup
+  "engagera-2.0":    "openai/gpt-4o",       // Primary — full knowledge, reliable
+  "engagera-2.1":    "openai/gpt-4o",       // Latest — same model, image-gen enabled by logic
+  // Legacy IDs — kept for backwards compatibility
   "engagera-lite":   "openai/gpt-4o-mini",
   "engagera-pro":    "openai/gpt-4o",
-  "engagera-reason": "anthropic/claude-sonnet-4-5",
-  "engagera-code":   "anthropic/claude-sonnet-4-5",
+  "engagera-reason": "openai/gpt-4o",
+  "engagera-code":   "openai/gpt-4o",
   "engagera-vision": "openai/gpt-4o",
   "engagera-voice":  "openai/gpt-4o-mini",
   "engagera-image":  "openai/gpt-4o",
 };
-const DEFAULT_MODEL = "anthropic/claude-sonnet-4-5";
+const DEFAULT_MODEL = "openai/gpt-4o";
 
 const GUEST_LIMIT = 5;
 const WINDOW_MS = 24 * 60 * 60 * 1000;

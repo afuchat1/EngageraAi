@@ -5,3 +5,4 @@
 - [Engagera edge function](engagera-edge-function.md) — chat via Supabase Edge Function; OPENROUTER_API_KEY Supabase-only; identity system prompt injected
 - [Engagera Vercel deployment](engagera-vercel.md) — vercel.json + api/index.ts adapter; 4 env vars required in Vercel dashboard
 - [Engagera image generation](image-generation.md) — SVG via gpt-4o edge fn; pollinations.ai went fully paid June 2026 (all models 402)
+- [TTS service status](tts-service-status.md) — ElevenLabs free tier disabled (proxy detect), OpenAI TTS quota exhausted; hook uses SpeechSynthesis with fast-fail

@@ -1,16 +1,34 @@
-import { cors, json } from "../_shared/helpers.ts";
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-guest-session-id",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+};
 
 const MODELS = [
-  { id: "engagera-lite",   name: "Engagera Lite",   description: "Fast and efficient for simple tasks",      category: "lite",   contextWindow: 128000, available: true },
-  { id: "engagera-pro",    name: "Engagera Pro",    description: "Balanced intelligence for everyday tasks", category: "pro",    contextWindow: 128000, available: true },
-  { id: "engagera-reason", name: "Engagera Reason", description: "Deep reasoning for complex problems",      category: "reason", contextWindow: 64000,  available: true },
-  { id: "engagera-code",   name: "Engagera Code",   description: "Specialized for programming tasks",        category: "code",   contextWindow: 128000, available: true },
-  { id: "engagera-vision", name: "Engagera Vision", description: "Image understanding and analysis",         category: "vision", contextWindow: 64000,  available: true },
-  { id: "engagera-voice",  name: "Engagera Voice",  description: "Optimized for speech and audio tasks",     category: "voice",  contextWindow: 32000,  available: true },
-  { id: "engagera-image",  name: "Engagera Image",  description: "Generate images from text descriptions",   category: "vision", contextWindow: 0,      available: true },
+  {
+    id: "engagera-2.0",
+    name: "Engagera 2.0",
+    description: "Primary model — full knowledge, fast, reliable for everyday tasks",
+    category: "primary",
+    contextWindow: 200000,
+    available: true,
+  },
+  {
+    id: "engagera-2.1",
+    name: "Engagera 2.1",
+    description: "Latest model — advanced reasoning, vision, and image generation",
+    category: "latest",
+    contextWindow: 128000,
+    available: true,
+  },
 ];
 
 Deno.serve((req: Request) => {
-  if (req.method === "OPTIONS") return cors();
-  return json(MODELS);
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: CORS_HEADERS });
+  }
+  return new Response(JSON.stringify(MODELS), {
+    status: 200,
+    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+  });
 });

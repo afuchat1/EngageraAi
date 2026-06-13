@@ -13,11 +13,28 @@ const HF_WHISPER = "https://api-inference.huggingface.co/models/openai/whisper-l
 
 router.post(
   "/stt",
-  express.raw({ type: /^audio\//, limit: "12mb" }),
+  // Route-level fallback — in case the app-level parser didn't fire.
+  // Uses a function type matcher (Express 5 regex support is unreliable).
+  express.raw({
+    type: (req) => (req.headers["content-type"] ?? "").startsWith("audio/"),
+    limit: "12mb",
+  }),
   async (req, res) => {
-    const body = req.body as Buffer;
+    // If still not a Buffer (stream already consumed or wrong content-type),
+    // read directly from the request stream as a last resort.
+    let body: Buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
 
-    if (!Buffer.isBuffer(body) || body.length < 100) {
+    if (body.length === 0) {
+      const chunks: Buffer[] = [];
+      await new Promise<void>((resolve) => {
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", resolve);
+        req.on("error", resolve);
+      });
+      body = Buffer.concat(chunks);
+    }
+
+    if (body.length < 100) {
       res.status(400).json({ error: "No audio data provided" });
       return;
     }
