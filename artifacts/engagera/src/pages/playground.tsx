@@ -128,8 +128,8 @@ export default function Playground() {
                   )}
                 >
                   {msg.role === "assistant" && (
-                    <div className="h-7 w-7 rounded-md border border-border bg-card flex items-center justify-center shrink-0 mt-0.5">
-                      <img src="/logo.png" alt="" className="h-4 w-4 object-contain" />
+                    <div className="h-7 w-7 rounded-md flex items-center justify-center shrink-0 mt-0.5">
+                      <img src="/logo.png" alt="" className="h-4 w-4 object-contain opacity-70" />
                     </div>
                   )}
                   <div
@@ -151,8 +151,8 @@ export default function Playground() {
 
               {chatMutation.isPending && (
                 <div className="flex gap-3 justify-start">
-                  <div className="h-7 w-7 rounded-md border border-border bg-card flex items-center justify-center shrink-0 mt-0.5">
-                    <img src="/logo.png" alt="" className="h-4 w-4 object-contain" />
+                  <div className="h-7 w-7 rounded-md flex items-center justify-center shrink-0 mt-0.5">
+                    <img src="/logo.png" alt="" className="h-4 w-4 object-contain opacity-70" />
                   </div>
                   <div className="bg-card border border-border rounded-xl rounded-bl-sm px-4 py-3 flex gap-1.5 items-center">
                     <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: "0ms" }} />

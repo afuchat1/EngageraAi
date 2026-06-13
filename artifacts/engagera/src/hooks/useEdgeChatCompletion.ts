@@ -1,15 +1,20 @@
 import { useMutation } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 
-interface ChatMessage {
+export type ContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
+export interface ChatMessage {
   role: "user" | "assistant" | "system";
-  content: string;
+  content: string | ContentPart[];
 }
 
 interface ChatRequest {
   messages: ChatMessage[];
   model: string;
   conversationId?: number;
+  contextHint?: string;
 }
 
 interface ChatResponse {
@@ -35,7 +40,8 @@ async function callEdgeChat(request: ChatRequest): Promise<ChatResponse> {
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   } else {
-    const guestId = sessionStorage.getItem("engagera_guest_id") ??
+    const guestId =
+      sessionStorage.getItem("engagera_guest_id") ??
       (() => {
         const id = `guest_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         sessionStorage.setItem("engagera_guest_id", id);
@@ -52,7 +58,10 @@ async function callEdgeChat(request: ChatRequest): Promise<ChatResponse> {
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw Object.assign(new Error(err.error ?? "Chat request failed"), { status: res.status, data: err });
+    throw Object.assign(new Error(err.error ?? "Chat request failed"), {
+      status: res.status,
+      data: err,
+    });
   }
 
   return res.json();

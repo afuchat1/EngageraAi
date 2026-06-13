@@ -3,7 +3,7 @@ import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { useState } from "react";
-import { Copy, Check, ZoomIn } from "lucide-react";
+import { Copy, Check, ZoomIn, RefreshCw, ImageOff } from "lucide-react";
 
 interface MessageContentProps {
   content: string;
@@ -66,35 +66,65 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
 }
 
 function ImageBlock({ src, alt }: { src: string; alt?: string }) {
+  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
+  const [retrySeed, setRetrySeed] = useState(0);
   const [expanded, setExpanded] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+
+  const retrySrc = retrySeed > 0
+    ? src.replace(/[?&]seed=\d+/, (m) => m.replace(/\d+/, String(Date.now())))
+    : src;
+
+  const handleRetry = () => {
+    setStatus("loading");
+    setRetrySeed((s) => s + 1);
+  };
 
   return (
     <div className="my-3">
+      {status === "loading" && (
+        <div className="w-64 h-48 rounded-lg border border-white/[0.08] bg-[#1a1a1a] flex flex-col items-center justify-center gap-3">
+          <div className="flex gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50 animate-bounce" style={{ animationDelay: "0ms" }} />
+            <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50 animate-bounce" style={{ animationDelay: "150ms" }} />
+            <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50 animate-bounce" style={{ animationDelay: "300ms" }} />
+          </div>
+          <span className="text-xs text-muted-foreground/50">Generating image…</span>
+        </div>
+      )}
+
+      {status === "error" && (
+        <div className="w-64 h-48 rounded-lg border border-white/[0.08] bg-[#1a1a1a] flex flex-col items-center justify-center gap-3">
+          <ImageOff className="h-6 w-6 text-muted-foreground/30" />
+          <p className="text-xs text-muted-foreground/50">Image failed to load</p>
+          <button
+            onClick={handleRetry}
+            className="flex items-center gap-1.5 text-xs text-primary/70 hover:text-primary transition-colors"
+          >
+            <RefreshCw className="h-3 w-3" />
+            Try again
+          </button>
+        </div>
+      )}
+
       <div
-        className="relative group inline-block max-w-full cursor-pointer"
+        className={`relative group inline-block cursor-pointer ${status !== "loaded" ? "hidden" : ""}`}
         onClick={() => setExpanded((v) => !v)}
       >
         <img
-          src={src}
+          key={retrySeed}
+          src={retrySrc}
           alt={alt || "Generated image"}
-          onLoad={() => setLoaded(true)}
-          className={`rounded-lg border border-white/[0.08] max-w-sm w-full object-cover transition-all ${
-            expanded ? "max-w-full" : "max-w-sm"
-          } ${loaded ? "opacity-100" : "opacity-0"}`}
+          onLoad={() => setStatus("loaded")}
+          onError={() => setStatus("error")}
+          className={`rounded-lg max-w-sm w-full object-cover transition-all ${expanded ? "max-w-full" : "max-w-sm"}`}
+          crossOrigin="anonymous"
         />
-        {!loaded && (
-          <div className="w-64 h-40 rounded-lg border border-white/[0.08] bg-[#1a1a1a] flex items-center justify-center">
-            <span className="text-xs text-muted-foreground animate-pulse">Loading image…</span>
-          </div>
-        )}
-        {loaded && (
-          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 rounded p-1">
-            <ZoomIn className="h-3.5 w-3.5 text-white/80" />
-          </div>
-        )}
+        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 rounded p-1">
+          <ZoomIn className="h-3.5 w-3.5 text-white/80" />
+        </div>
       </div>
-      {alt && alt !== "Generated image" && (
+
+      {status === "loaded" && alt && alt !== "Generated image" && (
         <p className="text-[11px] text-muted-foreground/50 mt-1.5 italic">{alt}</p>
       )}
     </div>
@@ -131,18 +161,20 @@ export function MessageContent({ content }: MessageContentProps) {
               {children}
             </ol>
           ),
-          li: ({ children, ordered, index }) => (
-            <li className="flex gap-2 text-foreground/85 leading-relaxed">
-              {ordered ? (
-                <span className="text-primary/60 font-mono text-xs mt-0.5 shrink-0 w-4">
-                  {(index ?? 0) + 1}.
-                </span>
-              ) : (
-                <span className="text-primary/50 mt-1.5 shrink-0 h-1.5 w-1.5 rounded-full bg-current" />
-              )}
-              <span>{children}</span>
-            </li>
-          ),
+          li: ({ children, ...props }) => {
+            const node = (props as any).node;
+            const isOrdered = node?.parentNode?.tagName === "ol" || node?.parent?.tagName === "ol";
+            return (
+              <li className="flex gap-2 text-foreground/85 leading-relaxed">
+                {isOrdered ? (
+                  <span className="text-primary/60 font-mono text-xs mt-0.5 shrink-0 w-4">•</span>
+                ) : (
+                  <span className="text-primary/50 mt-1.5 shrink-0 h-1.5 w-1.5 rounded-full bg-current" />
+                )}
+                <span>{children}</span>
+              </li>
+            );
+          },
 
           strong: ({ children }) => (
             <strong className="font-semibold text-foreground">{children}</strong>
@@ -172,9 +204,8 @@ export function MessageContent({ content }: MessageContentProps) {
 
           pre: ({ children }) => <>{children}</>,
 
-          img: ({ src, alt }) => (
-            src ? <ImageBlock src={src} alt={alt} /> : null
-          ),
+          img: ({ src, alt }) =>
+            src ? <ImageBlock src={src} alt={alt} /> : null,
 
           code: ({ className, children }) => {
             const match = /language-(\w+)/.exec(className || "");

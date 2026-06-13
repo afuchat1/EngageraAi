@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Link } from "wouter";
 import {
   useListModels,
-  useChatCompletion,
   useListConversations,
   useDeleteConversation,
   useGetConversationMessages,
@@ -10,6 +9,8 @@ import {
 } from "@workspace/api-client-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useUserPreferences } from "@/hooks/useUserPreferences";
+import { useEdgeChatCompletion, ContentPart } from "@/hooks/useEdgeChatCompletion";
+import { useVoice } from "@/hooks/useVoice";
 import { cn } from "@/lib/utils";
 import { MessageContent } from "@/components/MessageContent";
 import {
@@ -26,14 +27,34 @@ import {
   Eye,
   Brain,
   Mic,
+  MicOff,
   SquarePen,
   Trash2,
   Clock,
   AlignJustify,
   ImageIcon,
+  Paperclip,
+  X,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 
-type Message = { role: "user" | "assistant"; content: string };
+type MessageContent = string | ContentPart[];
+type Message = { role: "user" | "assistant"; content: MessageContent };
+
+interface Attachment {
+  id: string;
+  name: string;
+  kind: "image" | "text";
+  preview?: string;
+  content: string;
+  mimeType: string;
+}
+
+function getTextContent(content: MessageContent): string {
+  if (typeof content === "string") return content;
+  return content.filter((p): p is { type: "text"; text: string } => p.type === "text").map((p) => p.text).join(" ");
+}
 
 const GUEST_DAILY_LIMIT = 5;
 const GUEST_SESSION_KEY = "engagera_guest_session_id";
@@ -111,7 +132,7 @@ function timeAgo(dateStr: string): string {
 export default function Landing() {
   const { user, loading: authLoading } = useAuth();
   const { data: models } = useListModels();
-  const chatMutation = useChatCompletion();
+  const chatMutation = useEdgeChatCompletion();
   const deleteConvMutation = useDeleteConversation();
   const { recordMessage, getContextHint } = useUserPreferences();
 
@@ -124,6 +145,9 @@ export default function Landing() {
   const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
   const [loadingConvId, setLoadingConvId] = useState<number | null>(null);
   const [guestMessageCount, setGuestMessageCount] = useState(0);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [voiceMode, setVoiceMode] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [windowResetAt, setWindowResetAt] = useState<string | null>(null);
   const [countdown, setCountdown] = useState("");
 
@@ -246,58 +270,101 @@ export default function Landing() {
   const handleNewChat = () => {
     setMessages([]);
     setInput("");
+    setAttachments([]);
     setActiveConversationId(null);
     if (isGuest) saveGuestMessages(guestSessionId, []);
     textareaRef.current?.focus();
   };
 
-  const handleSend = (text?: string) => {
-    const content = (text ?? input).trim();
-    if (!content || chatMutation.isPending || isLimited) return;
+  // ── Voice hook ────────────────────────────────────────────────────────────
+  const voice = useVoice({
+    onTranscript: (text) => {
+      setInput(text);
+      setTimeout(() => handleSendWithContent(text, []), 80);
+    },
+  });
 
-    if (isGuest && guestMessageCount >= GUEST_DAILY_LIMIT && !windowResetAt) {
-      return;
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    files.forEach((file) => {
+      const reader = new FileReader();
+      const isImage = file.type.startsWith("image/");
+      if (isImage) {
+        reader.onload = () => {
+          setAttachments((prev) => [
+            ...prev,
+            { id: crypto.randomUUID(), name: file.name, kind: "image", content: reader.result as string, preview: reader.result as string, mimeType: file.type },
+          ]);
+          if (selectedModel !== "engagera-vision" && selectedModel !== "engagera-image") {
+            setSelectedModel("engagera-vision");
+          }
+        };
+        reader.readAsDataURL(file);
+      } else {
+        reader.onload = () => {
+          setAttachments((prev) => [
+            ...prev,
+            { id: crypto.randomUUID(), name: file.name, kind: "text", content: reader.result as string, mimeType: file.type },
+          ]);
+        };
+        reader.readAsText(file);
+      }
+    });
+    e.target.value = "";
+  };
+
+  const buildContent = (text: string, atts: Attachment[]): MessageContent => {
+    const textFiles = atts.filter((a) => a.kind === "text");
+    const images = atts.filter((a) => a.kind === "image");
+    let finalText = text;
+    if (textFiles.length > 0) {
+      finalText = textFiles.map((f) => `File: ${f.name}\n\`\`\`\n${f.content}\n\`\`\``).join("\n\n") + (text ? "\n\n" + text : "");
     }
+    if (images.length === 0) return finalText;
+    const parts: ContentPart[] = [];
+    if (finalText) parts.push({ type: "text", text: finalText });
+    images.forEach((img) => parts.push({ type: "image_url", image_url: { url: img.content } }));
+    return parts;
+  };
 
-    const userMsg: Message = { role: "user", content };
+  const handleSendWithContent = (text: string, atts: Attachment[]) => {
+    const rawText = text.trim();
+    if ((!rawText && atts.length === 0) || chatMutation.isPending || isLimited) return;
+    if (isGuest && guestMessageCount >= GUEST_DAILY_LIMIT && !windowResetAt) return;
+
+    const msgContent = buildContent(rawText, atts);
+    const userMsg: Message = { role: "user", content: msgContent };
     const updated = [...messages, userMsg];
     setMessages(updated);
     setInput("");
+    setAttachments([]);
     if (textareaRef.current) textareaRef.current.style.height = "auto";
+    recordMessage(rawText || "image", selectedModel);
 
-    // Record message for personalization learning
-    recordMessage(content, selectedModel);
-
-    // ── Image generation (Pollinations.ai — free, no API key) ────────────────
-    if (selectedModel === "engagera-image") {
-      const encodedPrompt = encodeURIComponent(content);
-      const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=768&nologo=true&model=flux&seed=${Date.now()}`;
-      const imageMarkdown = `![${content}](${imageUrl})`;
+    if (selectedModel === "engagera-image" && atts.length === 0) {
+      const encodedPrompt = encodeURIComponent(rawText);
+      const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=768&model=flux&seed=${Date.now()}`;
       setTimeout(() => {
-        setMessages([...updated, { role: "assistant", content: imageMarkdown }]);
+        setMessages([...updated, { role: "assistant", content: `![${rawText}](${imageUrl})` }]);
       }, 200);
       return;
     }
 
     const contextHint = getContextHint();
-
     chatMutation.mutate(
       {
-        data: {
-          messages: updated,
-          model: selectedModel,
-          ...(activeConversationId ? { conversationId: activeConversationId } : {}),
-          ...(contextHint ? { contextHint } : {}),
-        } as Parameters<typeof chatMutation.mutate>[0]["data"],
+        messages: updated as any,
+        model: selectedModel,
+        ...(activeConversationId ? { conversationId: activeConversationId } : {}),
+        ...(contextHint ? { contextHint } : {}),
       },
       {
         onSuccess: (res) => {
           const withReply: Message[] = [...updated, { role: "assistant", content: res.message.content }];
           setMessages(withReply);
           if (res.conversationId) setActiveConversationId(res.conversationId);
-          if (res.guestMessageCount !== undefined) {
-            setGuestMessageCount(res.guestMessageCount);
-          }
+          if (res.guestMessageCount !== undefined) setGuestMessageCount(res.guestMessageCount);
+          if (voiceMode) voice.speak(res.message.content);
           refetchConversations();
         },
         onError: (err: unknown) => {
@@ -313,6 +380,8 @@ export default function Landing() {
       }
     );
   };
+
+  const handleSend = (text?: string) => handleSendWithContent(text ?? input, attachments);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -582,8 +651,8 @@ export default function Landing() {
               {messages.map((msg, i) => (
                 <div key={i} className={cn("flex gap-3", msg.role === "user" ? "justify-end" : "justify-start")}>
                   {msg.role === "assistant" && (
-                    <div className="h-7 w-7 border border-[#1a1a1a] flex items-center justify-center shrink-0 mt-0.5">
-                      <img src="/logo.png" alt="" className="h-4 w-4 object-contain" />
+                    <div className="h-7 w-7 flex items-center justify-center shrink-0 mt-0.5">
+                      <img src="/logo.png" alt="" className="h-4 w-4 object-contain opacity-70" />
                     </div>
                   )}
                   <div className={cn(
@@ -593,9 +662,23 @@ export default function Landing() {
                       : "text-foreground/90"
                   )}>
                     {msg.role === "user" ? (
-                      <div className="whitespace-pre-wrap">{msg.content}</div>
+                      <div>
+                        {Array.isArray(msg.content) ? (
+                          <>
+                            {msg.content.map((part, pi) =>
+                              part.type === "text" ? (
+                                <div key={pi} className="whitespace-pre-wrap">{part.text}</div>
+                              ) : part.type === "image_url" ? (
+                                <img key={pi} src={part.image_url.url} alt="attachment" className="mt-2 max-w-[200px] rounded-lg" />
+                              ) : null
+                            )}
+                          </>
+                        ) : (
+                          <div className="whitespace-pre-wrap">{msg.content}</div>
+                        )}
+                      </div>
                     ) : (
-                      <MessageContent content={msg.content} />
+                      <MessageContent content={typeof msg.content === "string" ? msg.content : getTextContent(msg.content)} />
                     )}
                   </div>
                 </div>
@@ -603,8 +686,8 @@ export default function Landing() {
 
               {chatMutation.isPending && (
                 <div className="flex gap-3 justify-start">
-                  <div className="h-7 w-7 border border-[#1a1a1a] flex items-center justify-center shrink-0 mt-0.5">
-                    <img src="/logo.png" alt="" className="h-4 w-4 object-contain" />
+                  <div className="h-7 w-7 flex items-center justify-center shrink-0 mt-0.5">
+                    <img src="/logo.png" alt="" className="h-4 w-4 object-contain opacity-70" />
                   </div>
                   <div className="flex items-center gap-1.5 px-4 py-3">
                     <span className="h-1.5 w-1.5 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
@@ -662,6 +745,38 @@ export default function Landing() {
             </div>
           )}
 
+          {/* Attachment preview strip */}
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-2 px-1">
+              {attachments.map((att) => (
+                <div key={att.id} className="relative group flex items-center gap-1.5 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-2 py-1.5 text-xs text-muted-foreground">
+                  {att.kind === "image" && att.preview ? (
+                    <img src={att.preview} alt="" className="h-6 w-6 rounded object-cover shrink-0" />
+                  ) : (
+                    <Paperclip className="h-3 w-3 shrink-0" />
+                  )}
+                  <span className="max-w-[100px] truncate">{att.name}</span>
+                  <button
+                    onClick={() => setAttachments((prev) => prev.filter((a) => a.id !== att.id))}
+                    className="ml-0.5 text-muted-foreground/40 hover:text-foreground transition-colors"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,.txt,.md,.csv,.json,.js,.ts,.py,.html,.css,.xml,.yaml,.yml"
+            multiple
+            className="hidden"
+            onChange={handleFileChange}
+          />
+
           {/* Pill */}
           <div className={cn(
             "flex items-end rounded-full border transition-colors",
@@ -686,22 +801,81 @@ export default function Landing() {
               onChange={handleTextareaChange}
               onKeyDown={handleKeyDown}
               placeholder={
-                isLimited
+                voice.listening
+                  ? "Listening…"
+                  : isLimited
                   ? `Available in ${countdown}`
                   : isGuest && guestMessageCount >= GUEST_DAILY_LIMIT
                   ? "Sign up to continue..."
+                  : attachments.length > 0
+                  ? "Add a message (optional)…"
                   : "Message Engagera..."
               }
-              disabled={chatMutation.isPending || isLimited}
+              disabled={chatMutation.isPending || isLimited || voice.listening}
               rows={1}
               className="flex-1 bg-transparent text-sm px-3 py-3 placeholder:text-muted-foreground/40 focus:outline-none resize-none max-h-[120px] min-h-0"
             />
 
-            {/* Send */}
-            <div className="pr-2 pb-2 pl-1 flex items-end">
+            {/* Right-side controls */}
+            <div className="pr-2 pb-2 pl-1 flex items-end gap-1">
+              {/* File upload */}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={chatMutation.isPending || isLimited}
+                title="Attach file"
+                className="h-8 w-8 flex items-center justify-center rounded-full text-muted-foreground/40 hover:text-muted-foreground disabled:opacity-20 transition-colors"
+              >
+                <Paperclip className="h-3.5 w-3.5" />
+              </button>
+
+              {/* Voice */}
+              {voice.supported && (
+                <button
+                  onClick={() => {
+                    if (voice.listening) {
+                      voice.stopListening();
+                    } else {
+                      setVoiceMode(true);
+                      voice.startListening();
+                    }
+                  }}
+                  disabled={chatMutation.isPending || isLimited}
+                  title={voice.listening ? "Stop listening" : "Voice input"}
+                  className={cn(
+                    "h-8 w-8 flex items-center justify-center rounded-full transition-all",
+                    voice.listening
+                      ? "bg-red-500/20 text-red-400 animate-pulse"
+                      : voiceMode
+                      ? "text-primary/70 hover:text-primary"
+                      : "text-muted-foreground/40 hover:text-muted-foreground",
+                    (chatMutation.isPending || isLimited) && "opacity-20"
+                  )}
+                >
+                  {voice.listening ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
+                </button>
+              )}
+
+              {/* TTS toggle when voice mode active */}
+              {voiceMode && (
+                <button
+                  onClick={() => {
+                    if (voice.speaking) voice.stopSpeaking();
+                    else setVoiceMode(false);
+                  }}
+                  title={voice.speaking ? "Stop speaking" : "Disable voice mode"}
+                  className={cn(
+                    "h-8 w-8 flex items-center justify-center rounded-full transition-colors",
+                    voice.speaking ? "text-primary animate-pulse" : "text-muted-foreground/40 hover:text-muted-foreground"
+                  )}
+                >
+                  {voice.speaking ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
+                </button>
+              )}
+
+              {/* Send */}
               <button
                 onClick={() => handleSend()}
-                disabled={!input.trim() || chatMutation.isPending || isLimited}
+                disabled={(!input.trim() && attachments.length === 0) || chatMutation.isPending || isLimited}
                 className="h-8 w-8 flex items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-30 disabled:cursor-not-allowed hover:bg-primary/90 transition-all"
               >
                 {chatMutation.isPending ? (
