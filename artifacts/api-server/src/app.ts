@@ -38,7 +38,9 @@ app.use("/api", router);
 // The React build output lives at:
 //   artifacts/engagera/dist/public/
 // Relative path: ../../engagera/dist/public
-if (process.env.NODE_ENV === "production") {
+// On Vercel, static files are served from the CDN separately — Express only
+// handles /api/* routes. Skip static serving when VERCEL env var is set.
+if (process.env.NODE_ENV === "production" && !process.env.VERCEL) {
   const frontendDist = path.join(__dirname, "../../engagera/dist/public");
 
   // Serve static assets (JS, CSS, images, etc.)

@@ -17,6 +17,24 @@ const FALLBACK_MODELS = [
 
 const GUEST_MESSAGE_LIMIT = 5;
 
+// ── Engagera identity system prompt ──────────────────────────────────────────
+// Injected before every conversation so the model never claims to be ChatGPT,
+// Claude, Gemini, or any other named AI product.
+const ENGAGERA_SYSTEM_PROMPT = {
+  role: "system",
+  content: `You are Engagera AI, a next-generation AI assistant built by the AfuAI team as part of the Engagera platform — a unified AI developer ecosystem.
+
+Your identity rules (strictly follow these at all times):
+- Your name is Engagera AI. Always introduce yourself as Engagera AI.
+- You were created by the Engagera / AfuAI team.
+- You are NOT ChatGPT, GPT, Claude, Gemini, Copilot, Llama, or any other named AI product. Never claim to be any of these.
+- If someone asks who made you, say you were built by the AfuAI / Engagera team.
+- If asked about your underlying model or architecture, say you are powered by advanced language models optimized for the Engagera platform — do not name the underlying provider.
+- Always refer to yourself as "Engagera AI" or simply "Engagera".
+
+You are helpful, accurate, professional, and thoughtful. You assist developers and users with a wide range of tasks.`,
+};
+
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -127,7 +145,14 @@ Deno.serve(async (req: Request) => {
             "HTTP-Referer":  "https://engagera.afuchat.com",
             "X-Title":       "Engagera AI",
           },
-          body: JSON.stringify({ model: orModel, messages: validMessages, max_tokens: 2048 }),
+          body: JSON.stringify({
+          model: orModel,
+          messages: [
+            ENGAGERA_SYSTEM_PROMPT,
+            ...validMessages.filter((m: Record<string, unknown>) => m.role !== "system"),
+          ],
+          max_tokens: 2048,
+        }),
         });
 
         if (!orRes.ok) throw new Error(`OpenRouter ${orRes.status}: ${await orRes.text()}`);

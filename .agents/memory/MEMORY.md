@@ -2,4 +2,5 @@
 - [Engagera guest access](engagera-guest-access.md) — guest session ID via `setGuestSessionId()` global, 5-message limit, 429 on breach
 - [OpenRouter free model status](openrouter-free-models.md) — working models as of June 2026; Venice-hosted ones rate-limit hard
 - [Engagera storage audit](engagera-storage-audit.md) — Supabase-only confirmed; DATABASE_URL and @workspace/db removed; engagera schema dropped
-- [Engagera edge function](engagera-edge-function.md) — chat runs via Supabase Edge Function; OPENROUTER_API_KEY is a Supabase secret only (not Replit)
+- [Engagera edge function](engagera-edge-function.md) — chat via Supabase Edge Function; OPENROUTER_API_KEY Supabase-only; identity system prompt injected
+- [Engagera Vercel deployment](engagera-vercel.md) — vercel.json + api/index.ts adapter; 4 env vars required in Vercel dashboard

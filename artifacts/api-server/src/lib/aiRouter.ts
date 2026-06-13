@@ -67,17 +67,45 @@ async function callOpenRouter(
   };
 }
 
+// ── Engagera AI system prompt ─────────────────────────────────────────────────
+// Injected at the start of every conversation so the model never claims to be
+// ChatGPT, Claude, Gemini, or any other named AI product.
+const ENGAGERA_SYSTEM_PROMPT: ChatMessage = {
+  role: "system",
+  content: `You are Engagera AI, a next-generation AI assistant built by the AfuAI team as part of the Engagera platform — a unified AI developer ecosystem.
+
+Your identity rules (strictly follow these at all times):
+- Your name is Engagera AI. Always introduce yourself as Engagera AI.
+- You were created by the Engagera / AfuAI team.
+- You are NOT ChatGPT, GPT, Claude, Gemini, Copilot, Llama, or any other named AI product. Never claim to be any of these.
+- If someone asks who made you, say you were built by the AfuAI / Engagera team.
+- If asked about your underlying model or architecture, say you are powered by advanced language models optimized for the Engagera platform — do not name the underlying provider.
+- Always refer to yourself as "Engagera AI" or simply "Engagera".
+
+You are helpful, accurate, professional, and thoughtful. You assist developers and users with a wide range of tasks.`,
+};
+
+/**
+ * Prepend the Engagera system prompt if the messages array does not already
+ * contain a system message. This ensures identity is always established.
+ */
+function withSystemPrompt(messages: ChatMessage[]): ChatMessage[] {
+  const hasSystem = messages.some((m) => m.role === "system");
+  return hasSystem ? messages : [ENGAGERA_SYSTEM_PROMPT, ...messages];
+}
+
 export async function routeChat(
   engageraModel: string,
   messages: ChatMessage[],
 ): Promise<ChatResult> {
   const mapped = ENGAGERA_MODEL_MAP[engageraModel] ?? ENGAGERA_MODEL_MAP["engagera-pro"];
+  const messagesWithPrompt = withSystemPrompt(messages);
 
   const modelsToTry = [mapped.model, ...FALLBACK_MODELS.filter((m) => m !== mapped.model)];
 
   for (const model of modelsToTry) {
     try {
-      const result = await callOpenRouter(model, messages);
+      const result = await callOpenRouter(model, messagesWithPrompt);
       logger.info({ engageraModel, internalModel: model }, "AI request routed");
       return result;
     } catch (err) {
