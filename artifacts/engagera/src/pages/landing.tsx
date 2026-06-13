@@ -154,6 +154,7 @@ export default function Landing() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
+  const sidebarModelRef  = useRef<HTMLDivElement>(null);
 
   const isGuest = !user && !authLoading;
   const isLimited = isGuest && !!windowResetAt;
@@ -230,9 +231,10 @@ export default function Landing() {
   // ── Close model dropdown on outside click ─────────────────────────────────
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (modelDropdownRef.current && !modelDropdownRef.current.contains(e.target as Node)) {
-        setModelOpen(false);
-      }
+      const t = e.target as Node;
+      const inBottom  = modelDropdownRef.current?.contains(t);
+      const inSidebar = sidebarModelRef.current?.contains(t);
+      if (!inBottom && !inSidebar) setModelOpen(false);
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
@@ -439,7 +441,7 @@ export default function Landing() {
 
         {/* Model picker */}
         <div className="px-3 pt-1 shrink-0">
-          <div className="relative">
+          <div ref={sidebarModelRef} className="relative">
             <button
               onClick={() => setModelOpen((v) => !v)}
               className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-xs text-muted-foreground hover:bg-[#1a1a1a] hover:text-foreground transition-colors"
@@ -732,32 +734,6 @@ export default function Landing() {
             </div>
           )}
 
-          {/* Model dropdown (opens above) */}
-          {modelOpen && (
-            <div ref={modelDropdownRef} className="mb-2 border border-[#1a1a1a] bg-[#111] overflow-hidden">
-              {Array.isArray(models) && models.map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => { setSelectedModel(m.id); setModelOpen(false); }}
-                  className={cn(
-                    "w-full flex items-center gap-2.5 px-4 py-2.5 text-xs text-left transition-colors",
-                    m.id === selectedModel
-                      ? "bg-[#1a1a1a] text-foreground"
-                      : "text-muted-foreground hover:bg-[#161616] hover:text-foreground"
-                  )}
-                >
-                  {MODEL_ICONS[m.id]}
-                  <div>
-                    <p className="font-medium">{m.name}</p>
-                    {m.description && <p className="text-[10px] text-muted-foreground/60 mt-0.5">{m.description}</p>}
-                  </div>
-                  {m.id === selectedModel && (
-                    <span className="ml-auto text-[10px] text-primary font-medium">Active</span>
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
 
           {/* Attachment preview strip */}
           {attachments.length > 0 && (
@@ -799,14 +775,41 @@ export default function Landing() {
               : "border-[#222] focus-within:border-[#333] bg-[#111]"
           )}>
             {/* Model selector */}
-            <button
-              onClick={() => setModelOpen((v) => !v)}
-              className="flex items-center gap-1.5 pl-4 pr-3 py-3 text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0 border-r border-[#1a1a1a]"
-            >
-              {MODEL_ICONS[selectedModel]}
-              <span className="hidden sm:inline">{selectedModelData?.name ?? "Model"}</span>
-              <ChevronDown className={cn("h-3 w-3 transition-transform", modelOpen && "rotate-180")} />
-            </button>
+            <div ref={modelDropdownRef} className="relative self-stretch flex items-end shrink-0">
+              {modelOpen && (
+                <div className="absolute bottom-full left-0 mb-2 w-64 z-30 border border-[#1a1a1a] bg-[#111] rounded-md overflow-hidden shadow-xl">
+                  {Array.isArray(models) && models.map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => { setSelectedModel(m.id); setModelOpen(false); }}
+                      className={cn(
+                        "w-full flex items-center gap-2.5 px-4 py-2.5 text-xs text-left transition-colors",
+                        m.id === selectedModel
+                          ? "bg-[#1a1a1a] text-foreground"
+                          : "text-muted-foreground hover:bg-[#161616] hover:text-foreground"
+                      )}
+                    >
+                      {MODEL_ICONS[m.id]}
+                      <div>
+                        <p className="font-medium">{m.name}</p>
+                        {m.description && <p className="text-[10px] text-muted-foreground/60 mt-0.5">{m.description}</p>}
+                      </div>
+                      {m.id === selectedModel && (
+                        <span className="ml-auto text-[10px] text-primary font-medium">Active</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <button
+                onClick={() => setModelOpen((v) => !v)}
+                className="flex items-center gap-1.5 pl-4 pr-3 py-3 text-xs text-muted-foreground hover:text-foreground transition-colors border-r border-[#1a1a1a] h-full"
+              >
+                {MODEL_ICONS[selectedModel]}
+                <span className="hidden sm:inline">{selectedModelData?.name ?? "Model"}</span>
+                <ChevronDown className={cn("h-3 w-3 transition-transform", modelOpen && "rotate-180")} />
+              </button>
+            </div>
 
             {/* Textarea */}
             <textarea
