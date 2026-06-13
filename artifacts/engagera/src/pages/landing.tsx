@@ -10,7 +10,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useUserPreferences } from "@/hooks/useUserPreferences";
 import { useEdgeChatCompletion, ContentPart } from "@/hooks/useEdgeChatCompletion";
-import { useConversationVoice, type ConvVoiceState } from "@/hooks/useConversationVoice";
+import { usePhoneVoice, type PhoneState } from "@/hooks/usePhoneVoice";
 import { cn } from "@/lib/utils";
 import { detectModel } from "@/lib/autoModel";
 import { MessageContent } from "@/components/MessageContent";
@@ -242,8 +242,8 @@ export default function Landing() {
     textareaRef.current?.focus();
   };
 
-  // ── Conversation voice hook ───────────────────────────────────────────────
-  const convVoice = useConversationVoice({
+  // ── Phone voice hook ─────────────────────────────────────────────────────
+  const phoneVoice = usePhoneVoice({
     onSend: (text) => {
       handleSendWithContent(text, []);
     },
@@ -344,7 +344,7 @@ export default function Landing() {
           setMessages(withReply);
           if (res.conversationId) setActiveConversationId(res.conversationId);
           if (res.guestMessageCount !== undefined) setGuestMessageCount(res.guestMessageCount);
-          if (voiceOpen) convVoice.speakResponse(res.message.content);
+          if (voiceOpen) phoneVoice.speakResponse(res.message.content);
           refetchConversations();
         },
         onError: (err: unknown) => {
@@ -738,15 +738,15 @@ export default function Landing() {
                 <Paperclip className="h-3.5 w-3.5" />
               </button>
 
-              {/* Voice Chat */}
-              {convVoice.supported && (
+              {/* Phone Voice Call */}
+              {phoneVoice.supported && (
                 <button
                   onClick={() => {
                     setVoiceOpen(true);
-                    convVoice.startConversation();
+                    phoneVoice.beginCall();
                   }}
                   disabled={chatMutation.isPending || isLimited}
-                  title="Start voice conversation"
+                  title="Start AI phone call"
                   className={cn(
                     "h-8 w-8 flex items-center justify-center rounded-full transition-all",
                     "text-muted-foreground/40 hover:text-primary",
@@ -779,15 +779,16 @@ export default function Landing() {
 
       </div>
 
-      {/* ── Voice Conversation Overlay ─────────────────────────────────────── */}
+      {/* ── Phone Call Overlay ──────────────────────────────────────────────── */}
       {voiceOpen && (
-        <VoiceOverlay
-          state={convVoice.state}
-          interimText={convVoice.interimText}
-          finalText={convVoice.finalText}
+        <PhoneCallOverlay
+          state={phoneVoice.state}
+          transcript={phoneVoice.transcript}
+          callDuration={phoneVoice.callDuration}
+          whisperReady={phoneVoice.whisperReady}
           aiPending={chatMutation.isPending}
-          onClose={() => {
-            convVoice.stopConversation();
+          onEnd={() => {
+            phoneVoice.endCall();
             setVoiceOpen(false);
           }}
         />
@@ -796,132 +797,171 @@ export default function Landing() {
   );
 }
 
-/* ── Voice Overlay Component ─────────────────────────────────────────────── */
-interface VoiceOverlayProps {
-  state: ConvVoiceState;
-  interimText: string;
-  finalText: string;
+/* ── Phone Call Overlay ──────────────────────────────────────────────────── */
+interface PhoneCallOverlayProps {
+  state: PhoneState;
+  transcript: string;
+  callDuration: number;
+  whisperReady: boolean;
   aiPending: boolean;
-  onClose: () => void;
+  onEnd: () => void;
 }
 
-function VoiceOverlay({ state, interimText, finalText, aiPending, onClose }: VoiceOverlayProps) {
-  const effectiveState = aiPending ? "thinking" : state;
+function fmt(s: number) {
+  const m = Math.floor(s / 60).toString().padStart(2, "0");
+  const sec = (s % 60).toString().padStart(2, "0");
+  return `${m}:${sec}`;
+}
 
-  const stateLabel: Record<string, string> = {
-    idle: "Starting…",
-    listening: "Listening",
-    thinking: "Thinking…",
-    speaking: "Speaking",
+function PhoneCallOverlay({
+  state,
+  transcript,
+  callDuration,
+  whisperReady,
+  aiPending,
+  onEnd,
+}: PhoneCallOverlayProps) {
+  const effectiveState: PhoneState = aiPending ? "thinking" : state;
+
+  const stateLabel: Record<PhoneState, string> = {
+    idle:        "Connecting…",
+    connecting:  "Connecting…",
+    listening:   "Listening…",
+    processing:  "Transcribing…",
+    thinking:    "Thinking…",
+    speaking:    "Speaking",
   };
 
-  const transcript = finalText || interimText;
+  const isLive = effectiveState === "listening" || effectiveState === "speaking";
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/95 backdrop-blur-md">
-      {/* Close button */}
-      <button
-        onClick={onClose}
-        className="absolute top-5 right-5 h-10 w-10 flex items-center justify-center rounded-full bg-white/8 hover:bg-white/15 text-white/60 hover:text-white transition-all"
-        title="End voice conversation"
-      >
-        <X className="h-5 w-5" />
-      </button>
+    <div className="fixed inset-0 z-50 flex flex-col bg-[#080810]">
 
-      {/* Orb */}
-      <div className="relative flex items-center justify-center mb-10">
-        {/* Pulse rings — only when listening */}
-        {effectiveState === "listening" && (
-          <>
-            <span className="absolute inline-flex h-40 w-40 rounded-full bg-blue-500/20 animate-ping" style={{ animationDuration: "1.6s" }} />
-            <span className="absolute inline-flex h-32 w-32 rounded-full bg-blue-500/25 animate-ping" style={{ animationDuration: "1.2s", animationDelay: "0.3s" }} />
-          </>
-        )}
-        {/* Speaking rings */}
-        {effectiveState === "speaking" && (
-          <>
-            <span className="absolute inline-flex h-44 w-44 rounded-full bg-emerald-500/15 animate-ping" style={{ animationDuration: "0.9s" }} />
-            <span className="absolute inline-flex h-36 w-36 rounded-full bg-emerald-500/20 animate-ping" style={{ animationDuration: "0.7s", animationDelay: "0.2s" }} />
-          </>
-        )}
-        {/* Core orb */}
-        <div
-          className={cn(
-            "relative h-24 w-24 rounded-full flex items-center justify-center shadow-2xl transition-all duration-500",
-            effectiveState === "listening"
-              ? "bg-gradient-to-br from-blue-500 to-blue-700 shadow-blue-500/40"
-              : effectiveState === "thinking"
-              ? "bg-gradient-to-br from-violet-500 to-purple-700 shadow-purple-500/40 animate-pulse"
-              : effectiveState === "speaking"
-              ? "bg-gradient-to-br from-emerald-400 to-teal-600 shadow-emerald-500/40"
-              : "bg-gradient-to-br from-zinc-600 to-zinc-800"
-          )}
-        >
-          {/* Inner mic / wave icon */}
-          {effectiveState === "listening" && (
-            <Mic className="h-9 w-9 text-white drop-shadow" />
-          )}
-          {effectiveState === "thinking" && (
-            <span className="flex gap-1 items-end h-7">
-              {[0, 1, 2].map((i) => (
-                <span
-                  key={i}
-                  className="w-1.5 rounded-full bg-white/80 animate-bounce"
-                  style={{
-                    height: `${10 + i * 6}px`,
-                    animationDelay: `${i * 0.15}s`,
-                    animationDuration: "0.7s",
-                  }}
-                />
-              ))}
-            </span>
-          )}
-          {effectiveState === "speaking" && (
-            <span className="flex gap-1 items-center h-8">
-              {[0, 1, 2, 3, 4].map((i) => (
-                <span
-                  key={i}
-                  className="w-1 rounded-full bg-white/90 animate-bounce"
-                  style={{
-                    height: `${8 + Math.sin(i * 1.2) * 8 + 8}px`,
-                    animationDelay: `${i * 0.1}s`,
-                    animationDuration: "0.6s",
-                  }}
-                />
-              ))}
-            </span>
-          )}
-          {effectiveState === "idle" && (
-            <Mic className="h-9 w-9 text-white/40" />
-          )}
+      {/* ── Top bar ── */}
+      <div className="flex items-center justify-between px-6 pt-10 pb-4">
+        <div>
+          <p className="text-white/40 text-xs uppercase tracking-widest font-medium">Engagera AI</p>
+          <p className="text-white/20 text-[11px] mt-0.5">
+            {!whisperReady ? "Warming up voice…" : isLive ? fmt(callDuration) : stateLabel[effectiveState]}
+          </p>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className={cn(
+            "h-1.5 w-1.5 rounded-full",
+            effectiveState === "listening" ? "bg-green-400 animate-pulse" :
+            effectiveState === "speaking"  ? "bg-emerald-400 animate-pulse" :
+            effectiveState === "thinking" || effectiveState === "processing" ? "bg-yellow-400 animate-pulse" :
+            "bg-zinc-600"
+          )} />
+          <span className="text-white/30 text-[11px]">
+            {effectiveState === "listening" ? "Live" :
+             effectiveState === "speaking"  ? "Speaking" :
+             effectiveState === "thinking" || effectiveState === "processing" ? "Processing" :
+             "Connecting"}
+          </span>
         </div>
       </div>
 
-      {/* State label */}
-      <p className="text-white/80 text-lg font-medium tracking-wide mb-6">
-        {stateLabel[effectiveState] ?? ""}
-      </p>
+      {/* ── AI avatar / waveform area ── */}
+      <div className="flex-1 flex flex-col items-center justify-center gap-8 px-6">
 
-      {/* Live transcript */}
-      <div className="max-w-sm w-full px-6 min-h-[3.5rem] text-center">
-        {transcript ? (
-          <p className="text-white/60 text-sm leading-relaxed">
-            <span className="text-white/90">{finalText}</span>
-            {interimText && (
-              <span className="text-white/40 italic"> {interimText}</span>
+        {/* Avatar circle */}
+        <div className="relative flex items-center justify-center">
+          {/* Pulse rings */}
+          {effectiveState === "listening" && (
+            <>
+              <span className="absolute h-48 w-48 rounded-full border border-blue-500/20 animate-ping" style={{ animationDuration: "2s" }} />
+              <span className="absolute h-36 w-36 rounded-full border border-blue-500/30 animate-ping" style={{ animationDuration: "1.5s", animationDelay: "0.3s" }} />
+            </>
+          )}
+          {effectiveState === "speaking" && (
+            <>
+              <span className="absolute h-52 w-52 rounded-full border border-emerald-500/20 animate-ping" style={{ animationDuration: "1s" }} />
+              <span className="absolute h-40 w-40 rounded-full border border-emerald-500/30 animate-ping" style={{ animationDuration: "0.8s", animationDelay: "0.2s" }} />
+            </>
+          )}
+
+          {/* Main circle */}
+          <div className={cn(
+            "h-28 w-28 rounded-full flex items-center justify-center transition-all duration-700",
+            effectiveState === "listening"
+              ? "bg-gradient-to-br from-blue-600 to-indigo-700 shadow-[0_0_60px_rgba(99,102,241,0.4)]"
+              : effectiveState === "speaking"
+              ? "bg-gradient-to-br from-emerald-500 to-teal-600 shadow-[0_0_60px_rgba(16,185,129,0.4)]"
+              : effectiveState === "thinking" || effectiveState === "processing"
+              ? "bg-gradient-to-br from-violet-600 to-purple-700 shadow-[0_0_40px_rgba(139,92,246,0.3)] animate-pulse"
+              : "bg-gradient-to-br from-zinc-700 to-zinc-800"
+          )}>
+            {/* Inner animation */}
+            {effectiveState === "listening" && (
+              <div className="flex items-end gap-[3px] h-8">
+                {[3,5,8,5,3,6,4,7,5,3].map((h, i) => (
+                  <span key={i} className="w-[3px] rounded-full bg-white/70 animate-bounce"
+                    style={{ height: `${h * 3}px`, animationDelay: `${i * 0.07}s`, animationDuration: "0.8s" }} />
+                ))}
+              </div>
             )}
+            {effectiveState === "speaking" && (
+              <div className="flex items-end gap-[3px] h-8">
+                {[6,10,14,10,6,8,12,9,5,7].map((h, i) => (
+                  <span key={i} className="w-[3px] rounded-full bg-white/90 animate-bounce"
+                    style={{ height: `${h * 2.5}px`, animationDelay: `${i * 0.06}s`, animationDuration: "0.5s" }} />
+                ))}
+              </div>
+            )}
+            {(effectiveState === "thinking" || effectiveState === "processing") && (
+              <div className="flex gap-1.5 items-center">
+                {[0,1,2].map(i => (
+                  <span key={i} className="h-2 w-2 rounded-full bg-white/70 animate-bounce"
+                    style={{ animationDelay: `${i * 0.15}s`, animationDuration: "0.7s" }} />
+                ))}
+              </div>
+            )}
+            {(effectiveState === "connecting" || effectiveState === "idle") && (
+              <Mic className="h-10 w-10 text-white/50" />
+            )}
+          </div>
+        </div>
+
+        {/* State label */}
+        <div className="text-center">
+          <p className="text-white text-xl font-semibold tracking-tight">Engagera AI</p>
+          <p className="text-white/50 text-sm mt-1">
+            {!whisperReady ? "Warming up voice engine…" : stateLabel[effectiveState]}
           </p>
-        ) : (
-          effectiveState === "listening" && (
-            <p className="text-white/25 text-sm italic">Speak now…</p>
-          )
+        </div>
+
+        {/* Live transcript */}
+        {transcript && (
+          <div className="w-full max-w-xs bg-white/5 border border-white/8 rounded-2xl px-5 py-3">
+            <p className="text-white/30 text-[10px] uppercase tracking-widest mb-1">You said</p>
+            <p className="text-white/80 text-sm leading-relaxed">{transcript}</p>
+          </div>
+        )}
+
+        {!transcript && effectiveState === "listening" && (
+          <p className="text-white/20 text-sm italic">Start speaking…</p>
         )}
       </div>
 
-      {/* Hint */}
-      <p className="absolute bottom-8 text-white/20 text-xs">
-        Tap × to end conversation
-      </p>
+      {/* ── Bottom controls ── */}
+      <div className="flex flex-col items-center gap-4 pb-14 pt-6">
+        <p className="text-white/30 text-xs">
+          {isLive ? fmt(callDuration) : ""}
+        </p>
+        {/* End Call button */}
+        <button
+          onClick={onEnd}
+          className="h-16 w-16 rounded-full bg-red-500 hover:bg-red-600 active:bg-red-700 flex items-center justify-center shadow-[0_0_40px_rgba(239,68,68,0.4)] transition-all"
+          title="End call"
+        >
+          {/* Phone hang-up icon */}
+          <svg viewBox="0 0 24 24" fill="none" className="h-7 w-7 text-white" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.42 19.42 0 0 1 4.26 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.17 1.29h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.1 9.1a16 16 0 0 0 3.58 4.21z" />
+          </svg>
+        </button>
+        <p className="text-white/20 text-[11px]">Tap to end call</p>
+      </div>
     </div>
   );
 }

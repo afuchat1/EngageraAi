@@ -6,6 +6,7 @@ import usageRouter from "./usage.js";
 import dashboardRouter from "./dashboard.js";
 import chatRouter from "./chat.js";
 import conversationsRouter from "./conversations.js";
+import sttRouter from "./stt.js";
 
 const router = Router();
 
@@ -16,5 +17,6 @@ router.use(usageRouter);
 router.use(dashboardRouter);
 router.use(chatRouter);
 router.use(conversationsRouter);
+router.use(sttRouter);
 
 export default router;
