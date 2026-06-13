@@ -246,11 +246,9 @@ export default function Landing() {
       >
         {/* Logo */}
         <div className="flex items-center justify-between px-4 h-14 border-b border-white/[0.06] shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="h-7 w-7 rounded-md bg-primary flex items-center justify-center shrink-0">
-              <Sparkles className="h-4 w-4 text-primary-foreground" />
-            </div>
-            <span className="font-semibold text-sm tracking-tight">Engagera</span>
+          <div className="flex items-center gap-2.5">
+            <img src="/logo.png" alt="Engagera" className="h-7 w-7 object-contain" />
+            <span className="font-bold text-sm tracking-tight">Engagera</span>
           </div>
         </div>
 
@@ -450,11 +448,9 @@ export default function Landing() {
           </button>
 
           {!sidebarOpen && (
-            <div className="flex items-center gap-2">
-              <div className="h-6 w-6 rounded-md bg-primary flex items-center justify-center">
-                <Sparkles className="h-3.5 w-3.5 text-primary-foreground" />
-              </div>
-              <span className="font-semibold text-sm">Engagera</span>
+            <div className="flex items-center gap-2.5">
+              <img src="/logo.png" alt="Engagera" className="h-6 w-6 object-contain" />
+              <span className="font-bold text-sm tracking-tight">Engagera</span>
             </div>
           )}
 
@@ -491,8 +487,8 @@ export default function Landing() {
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full px-4 pb-32">
               <div className="mb-8 text-center">
-                <div className="h-14 w-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto mb-5">
-                  <Sparkles className="h-7 w-7 text-primary" />
+                <div className="h-14 w-14 rounded-2xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center mx-auto mb-5">
+                  <img src="/logo.png" alt="Engagera" className="h-8 w-8 object-contain" />
                 </div>
                 <h1 className="text-2xl font-semibold tracking-tight mb-1">
                   What can I help with?
@@ -538,8 +534,8 @@ export default function Landing() {
                   className={cn("flex gap-4", msg.role === "user" ? "justify-end" : "justify-start")}
                 >
                   {msg.role === "assistant" && (
-                    <div className="h-8 w-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 mt-0.5">
-                      <Sparkles className="h-4 w-4 text-primary" />
+                    <div className="h-8 w-8 rounded-lg bg-white/[0.04] border border-white/[0.08] flex items-center justify-center shrink-0 mt-0.5">
+                      <img src="/logo.png" alt="" className="h-4 w-4 object-contain" />
                     </div>
                   )}
                   <div
@@ -564,8 +560,8 @@ export default function Landing() {
 
               {chatMutation.isPending && (
                 <div className="flex gap-4 justify-start">
-                  <div className="h-8 w-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 mt-0.5">
-                    <Sparkles className="h-4 w-4 text-primary" />
+                  <div className="h-8 w-8 rounded-lg bg-white/[0.04] border border-white/[0.08] flex items-center justify-center shrink-0 mt-0.5">
+                    <img src="/logo.png" alt="" className="h-4 w-4 object-contain" />
                   </div>
                   <div className="flex items-center gap-1.5 px-4 py-3">
                     <span className="h-1.5 w-1.5 bg-primary/60 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
@@ -630,8 +626,8 @@ export default function Landing() {
           <div className="absolute inset-0 flex items-end justify-center pb-32 z-40 pointer-events-none">
             <div className="pointer-events-auto w-full max-w-md mx-4">
               <div className="rounded-2xl border border-white/[0.1] bg-[#161616] shadow-2xl p-6 text-center">
-                <div className="h-12 w-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto mb-4">
-                  <Sparkles className="h-6 w-6 text-primary" />
+                <div className="h-12 w-12 rounded-2xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center mx-auto mb-4">
+                  <img src="/logo.png" alt="Engagera" className="h-7 w-7 object-contain" />
                 </div>
                 <h3 className="font-semibold text-lg mb-1">You've used your free messages</h3>
                 <p className="text-sm text-muted-foreground mb-5">

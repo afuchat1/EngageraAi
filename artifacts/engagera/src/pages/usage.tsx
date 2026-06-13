@@ -12,17 +12,26 @@ export default function Usage() {
   const { data: summary, isLoading: summaryLoading } = useGetUsageSummary();
   const { data: records, isLoading: recordsLoading } = useGetUsage({ days: parseInt(days) });
 
+  const statCards = [
+    { label: "Total Tokens", value: summaryLoading ? "—" : (summary?.totalTokens ?? 0).toLocaleString() },
+    { label: "Input Tokens", value: summaryLoading ? "—" : (summary?.totalInputTokens ?? 0).toLocaleString() },
+    { label: "Output Tokens", value: summaryLoading ? "—" : (summary?.totalOutputTokens ?? 0).toLocaleString() },
+    { label: "Est. Cost", value: summaryLoading ? "—" : `$${(((summary?.totalTokens ?? 0) / 1_000_000) * 0.15).toFixed(4)}` },
+  ];
+
   return (
     <AppLayout requireAuth showSidebar>
-      <div className="p-8 max-w-6xl mx-auto space-y-8">
-        <div className="flex items-center justify-between">
+      <div className="p-6 md:p-8 max-w-6xl mx-auto space-y-8">
+
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Usage & Billing</h1>
-            <p className="text-muted-foreground mt-2">Monitor your API consumption and costs.</p>
+            <h1 className="text-2xl font-bold tracking-tight">Usage</h1>
+            <p className="text-sm text-muted-foreground mt-1">API consumption and token analytics</p>
           </div>
           <Select value={days} onValueChange={(v: any) => setDays(v)}>
-            <SelectTrigger className="w-[150px]">
-              <SelectValue placeholder="Select range" />
+            <SelectTrigger className="w-[140px] h-9 text-sm">
+              <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="7">Last 7 days</SelectItem>
@@ -32,151 +41,146 @@ export default function Usage() {
           </Select>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-4">
-          <Card className="bg-card/50">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Total Tokens</CardTitle>
+        {/* Stat cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {statCards.map(({ label, value }) => (
+            <Card key={label} className="bg-card border-border">
+              <CardHeader className="pb-2 pt-4 px-4">
+                <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{label}</CardTitle>
+              </CardHeader>
+              <CardContent className="px-4 pb-4">
+                <div className="text-2xl font-bold tracking-tight font-mono">{value}</div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {/* Charts */}
+        <div className="grid gap-6 lg:grid-cols-3">
+          {/* Daily usage chart */}
+          <Card className="lg:col-span-2 bg-card border-border">
+            <CardHeader className="px-6 pt-6 pb-4">
+              <CardTitle className="text-base font-semibold">Daily Usage</CardTitle>
+              <CardDescription className="text-xs">Token consumption over the last {days} days</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{summaryLoading ? "-" : summary?.totalTokens.toLocaleString()}</div>
-            </CardContent>
-          </Card>
-          <Card className="bg-card/50">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Input Tokens</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{summaryLoading ? "-" : summary?.totalInputTokens.toLocaleString()}</div>
-            </CardContent>
-          </Card>
-          <Card className="bg-card/50">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Output Tokens</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{summaryLoading ? "-" : summary?.totalOutputTokens.toLocaleString()}</div>
-            </CardContent>
-          </Card>
-          <Card className="bg-card/50 border-primary/20 bg-primary/5">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-primary">Est. Cost</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-primary">
-                ${summaryLoading ? "-" : ((summary?.totalTokens || 0) / 1000000 * 0.15).toFixed(2)}
+            <CardContent className="px-6 pb-6">
+              <div className="h-56">
+                {summaryLoading ? (
+                  <div className="h-full flex items-center justify-center text-sm text-muted-foreground">Loading…</div>
+                ) : summary?.dailyUsage && summary.dailyUsage.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={summary.dailyUsage} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+                      <XAxis
+                        dataKey="date"
+                        tickFormatter={(val) => format(new Date(val), "MMM d")}
+                        stroke="hsl(var(--muted-foreground))"
+                        fontSize={11}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <YAxis
+                        stroke="hsl(var(--muted-foreground))"
+                        fontSize={11}
+                        tickLine={false}
+                        axisLine={false}
+                        tickFormatter={(val) => val >= 1000 ? `${(val / 1000).toFixed(0)}k` : val}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: "hsl(var(--card))",
+                          borderColor: "hsl(var(--border))",
+                          borderRadius: "8px",
+                          fontSize: "12px",
+                        }}
+                        labelFormatter={(val) => format(new Date(val), "MMM d, yyyy")}
+                        cursor={{ fill: "hsl(var(--muted))" }}
+                      />
+                      <Bar dataKey="tokens" fill="hsl(var(--foreground))" radius={[3, 3, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-sm text-muted-foreground">No data for this period</div>
+                )}
               </div>
             </CardContent>
           </Card>
-        </div>
 
-        <div className="grid gap-8 md:grid-cols-3">
-          <Card className="md:col-span-2 bg-card/50">
-            <CardHeader>
-              <CardTitle>Daily Usage</CardTitle>
-              <CardDescription>Token consumption over the last {days} days.</CardDescription>
+          {/* By model */}
+          <Card className="bg-card border-border">
+            <CardHeader className="px-6 pt-6 pb-4">
+              <CardTitle className="text-base font-semibold">By Model</CardTitle>
+              <CardDescription className="text-xs">Token distribution</CardDescription>
             </CardHeader>
-            <CardContent className="h-[300px]">
+            <CardContent className="px-6 pb-6">
               {summaryLoading ? (
-                <div className="h-full flex items-center justify-center text-muted-foreground">Loading chart...</div>
-              ) : summary?.dailyUsage && summary.dailyUsage.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={summary.dailyUsage} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
-                    <XAxis 
-                      dataKey="date" 
-                      tickFormatter={(val) => format(new Date(val), 'MMM d')}
-                      stroke="hsl(var(--muted-foreground))"
-                      fontSize={12}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <YAxis 
-                      stroke="hsl(var(--muted-foreground))" 
-                      fontSize={12}
-                      tickLine={false}
-                      axisLine={false}
-                      tickFormatter={(val) => val >= 1000 ? `${(val/1000).toFixed(0)}k` : val}
-                    />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))' }}
-                      labelFormatter={(val) => format(new Date(val), 'MMM d, yyyy')}
-                    />
-                    <Bar dataKey="tokens" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex items-center justify-center text-muted-foreground">No data available</div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="bg-card/50">
-            <CardHeader>
-              <CardTitle>By Model</CardTitle>
-              <CardDescription>Token breakdown.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {summaryLoading ? (
-                <div className="text-center py-8 text-muted-foreground">Loading...</div>
+                <div className="py-8 text-center text-sm text-muted-foreground">Loading…</div>
               ) : summary?.byModel && summary.byModel.length > 0 ? (
                 <div className="space-y-4">
-                  {summary.byModel.map((model) => (
-                    <div key={model.model} className="space-y-2 border-b pb-4 last:border-0 last:pb-0">
-                      <div className="flex justify-between text-sm">
-                        <span className="font-medium">{model.model}</span>
-                        <span className="font-mono">{model.tokens.toLocaleString()} tkns</span>
+                  {summary.byModel.map((model: { model: string; tokens: number }) => {
+                    const pct = Math.min(100, Math.max(2, ((model.tokens / (summary.totalTokens || 1)) * 100)));
+                    return (
+                      <div key={model.model} className="space-y-2">
+                        <div className="flex justify-between text-xs">
+                          <span className="font-medium truncate pr-2">{model.model}</span>
+                          <span className="font-mono text-muted-foreground shrink-0">{model.tokens.toLocaleString()}</span>
+                        </div>
+                        <div className="h-1 w-full rounded-full bg-muted overflow-hidden">
+                          <div className="h-full rounded-full bg-foreground transition-all" style={{ width: `${pct}%` }} />
+                        </div>
                       </div>
-                      <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
-                        <div 
-                          className="bg-primary h-1.5 rounded-full" 
-                          style={{ width: `${Math.min(100, Math.max(2, (model.tokens / summary.totalTokens) * 100))}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
-                <div className="text-center py-8 text-muted-foreground">No data available</div>
+                <div className="py-8 text-center text-sm text-muted-foreground">No data available</div>
               )}
             </CardContent>
           </Card>
         </div>
 
-        <Card className="bg-card/50">
-          <CardHeader>
-            <CardTitle>Recent Records</CardTitle>
-            <CardDescription>Detailed log of your API requests.</CardDescription>
+        {/* Records table */}
+        <Card className="bg-card border-border">
+          <CardHeader className="px-6 pt-6 pb-4">
+            <CardTitle className="text-base font-semibold">Request Log</CardTitle>
+            <CardDescription className="text-xs">Detailed log of recent API requests</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-6 pb-6">
             {recordsLoading ? (
-              <div className="py-8 text-center text-muted-foreground">Loading records...</div>
-            ) : records && records.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Time</TableHead>
-                    <TableHead>Model</TableHead>
-                    <TableHead>API Key</TableHead>
-                    <TableHead className="text-right">Input</TableHead>
-                    <TableHead className="text-right">Output</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {records.map((record) => (
-                    <TableRow key={record.id}>
-                      <TableCell className="text-xs text-muted-foreground">{format(new Date(record.createdAt), "MMM d, HH:mm:ss")}</TableCell>
-                      <TableCell className="font-medium">{record.model}</TableCell>
-                      <TableCell className="text-xs">{record.apiKeyName || "Playground"}</TableCell>
-                      <TableCell className="text-right font-mono text-xs">{record.inputTokens}</TableCell>
-                      <TableCell className="text-right font-mono text-xs">{record.outputTokens}</TableCell>
-                      <TableCell className="text-right font-mono text-xs font-medium text-primary">{record.totalTokens}</TableCell>
+              <div className="py-10 text-center text-sm text-muted-foreground">Loading…</div>
+            ) : Array.isArray(records) && records.length > 0 ? (
+              <div className="rounded-lg border border-border overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-border hover:bg-transparent">
+                      <TableHead className="text-xs text-muted-foreground">Time</TableHead>
+                      <TableHead className="text-xs text-muted-foreground">Model</TableHead>
+                      <TableHead className="text-xs text-muted-foreground hidden sm:table-cell">Key</TableHead>
+                      <TableHead className="text-xs text-muted-foreground text-right">In</TableHead>
+                      <TableHead className="text-xs text-muted-foreground text-right">Out</TableHead>
+                      <TableHead className="text-xs text-muted-foreground text-right">Total</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {records.map((record) => (
+                      <TableRow key={record.id} className="border-border">
+                        <TableCell className="text-xs text-muted-foreground font-mono">
+                          {format(new Date(record.createdAt), "MMM d, HH:mm")}
+                        </TableCell>
+                        <TableCell className="text-sm font-medium">{record.model}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">
+                          {record.apiKeyName || "Playground"}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-xs text-muted-foreground">{record.inputTokens}</TableCell>
+                        <TableCell className="text-right font-mono text-xs text-muted-foreground">{record.outputTokens}</TableCell>
+                        <TableCell className="text-right font-mono text-xs font-semibold">{record.totalTokens}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             ) : (
-              <div className="py-8 text-center text-muted-foreground">No records found for this period.</div>
+              <div className="py-10 text-center text-sm text-muted-foreground">No records found for this period</div>
             )}
           </CardContent>
         </Card>

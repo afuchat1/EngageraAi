@@ -4,10 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { SiDependabot } from "react-icons/si";
-import { AppLayout } from "@/components/layout/AppLayout";
 
 export default function SignIn() {
   const [email, setEmail] = useState("");
@@ -20,79 +17,93 @@ export default function SignIn() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-
     try {
       const { error } = await signIn(email, password);
       if (error) throw error;
       setLocation("/dashboard");
     } catch (err: any) {
-      toast({
-        title: "Error signing in",
-        description: err.message,
-        variant: "destructive",
-      });
+      toast({ title: "Sign in failed", description: err.message, variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <AppLayout>
-      <div className="flex items-center justify-center min-h-[calc(100vh-3.5rem)] bg-background p-4">
-        <Card className="w-full max-w-md border-border/40 shadow-lg bg-card/50 backdrop-blur">
-          <CardHeader className="space-y-1">
-            <div className="flex justify-center mb-6">
-              <div className="bg-primary text-primary-foreground p-2 rounded-lg">
-                <SiDependabot className="h-8 w-8" />
-              </div>
-            </div>
-            <CardTitle className="text-2xl font-bold text-center tracking-tight">Welcome back</CardTitle>
-            <CardDescription className="text-center">
-              Enter your credentials to access the Engagera platform
-            </CardDescription>
-          </CardHeader>
-          <form onSubmit={handleSubmit}>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="m@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  className="bg-background/50"
-                />
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="password">Password</Label>
-                </div>
-                <Input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  className="bg-background/50"
-                />
-              </div>
-            </CardContent>
-            <CardFooter className="flex flex-col space-y-4">
-              <Button type="submit" className="w-full" disabled={isSubmitting}>
-                {isSubmitting ? "Signing in..." : "Sign in"}
-              </Button>
-              <div className="text-center text-sm text-muted-foreground">
-                Don't have an account?{" "}
-                <Link href="/sign-up" className="text-primary hover:underline font-medium">
-                  Sign up
-                </Link>
-              </div>
-            </CardFooter>
-          </form>
-        </Card>
+    <div className="min-h-screen bg-background flex">
+      {/* Left panel — branding */}
+      <div className="hidden lg:flex lg:w-1/2 flex-col justify-between p-12 border-r border-border bg-card">
+        <Link href="/" className="flex items-center gap-3">
+          <img src="/logo.png" alt="Engagera" className="h-8 w-8 object-contain" />
+          <span className="font-bold text-lg tracking-tight">Engagera</span>
+        </Link>
+        <div className="space-y-6">
+          <blockquote className="text-2xl font-semibold tracking-tight leading-snug text-foreground/90">
+            "One platform. Every model.<br />Zero complexity."
+          </blockquote>
+          <p className="text-sm text-muted-foreground">
+            Access the world's most capable AI models through a single, unified API.
+          </p>
+        </div>
+        <p className="text-xs text-muted-foreground/50">© {new Date().getFullYear()} Engagera. All rights reserved.</p>
       </div>
-    </AppLayout>
+
+      {/* Right panel — form */}
+      <div className="flex-1 flex items-center justify-center p-6">
+        <div className="w-full max-w-sm space-y-8">
+          {/* Mobile logo */}
+          <div className="lg:hidden flex items-center gap-3 mb-2">
+            <img src="/logo.png" alt="Engagera" className="h-7 w-7 object-contain" />
+            <span className="font-bold tracking-tight">Engagera</span>
+          </div>
+
+          <div className="space-y-2">
+            <h1 className="text-2xl font-bold tracking-tight">Welcome back</h1>
+            <p className="text-sm text-muted-foreground">
+              Sign in to your account to continue
+            </p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div className="space-y-2">
+              <Label htmlFor="email" className="text-sm font-medium">Email address</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="email"
+                className="h-10"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="password" className="text-sm font-medium">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                autoComplete="current-password"
+                className="h-10"
+              />
+            </div>
+
+            <Button type="submit" className="w-full h-10 font-semibold" disabled={isSubmitting}>
+              {isSubmitting ? "Signing in…" : "Sign in"}
+            </Button>
+          </form>
+
+          <p className="text-center text-sm text-muted-foreground">
+            Don't have an account?{" "}
+            <Link href="/sign-up" className="font-medium text-foreground hover:underline underline-offset-4">
+              Create one free
+            </Link>
+          </p>
+        </div>
+      </div>
+    </div>
   );
 }
