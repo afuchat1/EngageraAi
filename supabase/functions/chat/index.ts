@@ -1,17 +1,41 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
+/**
+ * Model map — Engagera public IDs → OpenRouter internal IDs
+ *
+ * engagera-2.0  Primary — full world knowledge, no image generation
+ * engagera-2.1  Latest  — everything + image generation + vision
+ *
+ * Legacy IDs kept for backwards compatibility with older clients.
+ */
 const MODEL_MAP: Record<string, string> = {
+  "engagera-2.0":    "anthropic/claude-sonnet-4-5",
+  "engagera-2.1":    "openai/gpt-4o",
+  // Legacy
   "engagera-lite":   "openai/gpt-4o-mini",
   "engagera-pro":    "openai/gpt-4o",
   "engagera-reason": "anthropic/claude-sonnet-4-5",
   "engagera-code":   "anthropic/claude-sonnet-4-5",
   "engagera-vision": "openai/gpt-4o",
   "engagera-voice":  "openai/gpt-4o-mini",
+  "engagera-image":  "openai/gpt-4o",
 };
-const DEFAULT_MODEL = "openai/gpt-4o-mini";
+const DEFAULT_MODEL = "anthropic/claude-sonnet-4-5";
 
 const GUEST_LIMIT = 5;
 const WINDOW_MS = 24 * 60 * 60 * 1000;
+
+// Keywords that trigger image generation mode (for engagera-2.1 / engagera-image)
+const IMAGE_GEN_KEYWORDS = [
+  "generate image", "create image", "draw ", "illustrate",
+  "make a picture", "make an image", "design an image",
+  "show me a picture", "generate a picture", "paint ",
+  "sketch ", "render an image", "create a visual",
+  "design a logo", "generate a logo", "make art",
+  "create art", "show me art", "generate art",
+  "create an illustration", "generate an illustration",
+  "make me an image", "make me a picture", "draw me",
+];
 
 const SYSTEM_PROMPT = `You are Engagera, a helpful AI assistant built by the AfuAI / Engagera team.
 
@@ -21,19 +45,25 @@ Identity rules:
 - If asked about your underlying model, say you are powered by advanced language models optimized for the Engagera platform.
 - Only state your name if directly asked. In normal conversation just respond helpfully.
 
+Capabilities:
+- You have comprehensive knowledge of the world: science, technology, history, mathematics, coding, creative writing, philosophy, law, medicine, business, art, and more.
+- You can analyze images, explain concepts, write and debug code in any language, do math, and assist with any intellectual task.
+- Be thorough, accurate, and genuinely helpful.
+
 Style:
-- Be concise, helpful, and accurate. Adapt tone to the user.
+- Be concise and helpful. Adapt tone to the user.
 - Use markdown for code (always include the language tag), lists, and structured content.
 - If unsure about something, say so rather than guessing.`;
 
-const IMAGE_SYSTEM_PROMPT = `You are Engagera Image, an AI that creates beautiful SVG artwork.
+const IMAGE_SYSTEM_PROMPT = `You are Engagera 2.1, an AI that creates beautiful, detailed SVG artwork.
 
-When the user requests an image, illustration, or picture:
+When the user requests an image, illustration, picture, drawing, logo, or any visual:
 - Respond with ONLY a single fenced code block using the \`\`\`svg language tag.
 - The SVG must be self-contained, with width="512" height="512" viewBox="0 0 512 512".
-- Make it detailed, colorful, and visually rich — use gradients, multiple shapes, and depth.
+- Make it detailed, colorful, and visually rich — use gradients, multiple shapes, depth, and artistry.
 - Use <defs> with <linearGradient> or <radialGradient> where it adds visual quality.
 - No external images or fonts. Pure SVG elements only (rect, circle, ellipse, path, polygon, text, g, defs, etc.).
+- Include fine details: shadows, highlights, textures achieved with SVG shapes.
 - Do NOT include any text outside the code block. Output ONLY the \`\`\`svg block.`;
 
 const CORS_HEADERS = {
@@ -66,6 +96,13 @@ function getTextPreview(content: MessageContent): string {
   return textPart?.text ?? "";
 }
 
+function isImageGenRequest(messages: IncomingMessage[]): boolean {
+  const lastUser = [...messages].reverse().find((m) => m.role === "user");
+  if (!lastUser) return false;
+  const text = getTextPreview(lastUser.content).toLowerCase();
+  return IMAGE_GEN_KEYWORDS.some((k) => text.includes(k));
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
@@ -86,7 +123,7 @@ Deno.serve(async (req: Request) => {
     let body: Record<string, unknown>;
     try { body = await req.json(); } catch { return json({ error: "Invalid JSON" }, 400); }
 
-    const { messages, model = "engagera-lite", conversationId, contextHint } = body as {
+    const { messages, model = "engagera-2.0", conversationId, contextHint } = body as {
       messages: unknown[];
       model?: string;
       conversationId?: number;
@@ -160,11 +197,18 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // ── Call OpenRouter ───────────────────────────────────────────────────────
+    // ── Determine if this is an image generation request ─────────────────────
+    // engagera-image always generates images.
+    // engagera-2.1 generates images only when the user asks for one.
     const isImageModel = model === "engagera-image";
-    const orModel = isImageModel ? "openai/gpt-4o" : (MODEL_MAP[model] ?? DEFAULT_MODEL);
+    const is21ImageRequest = model === "engagera-2.1" && isImageGenRequest(validMessages);
+    const generateImage = isImageModel || is21ImageRequest;
 
-    const systemContent = isImageModel
+    // ── Select OpenRouter model ───────────────────────────────────────────────
+    const orModel = MODEL_MAP[model] ?? DEFAULT_MODEL;
+
+    // ── Build system prompt ───────────────────────────────────────────────────
+    const systemContent = generateImage
       ? IMAGE_SYSTEM_PROMPT
       : contextHint
         ? `${SYSTEM_PROMPT}\n\n[User context] ${contextHint}`
@@ -177,6 +221,7 @@ Deno.serve(async (req: Request) => {
         .map((m) => ({ role: m.role, content: m.content })),
     ];
 
+    // ── Call OpenRouter ───────────────────────────────────────────────────────
     let orRes: Response;
     try {
       orRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {

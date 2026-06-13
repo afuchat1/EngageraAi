@@ -120,7 +120,7 @@ export default function Landing() {
   const [guestSessionId] = useState<string>(() => getOrCreateGuestSessionId());
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [selectedModel, setSelectedModel] = useState("engagera-lite");
+  const [selectedModel, setSelectedModel] = useState("engagera-2.0");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
   const [loadingConvId, setLoadingConvId] = useState<number | null>(null);
@@ -283,9 +283,7 @@ export default function Landing() {
             ...prev,
             { id: crypto.randomUUID(), name: file.name, kind: "image", content: compressed, preview: compressed, mimeType: "image/jpeg" },
           ]);
-          if (selectedModel !== "engagera-vision" && selectedModel !== "engagera-image") {
-            setSelectedModel("engagera-vision");
-          }
+          setSelectedModel("engagera-2.1");
         };
         reader.readAsDataURL(file);
       } else {
@@ -336,7 +334,7 @@ export default function Landing() {
     chatMutation.mutate(
       {
         messages: updated as any,
-        model: selectedModel,
+        model: autoModel,
         ...(activeConversationId ? { conversationId: activeConversationId } : {}),
         ...(contextHint ? { contextHint } : {}),
       },
