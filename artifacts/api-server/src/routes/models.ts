@@ -1,10 +1,10 @@
 import { Router } from "express";
-import { getEngageraModels } from "../lib/aiRouter.js";
+import { edgeFnUrl, proxyToEdge } from "../lib/proxy.js";
 
 const router = Router();
 
-router.get("/models", (_req, res) => {
-  res.json(getEngageraModels());
+router.get("/models", async (req, res) => {
+  await proxyToEdge(req, res, edgeFnUrl("models"));
 });
 
 export default router;

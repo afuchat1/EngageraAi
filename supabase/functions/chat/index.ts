@@ -16,6 +16,7 @@ const FALLBACK_MODELS = [
 ];
 
 const GUEST_MESSAGE_LIMIT = 5;
+const WINDOW_MS = 24 * 60 * 60 * 1000; // 24-hour rolling window
 
 const ENGAGERA_SYSTEM_PROMPT = {
   role: "system",
@@ -108,31 +109,54 @@ Deno.serve(async (req: Request) => {
         return json({ error: "Authentication or guest session required" }, 401);
       }
 
-      const { data: existing } = await db
+      // ── Guest rate limiting — 24-hour rolling window ──────────────────────
+      const now = new Date();
+
+      const { data: session } = await db
         .from("engagera_guest_sessions")
-        .select("message_count")
+        .select("message_count, window_start")
         .eq("session_id", guestSessionId)
         .single();
 
-      if (!existing) {
-        await db
-          .from("engagera_guest_sessions")
-          .insert({ session_id: guestSessionId, message_count: 0 });
-      }
+      if (!session) {
+        await db.from("engagera_guest_sessions").insert({
+          session_id: guestSessionId,
+          message_count: 0,
+          window_start: now.toISOString(),
+          last_seen_at: now.toISOString(),
+        });
+      } else {
+        const windowStart = new Date(session.window_start);
+        const windowAge = now.getTime() - windowStart.getTime();
 
-      const guestCount = existing?.message_count ?? 0;
-      if (guestCount >= GUEST_MESSAGE_LIMIT) {
-        return json(
-          { error: "GUEST_LIMIT_REACHED", guestMessageCount: guestCount, guestMessageLimit: GUEST_MESSAGE_LIMIT },
-          429,
-        );
+        if (windowAge >= WINDOW_MS) {
+          // Window expired — reset
+          await db
+            .from("engagera_guest_sessions")
+            .update({
+              message_count: 0,
+              window_start: now.toISOString(),
+              last_seen_at: now.toISOString(),
+            })
+            .eq("session_id", guestSessionId);
+        } else if (session.message_count >= GUEST_MESSAGE_LIMIT) {
+          const windowResetAt = new Date(windowStart.getTime() + WINDOW_MS);
+          return json(
+            {
+              error: "DAILY_LIMIT_REACHED",
+              windowResetAt: windowResetAt.toISOString(),
+              guestMessageCount: session.message_count,
+              guestMessageLimit: GUEST_MESSAGE_LIMIT,
+            },
+            429,
+          );
+        }
       }
     }
 
     // ── Build system messages ────────────────────────────────────────────────
     const systemMessages = [ENGAGERA_SYSTEM_PROMPT];
 
-    // Inject user preference context hint if provided
     if (contextHint && typeof contextHint === "string" && contextHint.length > 0) {
       systemMessages.push({
         role: "system",
