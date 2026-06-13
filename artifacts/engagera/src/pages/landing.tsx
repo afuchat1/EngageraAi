@@ -193,10 +193,22 @@ export default function Landing() {
           refetchConversations();
         },
         onError: (err: unknown) => {
-          const e = err as { response?: { data?: { error?: string; guestMessageCount?: number } } };
-          if (e?.response?.data?.error === "GUEST_LIMIT_REACHED") {
+          // ApiError (from custom-fetch) exposes .status and .data directly — no .response wrapper
+          const e = err as { status?: number; data?: { error?: string; guestMessageCount?: number } };
+          if (e?.status === 429 || e?.data?.error === "GUEST_LIMIT_REACHED") {
             setShowGuestLimit(true);
             setGuestMessageCount(GUEST_MESSAGE_LIMIT);
+            // Remove the optimistically-added user message so the UI stays clean
+            setMessages(messages);
+          } else {
+            // Generic failure — show a visible error bubble so it's never silent
+            setMessages([
+              ...updated,
+              {
+                role: "assistant",
+                content: "Sorry, something went wrong. Please try again.",
+              },
+            ]);
           }
         },
       }
