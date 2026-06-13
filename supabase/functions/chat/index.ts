@@ -26,6 +26,16 @@ Style:
 - Use markdown for code (always include the language tag), lists, and structured content.
 - If unsure about something, say so rather than guessing.`;
 
+const IMAGE_SYSTEM_PROMPT = `You are Engagera Image, an AI that creates beautiful SVG artwork.
+
+When the user requests an image, illustration, or picture:
+- Respond with ONLY a single fenced code block using the \`\`\`svg language tag.
+- The SVG must be self-contained, with width="512" height="512" viewBox="0 0 512 512".
+- Make it detailed, colorful, and visually rich — use gradients, multiple shapes, and depth.
+- Use <defs> with <linearGradient> or <radialGradient> where it adds visual quality.
+- No external images or fonts. Pure SVG elements only (rect, circle, ellipse, path, polygon, text, g, defs, etc.).
+- Do NOT include any text outside the code block. Output ONLY the \`\`\`svg block.`;
+
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-guest-session-id",
@@ -151,11 +161,14 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── Call OpenRouter ───────────────────────────────────────────────────────
-    const orModel = MODEL_MAP[model] ?? DEFAULT_MODEL;
+    const isImageModel = model === "engagera-image";
+    const orModel = isImageModel ? "openai/gpt-4o" : (MODEL_MAP[model] ?? DEFAULT_MODEL);
 
-    const systemContent = contextHint
-      ? `${SYSTEM_PROMPT}\n\n[User context] ${contextHint}`
-      : SYSTEM_PROMPT;
+    const systemContent = isImageModel
+      ? IMAGE_SYSTEM_PROMPT
+      : contextHint
+        ? `${SYSTEM_PROMPT}\n\n[User context] ${contextHint}`
+        : SYSTEM_PROMPT;
 
     const orMessages = [
       { role: "system", content: systemContent },

@@ -9,6 +9,38 @@ interface MessageContentProps {
   content: string;
 }
 
+function SvgBlock({ code }: { code: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const svgRef = (node: HTMLDivElement | null) => {
+    if (!node) return;
+    // Sanitise: strip script tags before injecting
+    const safe = code
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/on\w+="[^"]*"/gi, "")
+      .replace(/on\w+='[^']*'/gi, "");
+    node.innerHTML = safe;
+    const svg = node.querySelector("svg");
+    if (svg) {
+      svg.setAttribute("width", "100%");
+      svg.setAttribute("height", "100%");
+      svg.style.maxWidth = expanded ? "100%" : "400px";
+      svg.style.height = "auto";
+    }
+  };
+
+  return (
+    <div className="my-3">
+      <div
+        ref={svgRef}
+        className={`rounded-lg overflow-hidden border border-white/[0.08] bg-[#1a1a1a] cursor-pointer transition-all ${expanded ? "max-w-full" : "max-w-sm"}`}
+        onClick={() => setExpanded((v) => !v)}
+        title={expanded ? "Click to shrink" : "Click to expand"}
+      />
+      <p className="text-[11px] text-muted-foreground/40 mt-1.5">AI-generated image · click to {expanded ? "shrink" : "expand"}</p>
+    </div>
+  );
+}
+
 function CodeBlock({ language, code }: { language: string; code: string }) {
   const [copied, setCopied] = useState(false);
 
@@ -206,6 +238,10 @@ export function MessageContent({ content }: MessageContentProps) {
           code: ({ className, children }) => {
             const match = /language-(\w+)/.exec(className || "");
             const code = String(children).replace(/\n$/, "");
+
+            if (match?.[1] === "svg") {
+              return <SvgBlock code={code} />;
+            }
 
             if (match || code.includes("\n")) {
               return <CodeBlock language={match?.[1] ?? ""} code={code} />;

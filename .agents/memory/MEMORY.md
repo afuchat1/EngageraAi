@@ -4,3 +4,4 @@
 - [Engagera storage audit](engagera-storage-audit.md) — Supabase-only confirmed; DATABASE_URL and @workspace/db removed; engagera schema dropped
 - [Engagera edge function](engagera-edge-function.md) — chat via Supabase Edge Function; OPENROUTER_API_KEY Supabase-only; identity system prompt injected
 - [Engagera Vercel deployment](engagera-vercel.md) — vercel.json + api/index.ts adapter; 4 env vars required in Vercel dashboard
+- [Engagera image generation](image-generation.md) — SVG via gpt-4o edge fn; pollinations.ai went fully paid June 2026 (all models 402)

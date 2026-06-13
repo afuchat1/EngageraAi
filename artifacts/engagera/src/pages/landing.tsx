@@ -364,15 +364,6 @@ export default function Landing() {
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     recordMessage(rawText || "image", selectedModel);
 
-    if (selectedModel === "engagera-image" && atts.length === 0) {
-      const encodedPrompt = encodeURIComponent(rawText);
-      const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=768&model=flux&seed=${Date.now()}`;
-      setTimeout(() => {
-        setMessages([...updated, { role: "assistant", content: `![${rawText}](${imageUrl})` }]);
-      }, 200);
-      return;
-    }
-
     const contextHint = getContextHint();
     chatMutation.mutate(
       {
