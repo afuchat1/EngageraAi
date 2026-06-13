@@ -31,7 +31,7 @@ router.post("/chat", requireAuth, async (req: AuthRequest, res) => {
   const responseId = `eng_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
   await engageraDb
-    .from("usage_records")
+    .from("engagera_usage_records")
     .insert({
       user_id: req.userId!,
       model,

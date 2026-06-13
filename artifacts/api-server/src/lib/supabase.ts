@@ -12,8 +12,12 @@ export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
 });
 
 /**
- * Pre-bound to the `engagera` schema.
- * Always use this instead of supabaseAdmin.schema("engagera") directly
- * so every DB call is structurally scoped to Engagera — no leaks into public.
+ * Engagera tables live in the public schema with an `engagera_` prefix.
+ * All DB access goes through this alias so the table naming convention
+ * is explicit and consistent everywhere.
+ *
+ * Tables:
+ *   public.engagera_api_keys
+ *   public.engagera_usage_records
  */
-export const engageraDb = supabaseAdmin.schema("engagera");
+export const engageraDb = supabaseAdmin;

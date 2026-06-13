@@ -12,17 +12,17 @@ router.get("/dashboard/stats", requireAuth, async (req: AuthRequest, res) => {
 
   const [keysResult, usageResult, recentResult] = await Promise.all([
     engageraDb
-      .from("api_keys")
+      .from("engagera_api_keys")
       .select("id", { count: "exact", head: true })
       .eq("user_id", userId)
       .eq("is_active", true),
     engageraDb
-      .from("usage_records")
+      .from("engagera_usage_records")
       .select("model, total_tokens")
       .eq("user_id", userId)
       .gte("created_at", since.toISOString()),
     engageraDb
-      .from("usage_records")
+      .from("engagera_usage_records")
       .select("model, total_tokens, created_at")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })

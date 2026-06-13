@@ -14,7 +14,7 @@ function generateApiKey(): { key: string; prefix: string; hash: string } {
 
 router.get("/api-keys", requireAuth, async (req: AuthRequest, res) => {
   const { data, error } = await engageraDb
-    .from("api_keys")
+    .from("engagera_api_keys")
     .select("id, name, prefix, is_active, total_requests, last_used_at, created_at")
     .eq("user_id", req.userId!)
     .order("created_at", { ascending: false });
@@ -47,7 +47,7 @@ router.post("/api-keys", requireAuth, async (req: AuthRequest, res) => {
   const { key, prefix, hash } = generateApiKey();
 
   const { data, error } = await engageraDb
-    .from("api_keys")
+    .from("engagera_api_keys")
     .insert({
       user_id: req.userId!,
       name: name.trim(),
@@ -81,7 +81,7 @@ router.delete("/api-keys/:id", requireAuth, async (req: AuthRequest, res) => {
   }
 
   const { error } = await engageraDb
-    .from("api_keys")
+    .from("engagera_api_keys")
     .update({ is_active: false })
     .eq("id", id)
     .eq("user_id", req.userId!);

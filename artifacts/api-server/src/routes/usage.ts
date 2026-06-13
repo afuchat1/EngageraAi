@@ -11,7 +11,7 @@ router.get("/usage", requireAuth, async (req: AuthRequest, res) => {
   since.setDate(since.getDate() - days);
 
   const { data, error } = await engageraDb
-    .from("usage_records")
+    .from("engagera_usage_records")
     .select(
       "id, model, input_tokens, output_tokens, total_tokens, created_at, api_key_id",
     )
@@ -43,7 +43,7 @@ router.get("/usage/summary", requireAuth, async (req: AuthRequest, res) => {
   since.setDate(since.getDate() - 30);
 
   const { data, error } = await engageraDb
-    .from("usage_records")
+    .from("engagera_usage_records")
     .select("model, input_tokens, output_tokens, total_tokens, created_at")
     .eq("user_id", req.userId!)
     .gte("created_at", since.toISOString());
