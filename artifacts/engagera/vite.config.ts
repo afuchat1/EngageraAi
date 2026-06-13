@@ -4,37 +4,20 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 
-const rawPort = process.env.PORT;
-
-if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
-}
-
-const port = Number(rawPort);
-
-if (Number.isNaN(port) || port <= 0) {
-  throw new Error(`Invalid PORT value: "${rawPort}"`);
-}
-
-const basePath = process.env.BASE_PATH;
-
-if (!basePath) {
-  throw new Error(
-    "BASE_PATH environment variable is required but was not provided.",
-  );
-}
+// PORT and BASE_PATH are required for the dev server but not for production
+// builds (vite build).  Use sensible defaults so `vite build` works without them.
+const port = Number(process.env.PORT ?? "5173");
+const basePath = process.env.BASE_PATH ?? "/";
 
 export default defineConfig({
   base: basePath,
   plugins: [
     react(),
     tailwindcss(),
-    runtimeErrorOverlay(),
-    ...(process.env.NODE_ENV !== "production" &&
-    process.env.REPL_ID !== undefined
+    // All Replit-specific plugins are dev+Replit-only — excluded from production builds
+    ...(process.env.NODE_ENV !== "production" && process.env.REPL_ID !== undefined
       ? [
+          runtimeErrorOverlay(),
           await import("@replit/vite-plugin-cartographer").then((m) =>
             m.cartographer({
               root: path.resolve(import.meta.dirname, ".."),
@@ -67,6 +50,8 @@ export default defineConfig({
       strict: true,
     },
     proxy: {
+      // In development, proxy /api/* to the Express API server.
+      // In production, Replit's path router sends /api/* directly to the API artifact.
       "/api": {
         target: "http://localhost:8080",
         changeOrigin: true,
