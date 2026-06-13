@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { supabase } from "@/lib/supabase";
+import { supabase, SUPABASE_URL } from "@/lib/supabase";
 
 export type ContentPart =
   | { type: "text"; text: string }
@@ -27,7 +27,7 @@ interface ChatResponse {
   guestMessageLimit?: number;
 }
 
-const EDGE_FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
+const EDGE_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/chat`;
 const REQUEST_TIMEOUT_MS = 60_000;
 
 async function callEdgeChat(request: ChatRequest): Promise<ChatResponse> {

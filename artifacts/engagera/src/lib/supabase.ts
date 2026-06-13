@@ -12,3 +12,7 @@ const supabaseUrl     = (import.meta.env.VITE_SUPABASE_URL     as string | undef
 const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) || FALLBACK_ANON;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+// Resolved URL — use this anywhere you need the Supabase project URL
+// (e.g. Edge Function calls) so Vercel builds work without env vars.
+export const SUPABASE_URL = supabaseUrl;
