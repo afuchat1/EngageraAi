@@ -1,12 +1,19 @@
 {
-  "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "types": ["node"],
+    "target": "es2020",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "lib": ["es2020"],
+    "strict": false,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
     "typeRoots": [
       "../node_modules/@types",
       "../artifacts/api-server/node_modules/@types"
-    ],
-    "paths": {}
+    ]
   },
   "include": [
     "index.ts",
