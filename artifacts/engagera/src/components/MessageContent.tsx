@@ -106,23 +106,20 @@ function ImageBlock({ src, alt }: { src: string; alt?: string }) {
         </div>
       )}
 
-      <div
-        className={`relative group inline-block cursor-pointer ${status !== "loaded" ? "hidden" : ""}`}
-        onClick={() => setExpanded((v) => !v)}
-      >
+      {/* img is only mounted once loaded to avoid native broken-image rendering */}
+      {(status === "loading" || status === "loaded") && (
         <img
           key={retrySeed}
           src={retrySrc}
           alt={alt || "Generated image"}
           onLoad={() => setStatus("loaded")}
           onError={() => setStatus("error")}
-          className={`rounded-lg max-w-sm w-full object-cover transition-all ${expanded ? "max-w-full" : "max-w-sm"}`}
+          style={{ display: status === "loaded" ? undefined : "none" }}
+          className={`rounded-lg object-cover transition-all cursor-pointer ${expanded ? "max-w-full w-full" : "max-w-sm"}`}
           crossOrigin="anonymous"
+          onClick={() => setExpanded((v) => !v)}
         />
-        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 rounded p-1">
-          <ZoomIn className="h-3.5 w-3.5 text-white/80" />
-        </div>
-      </div>
+      )}
 
       {status === "loaded" && alt && alt !== "Generated image" && (
         <p className="text-[11px] text-muted-foreground/50 mt-1.5 italic">{alt}</p>
