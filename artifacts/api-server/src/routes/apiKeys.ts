@@ -1,20 +1,25 @@
-import { Router, Request, Response } from "express";
+import { Router } from "express";
+import type { RequestHandler } from "express";
 import { edgeFnUrl, proxyToEdge } from "../lib/proxy.js";
 
 const router = Router();
 
 const BASE = edgeFnUrl("api-keys");
 
-router.get("/api-keys", async (req: Request, res: Response) => {
+const getApiKeys: RequestHandler = async (req, res) => {
   await proxyToEdge(req, res, BASE);
-});
+};
 
-router.post("/api-keys", async (req: Request, res: Response) => {
+const createApiKey: RequestHandler = async (req, res) => {
   await proxyToEdge(req, res, BASE);
-});
+};
 
-router.delete("/api-keys/:id", async (req: Request, res: Response) => {
+const deleteApiKey: RequestHandler = async (req, res) => {
   await proxyToEdge(req, res, `${BASE}/${req.params.id}`);
-});
+};
+
+router.get("/api-keys", getApiKeys);
+router.post("/api-keys", createApiKey);
+router.delete("/api-keys/:id", deleteApiKey);
 
 export default router;

@@ -1,9 +1,10 @@
-import { Router, Request, Response } from "express";
+import { Router } from "express";
+import type { RequestHandler } from "express";
 import { edgeFnUrl, proxyToEdge } from "../lib/proxy.js";
 
 const router = Router();
 
-router.post("/chat", async (req: Request, res: Response) => {
+const chatHandler: RequestHandler = async (req, res) => {
   const { messages, model, conversationId, contextHint } = req.body ?? {};
 
   if (!Array.isArray(messages) || messages.length === 0) {
@@ -17,6 +18,8 @@ router.post("/chat", async (req: Request, res: Response) => {
     conversationId,
     contextHint,
   });
-});
+};
+
+router.post("/chat", chatHandler);
 
 export default router;

@@ -1,17 +1,21 @@
-import { Router, Request, Response } from "express";
+import { Router } from "express";
+import type { RequestHandler } from "express";
 import { edgeFnUrl, proxyToEdge } from "../lib/proxy.js";
 
 const router = Router();
 
 const BASE = edgeFnUrl("usage");
 
-router.get("/usage/summary", async (req: Request, res: Response) => {
+const getUsageSummary: RequestHandler = async (req, res) => {
   await proxyToEdge(req, res, `${BASE}/summary`);
-});
+};
 
-router.get("/usage", async (req: Request, res: Response) => {
+const getUsage: RequestHandler = async (req, res) => {
   const days = req.query.days ? `?days=${req.query.days}` : "";
   await proxyToEdge(req, res, `${BASE}${days}`);
-});
+};
+
+router.get("/usage/summary", getUsageSummary);
+router.get("/usage", getUsage);
 
 export default router;

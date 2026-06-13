@@ -1,10 +1,13 @@
-import { Router, Request, Response } from "express";
+import { Router } from "express";
+import type { RequestHandler } from "express";
 import { edgeFnUrl, proxyToEdge } from "../lib/proxy.js";
 
 const router = Router();
 
-router.get("/dashboard/stats", async (req: Request, res: Response) => {
+const getDashboardStats: RequestHandler = async (req, res) => {
   await proxyToEdge(req, res, edgeFnUrl("dashboard"));
-});
+};
+
+router.get("/dashboard/stats", getDashboardStats);
 
 export default router;

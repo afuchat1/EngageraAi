@@ -1,20 +1,25 @@
-import { Router, Request, Response } from "express";
+import { Router } from "express";
+import type { RequestHandler } from "express";
 import { edgeFnUrl, proxyToEdge } from "../lib/proxy.js";
 
 const router = Router();
 
 const BASE = edgeFnUrl("conversations");
 
-router.get("/conversations", async (req: Request, res: Response) => {
+const getConversations: RequestHandler = async (req, res) => {
   await proxyToEdge(req, res, BASE);
-});
+};
 
-router.delete("/conversations/:id", async (req: Request, res: Response) => {
+const deleteConversation: RequestHandler = async (req, res) => {
   await proxyToEdge(req, res, `${BASE}/${req.params.id}`);
-});
+};
 
-router.get("/conversations/:id/messages", async (req: Request, res: Response) => {
+const getMessages: RequestHandler = async (req, res) => {
   await proxyToEdge(req, res, `${BASE}/${req.params.id}/messages`);
-});
+};
+
+router.get("/conversations", getConversations);
+router.delete("/conversations/:id", deleteConversation);
+router.get("/conversations/:id/messages", getMessages);
 
 export default router;
