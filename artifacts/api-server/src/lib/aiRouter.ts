@@ -1,4 +1,5 @@
 import { logger } from "./logger.js";
+import { supabaseAdmin } from "./supabase.js";
 
 export interface ChatMessage {
   role: "user" | "assistant" | "system";
@@ -28,11 +29,51 @@ const FALLBACK_MODELS = [
   "nvidia/nemotron-3-ultra-550b-a55b:free",
 ];
 
+// ── API key resolution ────────────────────────────────────────────────────────
+// Primary source: Supabase Vault (key stored there, NOT in Replit env).
+// Fallback:       process.env.OPENROUTER_API_KEY (local dev only).
+// Result is cached in memory for the lifetime of the process.
+let _cachedApiKey: string | null = null;
+
+async function getOpenRouterApiKey(): Promise<string | null> {
+  if (_cachedApiKey !== null) return _cachedApiKey;
+
+  // 1. Supabase Vault via public wrapper RPC
+  //    Requires: supabase/migrations/20250101000000_engagera_get_secret.sql applied
+  try {
+    const { data, error } = await supabaseAdmin.rpc("engagera_get_secret", {
+      secret_name: "OPENROUTER_API_KEY",
+    });
+
+    if (!error && typeof data === "string" && data.length > 0) {
+      _cachedApiKey = data;
+      logger.info("OpenRouter API key loaded from Supabase Vault");
+      return _cachedApiKey;
+    }
+    if (error) logger.warn({ err: error }, "Vault RPC error — trying env fallback");
+  } catch (err) {
+    logger.warn({ err }, "Could not reach Supabase Vault — trying env fallback");
+  }
+
+  // 2. Environment variable (local dev fallback only)
+  const envKey = process.env["OPENROUTER_API_KEY"] ?? null;
+  if (envKey) {
+    _cachedApiKey = envKey;
+    logger.info("OpenRouter API key loaded from environment (dev fallback)");
+    return _cachedApiKey;
+  }
+
+  logger.error(
+    "OPENROUTER_API_KEY not found. Add it via: Supabase Dashboard → Database → Vault → New secret (name: OPENROUTER_API_KEY)"
+  );
+  return null;
+}
+
 async function callOpenRouter(
   model: string,
   messages: ChatMessage[],
 ): Promise<ChatResult> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
+  const apiKey = await getOpenRouterApiKey();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "HTTP-Referer": "https://engagera.afuchat.com",
