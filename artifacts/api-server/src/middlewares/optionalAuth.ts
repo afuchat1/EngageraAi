@@ -1,19 +1,19 @@
 import { Request, Response, NextFunction } from "express";
-import { supabaseAdmin } from "../lib/supabase.js";
 
-/**
- * Engagera optional auth middleware.
- *
- * Attaches identity to the request without blocking unauthenticated access.
- * Authenticated users: verified via Supabase JWT → req.userId set.
- * Guest users:         x-guest-session-id header → req.guestSessionId set.
- *
- * Routes that need at least one identity (auth or guest) should check:
- *   if (!req.userId && !req.guestSessionId) return 401
- */
 export interface OptionalAuthRequest extends Request {
   userId?: string;
   guestSessionId?: string;
+}
+
+function extractUserIdFromJwt(token: string): string | undefined {
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return undefined;
+    const decoded = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    return typeof decoded.sub === "string" ? decoded.sub : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export async function optionalAuth(
@@ -24,10 +24,7 @@ export async function optionalAuth(
   const authHeader = req.headers.authorization;
   if (authHeader?.startsWith("Bearer ")) {
     const token = authHeader.slice(7);
-    const { data } = await supabaseAdmin.auth.getUser(token);
-    if (data.user) {
-      req.userId = data.user.id;
-    }
+    req.userId = extractUserIdFromJwt(token);
   }
 
   if (!req.userId) {

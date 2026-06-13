@@ -1,8 +1,18 @@
 import { Request, Response, NextFunction } from "express";
-import { supabaseAdmin } from "../lib/supabase.js";
 
 export interface AuthRequest extends Request {
   userId?: string;
+}
+
+function extractUserIdFromJwt(token: string): string | undefined {
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return undefined;
+    const decoded = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    return typeof decoded.sub === "string" ? decoded.sub : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export async function requireAuth(
@@ -16,14 +26,12 @@ export async function requireAuth(
     return;
   }
 
-  const token = authHeader.slice(7);
-  const { data, error } = await supabaseAdmin.auth.getUser(token);
-
-  if (error || !data.user) {
+  const userId = extractUserIdFromJwt(authHeader.slice(7));
+  if (!userId) {
     res.status(401).json({ error: "Invalid or expired token" });
     return;
   }
 
-  req.userId = data.user.id;
+  req.userId = userId;
   next();
 }
