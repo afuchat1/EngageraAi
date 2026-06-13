@@ -20,7 +20,7 @@ export default function Playground() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (models && models.length > 0 && !selectedModel) {
+    if (Array.isArray(models) && models.length > 0 && !selectedModel) {
       setSelectedModel(models[0].id);
     }
   }, [models, selectedModel]);

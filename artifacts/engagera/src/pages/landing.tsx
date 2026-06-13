@@ -112,7 +112,7 @@ export default function Landing() {
   const { data: loadedMessages } = useGetConversationMessages(loadingConvId ?? 0);
 
   useEffect(() => {
-    if (loadingConvId !== null && loadedMessages) {
+    if (loadingConvId !== null && Array.isArray(loadedMessages)) {
       setMessages(
         loadedMessages.map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))
       );
@@ -122,7 +122,7 @@ export default function Landing() {
   }, [loadedMessages, loadingConvId]);
 
   useEffect(() => {
-    if (models && models.length > 0 && !models.find((m) => m.id === selectedModel)) {
+    if (Array.isArray(models) && models.length > 0 && !models.find((m) => m.id === selectedModel)) {
       setSelectedModel(models[0].id);
     }
   }, [models]);
@@ -141,7 +141,7 @@ export default function Landing() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const selectedModelData = models?.find((m) => m.id === selectedModel);
+  const selectedModelData = Array.isArray(models) ? models.find((m) => m.id === selectedModel) : undefined;
 
   const handleSelectConversation = useCallback((id: number) => {
     setLoadingConvId(id);
@@ -286,7 +286,7 @@ export default function Landing() {
 
             {modelOpen && (
               <div className="absolute top-full left-0 right-0 mt-1 z-50 rounded-lg border border-white/[0.08] bg-[#1a1a1a] shadow-xl overflow-hidden">
-                {models?.map((m) => (
+                {Array.isArray(models) && models.map((m) => (
                   <button
                     key={m.id}
                     onClick={() => {
@@ -314,7 +314,7 @@ export default function Landing() {
 
         {/* ── Conversation history ──────────────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto px-2 py-3 min-h-0">
-          {conversations && conversations.length > 0 ? (
+          {Array.isArray(conversations) && conversations.length > 0 ? (
             <div>
               <p className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">
                 Recent chats

@@ -57,7 +57,7 @@ const client = new Engagera({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {models ? models.map((model) => (
+                  {Array.isArray(models) ? models.map((model) => (
                     <TableRow key={model.id}>
                       <TableCell className="font-mono text-sm font-medium">{model.id}</TableCell>
                       <TableCell className="uppercase text-xs tracking-wider">{model.category}</TableCell>
