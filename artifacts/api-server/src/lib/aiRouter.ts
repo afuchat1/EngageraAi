@@ -60,5 +60,13 @@ export function getEngageraModels() {
       contextWindow: 32000,
       available: true,
     },
+    {
+      id: "engagera-image",
+      name: "Engagera Image",
+      description: "Generate images from text descriptions",
+      category: "vision",
+      contextWindow: 0,
+      available: true,
+    },
   ];
 }

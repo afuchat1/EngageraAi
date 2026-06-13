@@ -3,12 +3,16 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { useGetUsage, useGetUsageSummary } from "@workspace/api-client-react";
+import { useAuth } from "@/hooks/useAuth";
 import { format } from "date-fns";
+import { Link } from "wouter";
 
 export default function Usage() {
   const [days, setDays] = useState<"7" | "14" | "30">("7");
+  const { user } = useAuth();
   const { data: summary, isLoading: summaryLoading } = useGetUsageSummary();
   const { data: records, isLoading: recordsLoading } = useGetUsage({ days: parseInt(days) });
 
@@ -20,8 +24,26 @@ export default function Usage() {
   ];
 
   return (
-    <AppLayout requireAuth showSidebar>
+    <AppLayout showSidebar>
       <div className="p-6 md:p-8 max-w-6xl mx-auto space-y-8">
+
+        {/* Guest banner */}
+        {!user && (
+          <div className="flex items-center justify-between gap-4 px-5 py-3.5 rounded-lg border border-amber-500/20 bg-amber-500/5">
+            <div>
+              <p className="text-sm font-medium text-amber-400">Sign in to see your usage</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Track token consumption, costs, and request logs.</p>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <Link href="/sign-in">
+                <Button variant="outline" size="sm" onClick={() => sessionStorage.setItem("engagera_return_to", "/usage")}>Sign in</Button>
+              </Link>
+              <Link href="/sign-up">
+                <Button size="sm" onClick={() => sessionStorage.setItem("engagera_return_to", "/usage")}>Get started free</Button>
+              </Link>
+            </div>
+          </div>
+        )}
 
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">

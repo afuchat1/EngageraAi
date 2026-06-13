@@ -28,7 +28,9 @@ export default function SignUp() {
     try {
       const { error } = await signUp(email, password);
       if (error) throw error;
-      setLocation("/dashboard");
+      const returnTo = sessionStorage.getItem("engagera_return_to");
+      sessionStorage.removeItem("engagera_return_to");
+      setLocation(returnTo || "/dashboard");
     } catch (err: any) {
       toast({ title: "Sign up failed", description: err.message, variant: "destructive" });
     } finally {

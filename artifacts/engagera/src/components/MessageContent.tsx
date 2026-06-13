@@ -3,7 +3,7 @@ import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { useState } from "react";
-import { Copy, Check } from "lucide-react";
+import { Copy, Check, ZoomIn } from "lucide-react";
 
 interface MessageContentProps {
   content: string;
@@ -61,6 +61,42 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
       >
         {code}
       </SyntaxHighlighter>
+    </div>
+  );
+}
+
+function ImageBlock({ src, alt }: { src: string; alt?: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  return (
+    <div className="my-3">
+      <div
+        className="relative group inline-block max-w-full cursor-pointer"
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <img
+          src={src}
+          alt={alt || "Generated image"}
+          onLoad={() => setLoaded(true)}
+          className={`rounded-lg border border-white/[0.08] max-w-sm w-full object-cover transition-all ${
+            expanded ? "max-w-full" : "max-w-sm"
+          } ${loaded ? "opacity-100" : "opacity-0"}`}
+        />
+        {!loaded && (
+          <div className="w-64 h-40 rounded-lg border border-white/[0.08] bg-[#1a1a1a] flex items-center justify-center">
+            <span className="text-xs text-muted-foreground animate-pulse">Loading image…</span>
+          </div>
+        )}
+        {loaded && (
+          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 rounded p-1">
+            <ZoomIn className="h-3.5 w-3.5 text-white/80" />
+          </div>
+        )}
+      </div>
+      {alt && alt !== "Generated image" && (
+        <p className="text-[11px] text-muted-foreground/50 mt-1.5 italic">{alt}</p>
+      )}
     </div>
   );
 }
@@ -135,6 +171,10 @@ export function MessageContent({ content }: MessageContentProps) {
           hr: () => <hr className="border-white/[0.08] my-4" />,
 
           pre: ({ children }) => <>{children}</>,
+
+          img: ({ src, alt }) => (
+            src ? <ImageBlock src={src} alt={alt} /> : null
+          ),
 
           code: ({ className, children }) => {
             const match = /language-(\w+)/.exec(className || "");

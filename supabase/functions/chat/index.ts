@@ -17,22 +17,29 @@ const FALLBACK_MODELS = [
 
 const GUEST_MESSAGE_LIMIT = 5;
 
-// ── Engagera identity system prompt ──────────────────────────────────────────
-// Injected before every conversation so the model never claims to be ChatGPT,
-// Claude, Gemini, or any other named AI product.
 const ENGAGERA_SYSTEM_PROMPT = {
   role: "system",
-  content: `You are Engagera AI, a next-generation AI assistant built by the AfuAI team as part of the Engagera platform — a unified AI developer ecosystem.
+  content: `You are a helpful AI assistant on the Engagera platform, built by the AfuAI team.
 
-Your identity rules (strictly follow these at all times):
-- Your name is Engagera AI. Always introduce yourself as Engagera AI.
-- You were created by the Engagera / AfuAI team.
+Identity rules (follow at all times):
+- You were created by the AfuAI / Engagera team.
 - You are NOT ChatGPT, GPT, Claude, Gemini, Copilot, Llama, or any other named AI product. Never claim to be any of these.
 - If someone asks who made you, say you were built by the AfuAI / Engagera team.
-- If asked about your underlying model or architecture, say you are powered by advanced language models optimized for the Engagera platform — do not name the underlying provider.
-- Always refer to yourself as "Engagera AI" or simply "Engagera".
+- If asked about your underlying model, say you are powered by advanced language models optimized for the Engagera platform — do not name the underlying provider.
+- Do NOT introduce yourself by name in every message. Only state your name if directly asked "who are you" or "what is your name". In normal conversation, just respond helpfully without naming yourself.
 
-You are helpful, accurate, professional, and thoughtful. You assist developers and users with a wide range of tasks.`,
+Accuracy and research:
+- Always strive to give accurate, factual, and up-to-date information.
+- If you are unsure about something, clearly state your uncertainty rather than guessing.
+- When providing information about recent events, technologies, or data, note if your knowledge may be limited.
+- Cite your reasoning when making claims about facts, figures, or technical details.
+- If a question requires real-time data you do not have access to, say so clearly and suggest where the user can find it.
+
+Communication style:
+- Be helpful, concise, and professional. Adapt your tone to the user's style.
+- Use markdown formatting for code, lists, and structured content.
+- For code snippets, always specify the programming language.
+- Learn from the conversation context — remember what the user has told you earlier in the conversation and build on it.`,
 };
 
 const CORS_HEADERS = {
@@ -64,7 +71,7 @@ Deno.serve(async (req: Request) => {
     });
 
     const body = await req.json().catch(() => ({}));
-    const { messages, model = "engagera-pro", conversationId } = body;
+    const { messages, model = "engagera-pro", conversationId, contextHint } = body;
 
     if (!Array.isArray(messages) || messages.length === 0) {
       return json({ error: "messages array is required" }, 400);
@@ -122,6 +129,17 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // ── Build system messages ────────────────────────────────────────────────
+    const systemMessages = [ENGAGERA_SYSTEM_PROMPT];
+
+    // Inject user preference context hint if provided
+    if (contextHint && typeof contextHint === "string" && contextHint.length > 0) {
+      systemMessages.push({
+        role: "system",
+        content: `[User context] ${contextHint}`,
+      });
+    }
+
     // ── OpenRouter call with fallbacks ────────────────────────────────────────
     const primaryModel = ENGAGERA_MODEL_MAP[model] ?? ENGAGERA_MODEL_MAP["engagera-pro"];
     const modelsToTry  = [primaryModel, ...FALLBACK_MODELS.filter((m) => m !== primaryModel)];
@@ -146,13 +164,13 @@ Deno.serve(async (req: Request) => {
             "X-Title":       "Engagera AI",
           },
           body: JSON.stringify({
-          model: orModel,
-          messages: [
-            ENGAGERA_SYSTEM_PROMPT,
-            ...validMessages.filter((m: Record<string, unknown>) => m.role !== "system"),
-          ],
-          max_tokens: 2048,
-        }),
+            model: orModel,
+            messages: [
+              ...systemMessages,
+              ...validMessages.filter((m: Record<string, unknown>) => m.role !== "system"),
+            ],
+            max_tokens: 2048,
+          }),
         });
 
         if (!orRes.ok) throw new Error(`OpenRouter ${orRes.status}: ${await orRes.text()}`);
@@ -177,7 +195,7 @@ Deno.serve(async (req: Request) => {
 
     if (!result) {
       result = {
-        content: "I'm Engagera AI. I'm currently experiencing high demand. Please try again in a moment.",
+        content: "I'm currently experiencing high demand. Please try again in a moment.",
         inputTokens: 0, outputTokens: 0, totalTokens: 0,
       };
     }

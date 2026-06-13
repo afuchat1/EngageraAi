@@ -5,6 +5,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useListModels } from "@workspace/api-client-react";
 import { useEdgeChatCompletion } from "@/hooks/useEdgeChatCompletion";
+import { MessageContent } from "@/components/MessageContent";
 import { Send, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -135,13 +136,12 @@ export default function Playground() {
                         : "bg-card border border-border text-foreground rounded-bl-sm"
                     )}
                   >
-                    <pre className="whitespace-pre-wrap font-sans">{msg.content}</pre>
+                    {msg.role === "user" ? (
+                      <div className="whitespace-pre-wrap font-sans">{msg.content}</div>
+                    ) : (
+                      <MessageContent content={msg.content} />
+                    )}
                   </div>
-                  {msg.role === "user" && (
-                    <div className="h-7 w-7 rounded-md border border-border bg-card flex items-center justify-center shrink-0 mt-0.5">
-                      <span className="text-[10px] font-bold text-foreground">U</span>
-                    </div>
-                  )}
                 </div>
               ))}
 

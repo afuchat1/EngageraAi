@@ -22,7 +22,7 @@ const WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
  * which holds OPENROUTER_API_KEY in its Edge Function secrets.
  */
 router.post("/chat", async (req, res) => {
-  const { messages, model, conversationId } = req.body ?? {};
+  const { messages, model, conversationId, contextHint } = req.body ?? {};
 
   if (!Array.isArray(messages) || messages.length === 0) {
     res.status(400).json({ error: "messages array is required" });
@@ -86,7 +86,7 @@ router.post("/chat", async (req, res) => {
   const upstream = await fetch(EDGE_FUNCTION_URL, {
     method: "POST",
     headers: forwardHeaders,
-    body: JSON.stringify({ messages, model, conversationId }),
+    body: JSON.stringify({ messages, model, conversationId, contextHint }),
   });
 
   const data = await upstream.json();

@@ -22,6 +22,10 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 
+function saveReturnTo(path: string) {
+  sessionStorage.setItem("engagera_return_to", path);
+}
+
 export default function Dashboard() {
   const { user } = useAuth();
   const { data: stats, isLoading: statsLoading } = useGetDashboardStats();
@@ -114,8 +118,26 @@ export default function Dashboard() {
   ];
 
   return (
-    <AppLayout requireAuth showSidebar>
+    <AppLayout showSidebar>
       <div className="p-6 md:p-8 max-w-6xl mx-auto space-y-8">
+
+        {/* Guest banner */}
+        {!user && (
+          <div className="flex items-center justify-between gap-4 px-5 py-3.5 rounded-lg border border-amber-500/20 bg-amber-500/5">
+            <div>
+              <p className="text-sm font-medium text-amber-400">Sign in to access your dashboard</p>
+              <p className="text-xs text-muted-foreground mt-0.5">View your API keys, usage stats, and activity.</p>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <Link href="/sign-in">
+                <Button variant="outline" size="sm" onClick={() => saveReturnTo("/dashboard")}>Sign in</Button>
+              </Link>
+              <Link href="/sign-up">
+                <Button size="sm" onClick={() => saveReturnTo("/dashboard")}>Create account</Button>
+              </Link>
+            </div>
+          </div>
+        )}
 
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -125,10 +147,19 @@ export default function Dashboard() {
               {user?.email && <span className="font-mono text-xs">{user.email}</span>}
             </p>
           </div>
-          <Button onClick={() => setIsCreateOpen(true)} size="sm" className="gap-2 self-start sm:self-auto">
-            <Plus className="h-4 w-4" />
-            New API Key
-          </Button>
+          {user ? (
+            <Button onClick={() => setIsCreateOpen(true)} size="sm" className="gap-2 self-start sm:self-auto">
+              <Plus className="h-4 w-4" />
+              New API Key
+            </Button>
+          ) : (
+            <Link href="/sign-up">
+              <Button size="sm" className="gap-2 self-start sm:self-auto" onClick={() => saveReturnTo("/dashboard")}>
+                <Plus className="h-4 w-4" />
+                New API Key
+              </Button>
+            </Link>
+          )}
         </div>
 
         {/* Stat cards */}

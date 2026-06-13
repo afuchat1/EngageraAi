@@ -9,6 +9,7 @@ import {
   setGuestSessionId,
 } from "@workspace/api-client-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useUserPreferences } from "@/hooks/useUserPreferences";
 import { cn } from "@/lib/utils";
 import { MessageContent } from "@/components/MessageContent";
 import {
@@ -30,6 +31,7 @@ import {
   Trash2,
   Clock,
   AlignJustify,
+  ImageIcon,
 } from "lucide-react";
 
 type Message = { role: "user" | "assistant"; content: string };
@@ -87,6 +89,7 @@ const MODEL_ICONS: Record<string, React.ReactNode> = {
   "engagera-code": <Code2 className="h-3.5 w-3.5" />,
   "engagera-vision": <Eye className="h-3.5 w-3.5" />,
   "engagera-voice": <Mic className="h-3.5 w-3.5" />,
+  "engagera-image": <ImageIcon className="h-3.5 w-3.5" />,
 };
 
 const SUGGESTED_PROMPTS = [
@@ -111,6 +114,7 @@ export default function Landing() {
   const { data: models } = useListModels();
   const chatMutation = useChatCompletion();
   const deleteConvMutation = useDeleteConversation();
+  const { recordMessage, getContextHint } = useUserPreferences();
 
   const [guestSessionId] = useState<string>(() => getOrCreateGuestSessionId());
   const [messages, setMessages] = useState<Message[]>([]);
@@ -262,13 +266,30 @@ export default function Landing() {
     setInput("");
     if (textareaRef.current) textareaRef.current.style.height = "auto";
 
+    // Record message for personalization learning
+    recordMessage(content, selectedModel);
+
+    // ── Image generation (Pollinations.ai — free, no API key) ────────────────
+    if (selectedModel === "engagera-image") {
+      const encodedPrompt = encodeURIComponent(content);
+      const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=768&nologo=true&model=flux&seed=${Date.now()}`;
+      const imageMarkdown = `![${content}](${imageUrl})`;
+      setTimeout(() => {
+        setMessages([...updated, { role: "assistant", content: imageMarkdown }]);
+      }, 200);
+      return;
+    }
+
+    const contextHint = getContextHint();
+
     chatMutation.mutate(
       {
         data: {
           messages: updated,
           model: selectedModel,
           ...(activeConversationId ? { conversationId: activeConversationId } : {}),
-        },
+          ...(contextHint ? { contextHint } : {}),
+        } as Parameters<typeof chatMutation.mutate>[0]["data"],
       },
       {
         onSuccess: (res) => {
@@ -570,13 +591,6 @@ export default function Landing() {
                       <MessageContent content={msg.content} />
                     )}
                   </div>
-                  {msg.role === "user" && (
-                    <div className="h-7 w-7 bg-[#1a1a1a] flex items-center justify-center shrink-0 mt-0.5">
-                      <span className="text-[11px] font-semibold">
-                        {user?.email?.[0]?.toUpperCase() ?? "G"}
-                      </span>
-                    </div>
-                  )}
                 </div>
               ))}
 
