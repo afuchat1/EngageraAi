@@ -10,3 +10,10 @@ if (!supabaseUrl || !supabaseServiceKey) {
 export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
+
+/**
+ * Pre-bound to the `engagera` schema.
+ * Always use this instead of supabaseAdmin.schema("engagera") directly
+ * so every DB call is structurally scoped to Engagera — no leaks into public.
+ */
+export const engageraDb = supabaseAdmin.schema("engagera");

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { supabaseAdmin } from "../lib/supabase";
+import { engageraDb } from "../lib/supabase";
 import { requireAuth, type AuthRequest } from "../middlewares/requireAuth";
 
 const router = Router();
@@ -11,20 +11,17 @@ router.get("/dashboard/stats", requireAuth, async (req: AuthRequest, res) => {
   since.setDate(since.getDate() - 30);
 
   const [keysResult, usageResult, recentResult] = await Promise.all([
-    supabaseAdmin
-      .schema("engagera")
+    engageraDb
       .from("api_keys")
       .select("id", { count: "exact", head: true })
       .eq("user_id", userId)
       .eq("is_active", true),
-    supabaseAdmin
-      .schema("engagera")
+    engageraDb
       .from("usage_records")
       .select("model, total_tokens")
       .eq("user_id", userId)
       .gte("created_at", since.toISOString()),
-    supabaseAdmin
-      .schema("engagera")
+    engageraDb
       .from("usage_records")
       .select("model, total_tokens, created_at")
       .eq("user_id", userId)

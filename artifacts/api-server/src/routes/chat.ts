@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { supabaseAdmin } from "../lib/supabase";
+import { engageraDb } from "../lib/supabase";
 import { requireAuth, type AuthRequest } from "../middlewares/requireAuth";
 import { routeChat } from "../lib/aiRouter";
 
@@ -30,8 +30,7 @@ router.post("/chat", requireAuth, async (req: AuthRequest, res) => {
 
   const responseId = `eng_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-  await supabaseAdmin
-    .schema("engagera")
+  await engageraDb
     .from("usage_records")
     .insert({
       user_id: req.userId!,

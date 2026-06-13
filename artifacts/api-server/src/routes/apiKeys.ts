@@ -1,6 +1,6 @@
 import { Router } from "express";
 import crypto from "crypto";
-import { supabaseAdmin } from "../lib/supabase";
+import { engageraDb } from "../lib/supabase";
 import { requireAuth, type AuthRequest } from "../middlewares/requireAuth";
 
 const router = Router();
@@ -13,8 +13,7 @@ function generateApiKey(): { key: string; prefix: string; hash: string } {
 }
 
 router.get("/api-keys", requireAuth, async (req: AuthRequest, res) => {
-  const { data, error } = await supabaseAdmin
-    .schema("engagera")
+  const { data, error } = await engageraDb
     .from("api_keys")
     .select("id, name, prefix, is_active, total_requests, last_used_at, created_at")
     .eq("user_id", req.userId!)
@@ -47,8 +46,7 @@ router.post("/api-keys", requireAuth, async (req: AuthRequest, res) => {
 
   const { key, prefix, hash } = generateApiKey();
 
-  const { data, error } = await supabaseAdmin
-    .schema("engagera")
+  const { data, error } = await engageraDb
     .from("api_keys")
     .insert({
       user_id: req.userId!,
@@ -82,8 +80,7 @@ router.delete("/api-keys/:id", requireAuth, async (req: AuthRequest, res) => {
     return;
   }
 
-  const { error } = await supabaseAdmin
-    .schema("engagera")
+  const { error } = await engageraDb
     .from("api_keys")
     .update({ is_active: false })
     .eq("id", id)
