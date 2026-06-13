@@ -33,16 +33,35 @@ export function useAuth() {
     return supabase.auth.signUp({ email, password });
   };
 
+  const signInWithGoogle = async () => {
+    return supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: window.location.origin,
+        queryParams: { access_type: "offline", prompt: "consent" },
+      },
+    });
+  };
+
   const signOut = async () => {
     return supabase.auth.signOut();
   };
+
+  const avatarUrl: string | null =
+    user?.user_metadata?.avatar_url ?? user?.user_metadata?.picture ?? null;
+
+  const displayName: string | null =
+    user?.user_metadata?.full_name ?? user?.user_metadata?.name ?? user?.email?.split("@")[0] ?? null;
 
   return {
     user,
     session,
     loading,
+    avatarUrl,
+    displayName,
     signIn,
     signUp,
+    signInWithGoogle,
     signOut,
   };
 }

@@ -45,12 +45,16 @@ export default function Playground() {
     if (textareaRef.current) textareaRef.current.style.height = "auto";
 
     chatMutation.mutate(
-      { data: { messages: updatedMessages, model: selectedModel } },
+      { messages: updatedMessages, model: selectedModel },
       {
-        onSuccess: (response: { message: { content: string }; usage: { inputTokens: number; outputTokens: number; totalTokens: number } }) => {
+        onSuccess: (response) => {
           setMessages([...updatedMessages, { role: "assistant", content: response.message.content }]);
           setLastUsage(response.usage);
-        }
+        },
+        onError: (err: any) => {
+          const msg = err?.data?.error ?? err?.message ?? "Something went wrong. Please try again.";
+          setMessages([...updatedMessages, { role: "assistant", content: `⚠️ ${msg}` }]);
+        },
       }
     );
   };

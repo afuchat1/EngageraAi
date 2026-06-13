@@ -20,7 +20,6 @@ import {
   Plus,
   ChevronDown,
   LogIn,
-  LogOut,
   Sparkles,
   Zap,
   Code2,
@@ -110,7 +109,7 @@ function timeAgo(dateStr: string): string {
 }
 
 export default function Landing() {
-  const { user, loading: authLoading, signOut } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { data: models } = useListModels();
   const chatMutation = useChatCompletion();
   const deleteConvMutation = useDeleteConversation();
@@ -466,15 +465,23 @@ export default function Landing() {
         <div className="px-3 pb-3 shrink-0">
           {authLoading ? null : user ? (
             <div className="flex items-center gap-2 px-3 py-2">
-              <div className="h-5 w-5 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
-                <span className="text-[10px] font-semibold text-primary">
-                  {user.email?.[0]?.toUpperCase() ?? "U"}
-                </span>
-              </div>
-              <p className="text-[11px] text-muted-foreground flex-1 truncate">{user.email}</p>
-              <button onClick={() => signOut()} className="text-muted-foreground/50 hover:text-foreground transition-colors" title="Sign out">
-                <LogOut className="h-3.5 w-3.5" />
-              </button>
+              {user.user_metadata?.avatar_url ? (
+                <img
+                  src={user.user_metadata.avatar_url}
+                  alt=""
+                  className="h-5 w-5 rounded-full object-cover shrink-0 border border-border/50"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className="h-5 w-5 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                  <span className="text-[10px] font-semibold text-primary">
+                    {user.email?.[0]?.toUpperCase() ?? "U"}
+                  </span>
+                </div>
+              )}
+              <p className="text-[11px] text-muted-foreground flex-1 truncate">
+                {user.user_metadata?.full_name ?? user.user_metadata?.name ?? user.email}
+              </p>
             </div>
           ) : (
             <Link href="/sign-in">
