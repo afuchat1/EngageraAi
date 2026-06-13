@@ -6,11 +6,10 @@
  */
 import type { Request, Response } from "express";
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-
-if (!SUPABASE_URL) {
-  throw new Error("[Engagera] SUPABASE_URL must be set.");
-}
+// Public Supabase project URL — safe to hardcode as fallback.
+// Set SUPABASE_URL env var in your deployment to override.
+const SUPABASE_URL =
+  process.env.SUPABASE_URL ?? "https://rhnsjqqtdzlkvqazfcbg.supabase.co";
 
 export function edgeFnUrl(slug: string): string {
   return `${SUPABASE_URL}/functions/v1/${slug}`;
