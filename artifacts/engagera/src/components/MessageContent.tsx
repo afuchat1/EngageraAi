@@ -138,7 +138,7 @@ export function MessageContent({ content }: MessageContentProps) {
         remarkPlugins={[remarkGfm]}
         components={{
           p: ({ children }) => (
-            <p className="mb-3 last:mb-0 leading-relaxed text-foreground/90">{children}</p>
+            <div className="mb-3 last:mb-0 leading-relaxed text-foreground/90">{children}</div>
           ),
 
           h1: ({ children }) => (

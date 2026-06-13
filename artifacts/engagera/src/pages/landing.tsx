@@ -139,7 +139,7 @@ export default function Landing() {
   const [guestSessionId] = useState<string>(() => getOrCreateGuestSessionId());
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [selectedModel, setSelectedModel] = useState("engagera-pro");
+  const [selectedModel, setSelectedModel] = useState("engagera-lite");
   const [modelOpen, setModelOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
@@ -284,16 +284,39 @@ export default function Landing() {
     },
   });
 
+  const compressImage = (dataUrl: string): Promise<string> =>
+    new Promise((resolve) => {
+      const MAX_PX = 800;
+      const QUALITY = 0.82;
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > MAX_PX || height > MAX_PX) {
+          const ratio = Math.min(MAX_PX / width, MAX_PX / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d")?.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", QUALITY));
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    });
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     files.forEach((file) => {
       const reader = new FileReader();
       const isImage = file.type.startsWith("image/");
       if (isImage) {
-        reader.onload = () => {
+        reader.onload = async () => {
+          const compressed = await compressImage(reader.result as string);
           setAttachments((prev) => [
             ...prev,
-            { id: crypto.randomUUID(), name: file.name, kind: "image", content: reader.result as string, preview: reader.result as string, mimeType: file.type },
+            { id: crypto.randomUUID(), name: file.name, kind: "image", content: compressed, preview: compressed, mimeType: "image/jpeg" },
           ]);
           if (selectedModel !== "engagera-vision" && selectedModel !== "engagera-image") {
             setSelectedModel("engagera-vision");

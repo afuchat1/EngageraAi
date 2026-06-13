@@ -28,6 +28,7 @@ interface ChatResponse {
 }
 
 const EDGE_FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
+const REQUEST_TIMEOUT_MS = 60_000;
 
 async function callEdgeChat(request: ChatRequest): Promise<ChatResponse> {
   const { data: sessionData } = await supabase.auth.getSession();
@@ -50,21 +51,37 @@ async function callEdgeChat(request: ChatRequest): Promise<ChatResponse> {
     headers["x-guest-session-id"] = guestId;
   }
 
-  const res = await fetch(EDGE_FUNCTION_URL, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(request),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw Object.assign(new Error(err.error ?? "Chat request failed"), {
-      status: res.status,
-      data: err,
+  try {
+    const res = await fetch(EDGE_FUNCTION_URL, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(request),
+      signal: controller.signal,
     });
-  }
 
-  return res.json();
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw Object.assign(new Error(err.error ?? "Chat request failed"), {
+        status: res.status,
+        data: err,
+      });
+    }
+
+    return res.json();
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw Object.assign(new Error("Request timed out. The AI is taking too long — please try again."), {
+        status: 408,
+        data: { error: "timeout" },
+      });
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export function useEdgeChatCompletion() {
