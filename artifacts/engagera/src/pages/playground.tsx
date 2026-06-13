@@ -3,7 +3,8 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useListModels, useChatCompletion } from "@workspace/api-client-react";
+import { useListModels } from "@workspace/api-client-react";
+import { useEdgeChatCompletion } from "@/hooks/useEdgeChatCompletion";
 import { Send, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -11,7 +12,7 @@ type Message = { role: "user" | "assistant"; content: string };
 
 export default function Playground() {
   const { data: models, isLoading: modelsLoading } = useListModels();
-  const chatMutation = useChatCompletion();
+  const chatMutation = useEdgeChatCompletion();
 
   const [selectedModel, setSelectedModel] = useState<string>("");
   const [input, setInput] = useState("");
