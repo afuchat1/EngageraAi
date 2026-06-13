@@ -379,7 +379,7 @@ export default function Landing() {
   const guestRemaining = Math.max(0, GUEST_DAILY_LIMIT - guestMessageCount);
 
   return (
-    <div className="flex h-screen bg-[#0a0a0a] text-foreground overflow-hidden">
+    <div className="flex h-screen h-dvh bg-[#0a0a0a] text-foreground overflow-hidden">
 
       {/* ── Sidebar ─────────────────────────────────────────────────────────── */}
       <aside className={cn(
@@ -512,7 +512,7 @@ export default function Landing() {
       </aside>
 
       {/* ── Main ──────────────────────────────────────────────────────────────── */}
-      <div className="flex flex-col flex-1 min-w-0 relative">
+      <div className="flex flex-col flex-1 min-w-0 min-h-0 relative overflow-hidden">
 
         {/* Top bar */}
         <header className="h-12 border-b border-[#1a1a1a] flex items-center px-3 gap-2 shrink-0">
@@ -559,9 +559,9 @@ export default function Landing() {
         </header>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto pb-4">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 pb-2">
           {messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full px-4 pb-40">
+            <div className="flex flex-col items-center justify-center h-full px-4 py-8">
               <div className="mb-7 text-center">
                 <div className="h-12 w-12 border border-[#1a1a1a] flex items-center justify-center mx-auto mb-4">
                   <img src="/logo.png" alt="Engagera" className="h-7 w-7 object-contain" />
@@ -650,8 +650,8 @@ export default function Landing() {
           )}
         </div>
 
-        {/* ── Floating Pill Input ─────────────────────────────────────────────── */}
-        <div className="px-4 pb-6 pt-3 max-w-2xl mx-auto w-full">
+        {/* ── Input bar — always visible, never shrinks ───────────────────────── */}
+        <div className="shrink-0 px-4 pb-4 pt-2 max-w-2xl mx-auto w-full">
 
           {/* 24hr limit notice */}
           {isGuest && windowResetAt && (
