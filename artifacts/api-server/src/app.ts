@@ -53,7 +53,9 @@ if (process.env.NODE_ENV === "production" && !process.env.VERCEL) {
   app.use(express.static(frontendDist));
 
   // SPA fallback — any non-/api route serves index.html so client-side routing works
-  app.get("*", (_req: express.Request, res: express.Response) => {
+  // Cast res to any: @types/express v5 narrowed sendFile's signature but it exists at runtime
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  app.get("*", (_req: express.Request, res: any) => {
     res.sendFile(path.join(frontendDist, "index.html"));
   });
 }
