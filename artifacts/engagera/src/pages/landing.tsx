@@ -767,6 +767,34 @@ export default function Landing() {
             onChange={handleFileChange}
           />
 
+          {/* Model dropdown (in-flow, above pill — avoids overflow-hidden clipping) */}
+          <div ref={modelDropdownRef}>
+            {modelOpen && (
+              <div className="mb-2 border border-[#1a1a1a] bg-[#111] rounded-md overflow-hidden">
+                {Array.isArray(models) && models.map((m) => (
+                  <button
+                    key={m.id}
+                    onClick={() => { setSelectedModel(m.id); setModelOpen(false); }}
+                    className={cn(
+                      "w-full flex items-center gap-2.5 px-4 py-2.5 text-xs text-left transition-colors",
+                      m.id === selectedModel
+                        ? "bg-[#1a1a1a] text-foreground"
+                        : "text-muted-foreground hover:bg-[#161616] hover:text-foreground"
+                    )}
+                  >
+                    {MODEL_ICONS[m.id]}
+                    <div>
+                      <p className="font-medium">{m.name}</p>
+                      {m.description && <p className="text-[10px] text-muted-foreground/60 mt-0.5">{m.description}</p>}
+                    </div>
+                    {m.id === selectedModel && (
+                      <span className="ml-auto text-[10px] text-primary font-medium">Active</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+
           {/* Pill */}
           <div className={cn(
             "flex items-end rounded-full border transition-colors",
@@ -774,42 +802,15 @@ export default function Landing() {
               ? "border-[#1a1a1a] opacity-50 pointer-events-none"
               : "border-[#222] focus-within:border-[#333] bg-[#111]"
           )}>
-            {/* Model selector */}
-            <div ref={modelDropdownRef} className="relative self-stretch flex items-end shrink-0">
-              {modelOpen && (
-                <div className="absolute bottom-full left-0 mb-2 w-64 z-30 border border-[#1a1a1a] bg-[#111] rounded-md overflow-hidden shadow-xl">
-                  {Array.isArray(models) && models.map((m) => (
-                    <button
-                      key={m.id}
-                      onClick={() => { setSelectedModel(m.id); setModelOpen(false); }}
-                      className={cn(
-                        "w-full flex items-center gap-2.5 px-4 py-2.5 text-xs text-left transition-colors",
-                        m.id === selectedModel
-                          ? "bg-[#1a1a1a] text-foreground"
-                          : "text-muted-foreground hover:bg-[#161616] hover:text-foreground"
-                      )}
-                    >
-                      {MODEL_ICONS[m.id]}
-                      <div>
-                        <p className="font-medium">{m.name}</p>
-                        {m.description && <p className="text-[10px] text-muted-foreground/60 mt-0.5">{m.description}</p>}
-                      </div>
-                      {m.id === selectedModel && (
-                        <span className="ml-auto text-[10px] text-primary font-medium">Active</span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <button
-                onClick={() => setModelOpen((v) => !v)}
-                className="flex items-center gap-1.5 pl-4 pr-3 py-3 text-xs text-muted-foreground hover:text-foreground transition-colors border-r border-[#1a1a1a] h-full"
-              >
-                {MODEL_ICONS[selectedModel]}
-                <span className="hidden sm:inline">{selectedModelData?.name ?? "Model"}</span>
-                <ChevronDown className={cn("h-3 w-3 transition-transform", modelOpen && "rotate-180")} />
-              </button>
-            </div>
+            {/* Model selector trigger */}
+            <button
+              onClick={() => setModelOpen((v) => !v)}
+              className="flex items-center gap-1.5 pl-4 pr-3 py-3 text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0 border-r border-[#1a1a1a]"
+            >
+              {MODEL_ICONS[selectedModel]}
+              <span className="hidden sm:inline">{selectedModelData?.name ?? "Model"}</span>
+              <ChevronDown className={cn("h-3 w-3 transition-transform", modelOpen && "rotate-180")} />
+            </button>
 
             {/* Textarea */}
             <textarea
@@ -903,6 +904,7 @@ export default function Landing() {
               </button>
             </div>
           </div>
+          </div>{/* end modelDropdownRef wrapper */}
 
           <p className="text-center text-[11px] text-muted-foreground/30 mt-2">
             Engagera can make mistakes. Verify important information.
