@@ -3,7 +3,7 @@
     "target": "es2020",
     "module": "commonjs",
     "moduleResolution": "node",
-    "lib": ["es2020"],
+    "lib": ["es2020", "dom"],
     "strict": false,
     "noImplicitAny": true,
     "strictNullChecks": true,
@@ -16,7 +16,6 @@
     ]
   },
   "include": [
-    "index.ts",
-    "../artifacts/api-server/src/**/*"
+    "index.ts"
   ]
 }
