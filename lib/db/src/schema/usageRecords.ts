@@ -2,7 +2,7 @@ import { pgTable, text, serial, integer, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
-export const usageRecordsTable = pgTable("usage_records", {
+export const usageRecordsTable = pgTable("engagera_usage_records", {
   id: serial("id").primaryKey(),
   userId: text("user_id").notNull(),
   apiKeyId: integer("api_key_id"),

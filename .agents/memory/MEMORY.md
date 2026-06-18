@@ -1,6 +1,6 @@
 - [Engagera DB convention](engagera-db-convention.md) — all tables in `public` schema with `engagera_` prefix; always use `engageraDb` alias
 - [Engagera guest access](engagera-guest-access.md) — guest session ID via `setGuestSessionId()` global, 5-message limit, 429 on breach
-- [OpenRouter free model status](openrouter-free-models.md) — working models as of June 2026; Venice-hosted ones rate-limit hard
+- [AI provider status](openrouter-free-models.md) — OpenRouter exhausted; switched to Groq (GROQ_API_KEY in Supabase secrets); llama-3.3-70b-versatile for all chat
 - [Engagera storage audit](engagera-storage-audit.md) — Supabase-only confirmed; DATABASE_URL and @workspace/db removed; engagera schema dropped
 - [Engagera edge function](engagera-edge-function.md) — chat via Supabase Edge Function; OPENROUTER_API_KEY Supabase-only; identity system prompt injected
 - [Engagera Vercel deployment](engagera-vercel.md) — vercel.json + api/index.ts adapter; 4 env vars required in Vercel dashboard
