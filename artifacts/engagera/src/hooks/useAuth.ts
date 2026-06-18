@@ -33,16 +33,6 @@ export function useAuth() {
     return supabase.auth.signUp({ email, password });
   };
 
-  const signInWithGoogle = async () => {
-    return supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: window.location.origin,
-        queryParams: { access_type: "offline", prompt: "consent" },
-      },
-    });
-  };
-
   const signOut = async () => {
     return supabase.auth.signOut();
   };
@@ -61,7 +51,6 @@ export function useAuth() {
     displayName,
     signIn,
     signUp,
-    signInWithGoogle,
     signOut,
   };
 }
