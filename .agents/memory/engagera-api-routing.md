@@ -27,3 +27,10 @@ All `@workspace/api-client-react` generated hooks call `/api/...` paths. A `setU
 **Why:** The generated API client is hardcoded to `/api/*` paths (can't be changed without re-running codegen). The URL mapper intercepts and rewrites these paths so the Express server is bypassed entirely for API calls.
 
 **How to apply:** When adding a new Edge Function that the frontend must call via the generated client, add a new entry to the `setUrlMapper` function in `App.tsx`. Order matters — check more specific prefixes (e.g. `/usage/summary`) before less specific ones (e.g. `/usage`).
+
+## Bug: Supabase JS silent errors (found in chat message persistence)
+Supabase JS v2 `.insert()` resolves (does NOT reject/throw) even when there's a DB error — it returns `{ data: null, error: PgError }`. Using `.catch(() => {})` silently discards errors because the promise never rejects. Always destructure `{ error }` and log it:
+```typescript
+const { error: insertErr } = await db.from("table").insert({...});
+if (insertErr) log("warn", "insert_failed", { error: JSON.stringify(insertErr) });
+```

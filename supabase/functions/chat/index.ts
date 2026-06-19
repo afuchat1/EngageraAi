@@ -1343,16 +1343,23 @@ Deno.serve(async (req: Request) => {
         if (lastUserMsg) {
           const userText = typeof lastUserMsg.content === "string"
             ? lastUserMsg.content : JSON.stringify(lastUserMsg.content);
-          await db.from("engagera_messages").insert({
+          const { error: userMsgErr } = await db.from("engagera_messages").insert({
             conversation_id: convId, role: "user", content: userText, token_count: 0,
-          }).catch(() => {});
+          });
+          if (userMsgErr) log("warn", "msg.user_insert_failed", { requestId, convId, error: JSON.stringify(userMsgErr) });
         }
-        await Promise.allSettled([
+        const [assistantResult, rpcResult] = await Promise.allSettled([
           db.from("engagera_messages").insert({
             conversation_id: convId, role: "assistant", content: reply, token_count: totalTokens,
           }),
           db.rpc("engagera_increment_message_count", { p_conversation_id: convId }),
         ]);
+        if (assistantResult.status === "fulfilled" && assistantResult.value?.error) {
+          log("warn", "msg.assistant_insert_failed", { requestId, convId, error: JSON.stringify(assistantResult.value.error) });
+        }
+        if (rpcResult.status === "fulfilled" && rpcResult.value?.error) {
+          log("warn", "msg.rpc_failed", { requestId, convId, error: JSON.stringify(rpcResult.value.error) });
+        }
       }
     } catch (err) {
       log("warn", "conv.persist_failed", { requestId, error: String(err) });
