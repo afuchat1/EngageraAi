@@ -81,47 +81,57 @@ const MODEL_CHAINS: Record<string, ProviderModel[]> = {
 };
 const DEFAULT_CHAIN = STANDARD_CHAIN;
 
-// ── Image-gen keyword / pattern lists ─────────────────────────────────────────
+// ── Image-gen keyword / pattern lists (CONSERVATIVE) ─────────────────────────
+// Only triggers when the user unambiguously requests visual image output.
+// "generate", "create", "make", "design" alone do NOT trigger — they must be
+// clearly paired with an explicit image noun.  This prevents the slow image-gen
+// path from firing on normal chat like "please generate a Python function" or
+// "can you create an API" or "picture of the problem".
 const IMAGE_GEN_KEYWORDS = [
-  "generate image","generate a image","generate an image","generate picture",
-  "generate a picture","generate photo","generate a photo","generate art",
-  "generate artwork","generate illustration","generate an illustration",
-  "generate logo","generate a logo","create image","create a image",
-  "create an image","create picture","create a picture","create photo",
-  "create a photo","create art","create artwork","create illustration",
-  "create an illustration","create logo","create a logo","make image",
-  "make a image","make an image","make picture","make a picture",
-  "make me a picture","make photo","make a photo","make me a photo",
-  "make art","make me art","make artwork","make illustration",
-  "make an illustration","make logo","make a logo","make me an image",
-  "make me a image","draw me","draw a","draw an","show me a picture",
-  "show me an image","show me a photo","show me a drawing",
-  "show me a painting","show me an illustration","show me a logo",
-  "paint a","paint an","paint me","sketch a","sketch an","sketch me",
-  "illustrate ","illustrate a","illustrate me","design a logo",
-  "design an image","design a poster","design a banner","design a graphic",
-  "design a thumbnail","design a wallpaper","render a","render an","render me",
-  "picture of","image of","photo of","drawing of","painting of",
-  "illustration of","portrait of","artwork of","sketch of",
-  "a picture of","an image of","a photo of","a drawing of","a painting of",
-  "a portrait of","can you draw","can you paint","can you sketch",
-  "can you illustrate","can you create an image","can you make an image",
-  "can you make a picture","can you generate an image",
-  "can you generate a picture","could you draw","could you paint",
-  "could you sketch","please draw","please paint","please create an image",
-  "please generate","please illustrate","generate wallpaper",
-  "create wallpaper","make wallpaper","generate poster","create poster",
-  "make poster","generate banner","create banner","make banner",
-  "generate thumbnail","create thumbnail",
+  // generate + explicit image noun
+  "generate an image","generate a image","generate a picture","generate the picture",
+  "generate a photo","generate the photo","generate artwork","generate an artwork",
+  "generate some art","generate an illustration","generate a illustration",
+  "generate a logo","generate the logo","generate a wallpaper","generate wallpaper",
+  "generate a poster","generate poster","generate a banner","generate banner",
+  "generate a thumbnail","generate thumbnail","generate a drawing",
+  // create + explicit image noun
+  "create an image","create a image","create a picture","create the picture",
+  "create a photo","create the photo","create artwork","create an artwork",
+  "create an illustration","create a illustration","create a logo","create the logo",
+  "create a wallpaper","create wallpaper","create a poster","create poster",
+  "create a banner","create banner","create a thumbnail","create thumbnail",
+  "create a drawing",
+  // make + explicit image noun
+  "make an image","make a image","make me an image","make me a image",
+  "make a picture","make me a picture","make a photo","make me a photo",
+  "make artwork","make me artwork","make me art",
+  "make an illustration","make a illustration","make a logo","make me a logo",
+  "make a drawing","make me a drawing",
+  // draw/paint/sketch — inherently visual verbs
+  "draw me","draw a ","draw an ","paint a ","paint an ","paint me",
+  "sketch a ","sketch an ","sketch me",
+  // illustrate / render — inherently visual
+  "illustrate this","illustrate a","illustrate me","please illustrate",
+  "render a ","render an ","render me",
+  // design + explicit image noun
+  "design a logo","design the logo","design an image","design a poster",
+  "design the poster","design a banner","design the banner",
+  "design a thumbnail","design a wallpaper",
+  // "show me a/an" + explicit image noun
+  "show me a picture","show me an image","show me a photo",
+  "show me a drawing","show me a painting","show me an illustration","show me a logo",
 ];
 
 const IMAGE_GEN_PATTERNS: RegExp[] = [
-  /\b(image|picture|photo|drawing|painting|illustration|portrait|artwork|sketch|graphic|poster|wallpaper|banner|logo|thumbnail)\s+of\b/i,
-  /\b(draw|paint|sketch|illustrate|render)\s+(me\s+)?(a|an|the|some|my)?\s*\w/i,
-  /\b(generate|create|make|produce|design)\b.{0,40}\b(image|picture|photo|drawing|illustration|artwork|logo|poster|wallpaper|banner|thumbnail|visual|graphic)\b/i,
-  /\bshow\s+me\s+(a|an|the|some)\b.{0,30}\b(image|picture|photo|drawing|painting|illustration|portrait|logo)\b/i,
-  /\b(can|could|please|would you|will you)\s+you\s+(draw|paint|sketch|illustrate|render|create|generate|make|design)\b/i,
-  /\b(i want|i need|i'd like|give me)\s+(a|an|the)\s+(image|picture|photo|drawing|illustration|painting|artwork|visual)\b/i,
+  // draw/paint/sketch/illustrate/render — inherently visual verbs
+  /\b(draw|paint|sketch|illustrate|render)\s+(me\s+)?(a\s+|an\s+|the\s+|some\s+|my\s+)?\w/i,
+  // generate/create/make/produce + image noun within 50 chars of the verb
+  /\b(generate|create|make|produce)\b.{0,50}\b(image|picture|photo|drawing|painting|illustration|artwork|logo|poster|wallpaper|banner|thumbnail|graphic)\b/i,
+  // "can/could/please you draw/paint/sketch/illustrate/render" — only visual verbs, NOT create/make/generate/design
+  /\b(can|could|please|would you|will you)\s+you\s+(draw|paint|sketch|illustrate|render)\b/i,
+  // "I want/need/would like a/an [image noun]"
+  /\b(i want|i need|i'd like|give me)\s+(a\s+|an\s+)(image|picture|photo|drawing|illustration|painting|artwork)\b/i,
 ];
 
 // ── System prompts ────────────────────────────────────────────────────────────
