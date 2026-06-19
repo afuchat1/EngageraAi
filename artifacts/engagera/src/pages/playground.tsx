@@ -2,13 +2,18 @@ import React, { useState, useRef, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { useEdgeChatCompletion } from "@/hooks/useEdgeChatCompletion";
+import { useEdgeChatCompletion, type SearchInfo } from "@/hooks/useEdgeChatCompletion";
 import { MessageContent } from "@/components/MessageContent";
+import { WebSearchIndicator } from "@/components/WebSearchIndicator";
 import { detectModel } from "@/lib/autoModel";
 import { Send, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type Message = { role: "user" | "assistant"; content: string };
+interface Message {
+  role: "user" | "assistant";
+  content: string;
+  searchInfo?: SearchInfo;
+}
 
 export default function Playground() {
   const chatMutation = useEdgeChatCompletion();
@@ -43,7 +48,11 @@ export default function Playground() {
       { messages: updatedMessages, model: autoModel },
       {
         onSuccess: (response) => {
-          setMessages([...updatedMessages, { role: "assistant", content: response.message.content }]);
+          setMessages([...updatedMessages, {
+            role: "assistant",
+            content: response.message.content,
+            searchInfo: response.searchInfo,
+          }]);
           setLastUsage(response.usage);
         },
         onError: (err: any) => {
@@ -120,19 +129,24 @@ export default function Playground() {
                       <img src="/logo.png" alt="" className="h-4 w-4 object-contain opacity-70" />
                     </div>
                   )}
-                  <div
-                    className={cn(
-                      "max-w-[80%] rounded-xl px-4 py-3 text-sm leading-relaxed",
-                      msg.role === "user"
-                        ? "bg-foreground text-background rounded-br-sm"
-                        : "bg-card border border-border text-foreground rounded-bl-sm"
+                  <div className={cn("max-w-[80%]", msg.role === "user" ? "" : "space-y-0")}>
+                    {msg.role === "assistant" && msg.searchInfo && (
+                      <WebSearchIndicator searchInfo={msg.searchInfo} />
                     )}
-                  >
-                    {msg.role === "user" ? (
-                      <div className="whitespace-pre-wrap font-sans">{msg.content}</div>
-                    ) : (
-                      <MessageContent content={msg.content} />
-                    )}
+                    <div
+                      className={cn(
+                        "rounded-xl px-4 py-3 text-sm leading-relaxed",
+                        msg.role === "user"
+                          ? "bg-foreground text-background rounded-br-sm"
+                          : "bg-card border border-border text-foreground rounded-bl-sm"
+                      )}
+                    >
+                      {msg.role === "user" ? (
+                        <div className="whitespace-pre-wrap font-sans">{msg.content}</div>
+                      ) : (
+                        <MessageContent content={msg.content} />
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}

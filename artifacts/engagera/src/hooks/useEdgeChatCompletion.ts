@@ -17,6 +17,17 @@ interface ChatRequest {
   contextHint?: string;
 }
 
+export interface SearchSource {
+  title: string;
+  url: string;
+  snippet: string;
+}
+
+export interface SearchInfo {
+  query: string;
+  sources: SearchSource[];
+}
+
 interface ChatResponse {
   id: string;
   model: string;
@@ -25,6 +36,7 @@ interface ChatResponse {
   conversationId?: number;
   guestMessageCount?: number;
   guestMessageLimit?: number;
+  searchInfo?: SearchInfo;
 }
 
 const EDGE_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/chat`;

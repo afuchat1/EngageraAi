@@ -166,6 +166,13 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+// ── Source type ───────────────────────────────────────────────────────────────
+interface Source {
+  title: string;
+  url:   string;
+  snippet: string;
+}
+
 // ── Logging ───────────────────────────────────────────────────────────────────
 function log(level: "info"|"warn"|"error", event: string, data: Record<string,unknown>) {
   const entry = JSON.stringify({ level, event, ts: new Date().toISOString(), ...data });
@@ -413,7 +420,7 @@ async function callWithFallback(
 }
 
 // ── Web search (DuckDuckGo free + optional Brave API) ─────────────────────────
-async function webSearch(query: string, braveKey?: string): Promise<string> {
+async function webSearch(query: string, braveKey?: string): Promise<{ text: string; sources: Source[] }> {
   if (braveKey) {
     try {
       const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=8`;
@@ -430,10 +437,13 @@ async function webSearch(query: string, braveKey?: string): Promise<string> {
         };
         const results = data.web?.results ?? [];
         if (results.length > 0) {
+          const sources: Source[] = results.map((r) => ({
+            title: r.title, url: r.url, snippet: r.description,
+          }));
           const lines = results.map((r, i) =>
             `${i+1}. **${r.title}**${r.age ? ` (${r.age})` : ""}\n   ${r.description}\n   URL: ${r.url}`
           );
-          return `Search results for "${query}":\n\n${lines.join("\n\n")}`;
+          return { text: `Search results for "${query}":\n\n${lines.join("\n\n")}`, sources };
         }
       }
     } catch { /* fall through to DuckDuckGo */ }
@@ -449,10 +459,10 @@ async function webSearch(query: string, braveKey?: string): Promise<string> {
       },
     });
 
-    if (!res.ok) return `Search unavailable (HTTP ${res.status}). Try rephrasing.`;
+    if (!res.ok) return { text: `Search unavailable (HTTP ${res.status}). Try rephrasing.`, sources: [] };
 
     const html = await res.text();
-    const results: { title:string; url:string; snippet:string }[] = [];
+    const results: Source[] = [];
 
     const titleRe   = /<a[^>]+class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
     const snippetRe = /<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi;
@@ -482,7 +492,7 @@ async function webSearch(query: string, braveKey?: string): Promise<string> {
       const lines = results.map((r, i) =>
         `${i+1}. **${r.title}**\n   ${r.snippet}\n   URL: ${r.url}`
       );
-      return `Search results for "${query}":\n\n${lines.join("\n\n")}`;
+      return { text: `Search results for "${query}":\n\n${lines.join("\n\n")}`, sources: results };
     }
 
     // Last resort: DuckDuckGo Instant Answer API
@@ -496,16 +506,23 @@ async function webSearch(query: string, braveKey?: string): Promise<string> {
         RelatedTopics?: { Text?:string; FirstURL?:string }[];
       };
       const parts: string[] = [];
-      if (ia.AbstractText) parts.push(`${ia.AbstractText}\nSource: ${ia.AbstractURL ?? ""}`);
+      const sources: Source[] = [];
+      if (ia.AbstractText) {
+        parts.push(`${ia.AbstractText}\nSource: ${ia.AbstractURL ?? ""}`);
+        if (ia.AbstractURL) sources.push({ title: query, url: ia.AbstractURL, snippet: ia.AbstractText });
+      }
       (ia.RelatedTopics ?? []).slice(0, 5).forEach((t) => {
-        if (t.Text) parts.push(`• ${t.Text}${t.FirstURL ? `  URL: ${t.FirstURL}` : ""}`);
+        if (t.Text) {
+          parts.push(`• ${t.Text}${t.FirstURL ? `  URL: ${t.FirstURL}` : ""}`);
+          if (t.FirstURL) sources.push({ title: t.Text.slice(0, 80), url: t.FirstURL, snippet: t.Text });
+        }
       });
-      if (parts.length > 0) return `Results for "${query}":\n\n${parts.join("\n\n")}`;
+      if (parts.length > 0) return { text: `Results for "${query}":\n\n${parts.join("\n\n")}`, sources };
     }
 
-    return `No results found for "${query}". Try a different query.`;
+    return { text: `No results found for "${query}". Try a different query.`, sources: [] };
   } catch (err) {
-    return `Search failed: ${String(err)}`;
+    return { text: `Search failed: ${String(err)}`, sources: [] };
   }
 }
 
@@ -569,40 +586,62 @@ async function agenticChat(
   messages: ChatMessage[],
   requestId: string,
   braveKey?: string,
-): Promise<{ reply:string; inputTokens:number; outputTokens:number; provider?:string; providerModel?:string }> {
-  const convo: ChatMessage[] = [...messages];
+): Promise<{ reply:string; inputTokens:number; outputTokens:number; provider?:string; providerModel?:string; searchInfo?: { query:string; sources:Source[] } }> {
+  const baseConvo: ChatMessage[] = [...messages];
 
   // Step 1 — Check whether the query needs fresh web data
   const userText = needsWebSearch(messages);
 
   if (userText) {
-    const query = buildSearchQuery(userText);
-    log("info", "pre_search.start", { requestId, query });
-    const searchResult = await webSearch(query, braveKey);
-    log("info", "pre_search.done", { requestId, resultLen: searchResult.length });
+    try {
+      const query = buildSearchQuery(userText);
+      log("info", "pre_search.start", { requestId, query });
 
-    const trimmed = searchResult.slice(0, 2500);
-    const sysIdx  = convo.findIndex((m) => m.role === "system");
-    const contextBlock = `\n\n---\n🌐 **Live web search results** (retrieved just now):\n\n${trimmed}\n---\n\nUse the above results to answer. Cite sources as [Title](URL). Indicate when data is live: "As of [date from source]..."`;
+      const searchResult = await webSearch(query, braveKey);
+      log("info", "pre_search.done", { requestId, resultLen: searchResult.text.length, sourceCount: searchResult.sources.length });
 
-    if (sysIdx >= 0 && typeof convo[sysIdx].content === "string") {
-      convo[sysIdx] = { ...convo[sysIdx], content: (convo[sysIdx].content as string) + contextBlock };
-    } else {
-      convo.unshift({ role: "system", content: contextBlock });
-    }
+      // Only inject search context if we actually found useful results
+      const hasResults = searchResult.sources.length > 0 ||
+        (!searchResult.text.startsWith("No results") && !searchResult.text.startsWith("Search unavailable") && !searchResult.text.startsWith("Search failed"));
 
-    // Use the standard (faster, higher-TPM) chain when search is involved
-    const fastChain = STANDARD_CHAIN;
-    const result = await callWithFallback(fastChain, keys, convo, 4096, requestId);
-    if (result.ok) {
-      return { reply: result.content, inputTokens: result.inputTokens, outputTokens: result.outputTokens, provider: result.provider, providerModel: result.model };
+      if (hasResults) {
+        const convo: ChatMessage[] = [...baseConvo];
+        const trimmed = searchResult.text.slice(0, 2500);
+        const sysIdx  = convo.findIndex((m) => m.role === "system");
+        const contextBlock = `\n\n---\n🌐 **Live web search results** (retrieved just now):\n\n${trimmed}\n---\n\nUse the above results to answer. Cite sources as [Title](URL). Indicate when data is live: "As of [date from source]..."`;
+
+        if (sysIdx >= 0 && typeof convo[sysIdx].content === "string") {
+          convo[sysIdx] = { ...convo[sysIdx], content: (convo[sysIdx].content as string) + contextBlock };
+        } else {
+          convo.unshift({ role: "system", content: contextBlock });
+        }
+
+        // Use the fast standard chain (higher TPM) for search-augmented calls
+        const result = await callWithFallback(STANDARD_CHAIN, keys, convo, 4096, requestId);
+        if (result.ok) {
+          log("info", "search_chat.success", { requestId, provider: result.provider });
+          return {
+            reply: result.content, inputTokens: result.inputTokens, outputTokens: result.outputTokens,
+            provider: result.provider, providerModel: result.model,
+            searchInfo: { query, sources: searchResult.sources.slice(0, 8) },
+          };
+        }
+        log("warn", "search_chat.ai_failed", { requestId, errorDetail: result.errorDetail });
+        // Fall through: try without search context below
+      } else {
+        log("info", "pre_search.no_results", { requestId, text: searchResult.text.slice(0, 80) });
+        // Fall through: try without search context below
+      }
+    } catch (err) {
+      log("warn", "search_path.exception", { requestId, error: String(err) });
+      // Fall through: try without search context below
     }
-  } else {
-    // No search needed — use the model's own chain
-    const result = await callWithFallback(chain, keys, convo, 4096, requestId);
-    if (result.ok) {
-      return { reply: result.content, inputTokens: result.inputTokens, outputTokens: result.outputTokens, provider: result.provider, providerModel: result.model };
-    }
+  }
+
+  // No search, or search failed — use the model's own chain with the original messages
+  const result = await callWithFallback(chain, keys, baseConvo, 4096, requestId);
+  if (result.ok) {
+    return { reply: result.content, inputTokens: result.inputTokens, outputTokens: result.outputTokens, provider: result.provider, providerModel: result.model };
   }
 
   return {
@@ -826,12 +865,21 @@ Deno.serve(async (req: Request) => {
       outputTokens = chatResult.outputTokens;
       totalTokens  = inputTokens + outputTokens;
 
+      if (chatResult.searchInfo) {
+        logEntry.search_query   = chatResult.searchInfo.query;
+        logEntry.source_count   = chatResult.searchInfo.sources.length;
+      }
+
       log("info", "chat.complete", {
         requestId, replyLen: reply.length,
         inputTokens, outputTokens,
         provider: chatResult.provider,
         providerModel: chatResult.providerModel,
+        searchQuery: chatResult.searchInfo?.query,
       });
+
+      // Store for response
+      (logEntry as any)._searchInfo = chatResult.searchInfo;
     }
 
     logEntry.input_tokens  = inputTokens;
@@ -897,11 +945,14 @@ Deno.serve(async (req: Request) => {
     logEntry.success = true;
     await persistLog(db, logEntry, startTime);
 
+    const searchInfo = (logEntry as any)._searchInfo as { query:string; sources:Source[] } | undefined;
+
     return json({
       id: requestId, model,
       message: { role: "assistant", content: reply },
       usage: { inputTokens, outputTokens, totalTokens },
       conversationId: convId,
+      ...(searchInfo && { searchInfo }),
       ...(newGuestCount !== undefined && {
         guestMessageCount: newGuestCount, guestMessageLimit: GUEST_LIMIT,
       }),

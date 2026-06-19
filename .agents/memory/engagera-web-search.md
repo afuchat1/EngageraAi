@@ -49,13 +49,24 @@ Gemini uses a completely different REST format:
 - Usage → `usageMetadata.promptTokenCount / candidatesTokenCount`
 This is handled by `callGemini()` which converts to/from OpenAI message format.
 
-## Web search architecture (unchanged from v32)
+## Web search architecture (v34+)
 
 Pre-search approach (NOT tool-calling API):
 1. `needsWebSearch()` — keyword regex detects real-time queries
-2. `webSearch()` — DuckDuckGo HTML scrape (free); Brave Search API if `BRAVE_SEARCH_API_KEY` set
+2. `webSearch()` — returns `{ text: string, sources: Source[] }` (v34+); DuckDuckGo HTML scrape (free); Brave Search API if `BRAVE_SEARCH_API_KEY` set
 3. Results injected into system message (trimmed to 2500 chars)
 4. Fast chain (STANDARD_CHAIN) used for search-augmented calls
+5. `searchInfo: { query, sources[] }` returned in response JSON for frontend badge + source cards
+
+### Critical resilience rule (v35)
+**Always wrap the search path in try/catch and fall back to a non-search AI call.**
+DuckDuckGo may block Supabase Edge Function IPs or return no parseable results. Without this fallback, ALL search queries returned the "I'm having trouble" error even though basic chat worked fine.
+
+`hasResults` check: only inject context if `sources.length > 0` OR text doesn't start with "No results" / "Search unavailable" / "Search failed". If search fails → fall through to `callWithFallback(chain, keys, baseConvo, ...)` silently.
+
+### Frontend (v34)
+- `WebSearchIndicator.tsx` — 🌐 badge + horizontal source cards with favicons
+- `playground.tsx` — stores `searchInfo` per message in state, renders indicator above each response
 
 ## Deployment
 
