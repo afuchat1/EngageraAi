@@ -1,8 +1,9 @@
 - [Engagera DB convention](engagera-db-convention.md) — all tables in `public` schema with `engagera_` prefix; always use `engageraDb` alias
 - [Engagera guest access](engagera-guest-access.md) — guest session ID via `setGuestSessionId()` global, 5-message limit, 429 on breach
-- [AI provider status](openrouter-free-models.md) — OpenRouter exhausted; switched to Groq (GROQ_API_KEY in Supabase secrets); llama-3.3-70b-versatile for all chat
+- [AI provider status](openrouter-free-models.md) — Groq (GROQ_API_KEY in Supabase secrets); llama-3.1-8b-instant default (20K TPM), llama-3.3-70b for premium models only
 - [Engagera storage audit](engagera-storage-audit.md) — Supabase-only confirmed; DATABASE_URL and @workspace/db removed; engagera schema dropped
-- [Engagera edge function](engagera-edge-function.md) — chat via Supabase Edge Function; OPENROUTER_API_KEY Supabase-only; identity system prompt injected
+- [Engagera edge function](engagera-edge-function.md) — chat v32 via Supabase Edge Function; pre-search approach for real-time queries (no tool-calling API)
 - [Engagera Vercel deployment](engagera-vercel.md) — vercel.json + api/index.ts adapter; 4 env vars required in Vercel dashboard
 - [Engagera image generation](image-generation.md) — SVG via gpt-4o edge fn; pollinations.ai went fully paid June 2026 (all models 402)
 - [TTS service status](tts-service-status.md) — ElevenLabs free tier disabled (proxy detect), OpenAI TTS quota exhausted; hook uses SpeechSynthesis with fast-fail
+- [Engagera web search](engagera-web-search.md) — pre-search architecture; Groq tool-calling API unreliable (llama embeds calls in content); use keyword detection + DuckDuckGo first, then inject results into system message
