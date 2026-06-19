@@ -62,9 +62,9 @@ const CODE_CHAIN: ProviderModel[] = [
 ];
 
 const IMAGE_CHAIN: ProviderModel[] = [
-  { provider: "groq",     model: "llama-3.3-70b-versatile" },
-  { provider: "deepseek", model: "deepseek-chat" },
-  { provider: "gemini",   model: "gemini-1.5-pro-latest" },
+  { provider: "groq",   model: "llama-3.1-8b-instant" },      // fastest — good enough for SVG
+  { provider: "groq",   model: "llama-3.3-70b-versatile" },   // richer SVG if 8b fails
+  { provider: "gemini", model: "gemini-1.5-flash-latest" },   // fast Gemini fallback
 ];
 
 // Map Engagera model ID → provider chain
@@ -201,20 +201,22 @@ These rules override everything else. Violating them is the worst thing you can 
 - Use rich markdown: headers, code blocks with language tags, tables, numbered lists, callouts.
 - Current date and time: ${new Date().toLocaleString("en-GB", { weekday:"long", year:"numeric", month:"long", day:"numeric", hour:"2-digit", minute:"2-digit", timeZoneName:"short" })}.`;
 
-const IMAGE_SYSTEM_PROMPT = `You are an expert SVG illustrator. When the user asks you to draw, create, or generate an image, respond with ONLY a single SVG code block — no text before or after, no explanations, just the code block.
+const IMAGE_SYSTEM_PROMPT = `You are an expert SVG artist and UI designer. Respond with ONLY a single SVG code block — absolutely no text before or after, no explanations, no markdown prose, just the code block.
 
 Rules:
-- Use viewBox="0 0 400 400" width="400" height="400"
-- Create vivid, colourful, detailed artwork with gradients, multiple shapes, and depth
-- Use <defs> for linearGradient and radialGradient where it adds quality
-- Add subtle shadows or glow effects with filters when fitting
-- No <script> tags, no external resources, no text inside SVG unless it is part of the art
-- Aim for 30-80 SVG elements so the image looks rich, not sparse
+- viewBox="0 0 400 400" width="400" height="400"
+- For UI/interface requests (skeleton loaders, dashboards, cards, forms, buttons): draw realistic-looking UI mockups with rounded rectangles, appropriate colors (light grey #e5e7eb for skeleton, white #fff backgrounds, etc.), and subtle shadows
+- For artwork/illustration requests: vivid colours, gradients, multiple shapes, depth
+- Use <defs> for gradients, patterns, or clipPaths when they add quality
+- SVG <animate> or <animateTransform> are allowed for loaders, spinners, or pulsing effects
+- No <script> tags, no external image/font resources
+- Keep total elements under 70 to stay within token budget
+- Make it look polished and professional — not sparse
 
-Respond EXACTLY in this format (nothing else):
+Respond EXACTLY in this format (absolutely nothing else before or after):
 \`\`\`svg
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
-  <!-- artwork here -->
+  <!-- content here -->
 </svg>
 \`\`\``;
 
@@ -295,7 +297,7 @@ async function callOpenAICompat(
   let res: Response | null = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     if (attempt > 0) {
-      await new Promise((r) => setTimeout(r, 3000));
+      await new Promise((r) => setTimeout(r, 1000));
       log("warn", `${providerName}.retry`, { requestId, attempt });
     }
     try {
@@ -307,6 +309,7 @@ async function callOpenAICompat(
           ...extraHeaders,
         },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(25_000),
       });
     } catch (err) {
       log("warn", `${providerName}.network_error`, { requestId, attempt, error: String(err) });
@@ -383,6 +386,7 @@ async function callGemini(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(geminiBody),
+      signal: AbortSignal.timeout(25_000),
     });
   } catch (err) {
     log("warn", "gemini.network_error", { requestId, error: String(err) });
@@ -1168,7 +1172,7 @@ Deno.serve(async (req: Request) => {
         { role: "system", content: IMAGE_SYSTEM_PROMPT },
         { role: "user",   content: imagePrompt },
       ];
-      const result = await callWithFallback(IMAGE_CHAIN, keys, svgMsgs, 4096, requestId);
+      const result = await callWithFallback(IMAGE_CHAIN, keys, svgMsgs, 1500, requestId);
       if (result.ok && (result.content.includes("```svg") || result.content.includes("<svg"))) {
         reply = result.content;
         inputTokens = result.inputTokens; outputTokens = result.outputTokens;
