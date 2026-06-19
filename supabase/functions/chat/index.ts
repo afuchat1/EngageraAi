@@ -1,7 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 /**
- * Engagera Chat Edge Function v36
+ * Engagera Chat Edge Function v40
  *
  * Multi-provider AI routing with automatic fallback:
  *   1. Groq         — primary (fastest, 20K–6K TPM free tier)
@@ -10,9 +10,12 @@ import { createClient } from "npm:@supabase/supabase-js@2";
  *   4. Gemini       — fallback #3 (Google, high rate limits, different API format)
  *
  * Web search      : DuckDuckGo HTML (free, no key) + Brave Search API (if key set)
+ *                   → Deep-crawls top 2 results via Jina for full page content
+ *                   → Retries with refined query when <3 sources found
  * Web crawling    : Jina AI Reader — auto-detected URLs in messages → clean markdown
  * Cross-session   : User memory stored in engagera_user_memory, injected on every request
  * Memory learning : After each chat, facts about the user are extracted and saved
+ * Accuracy        : Search-first by default; AI forbidden from stating unverified facts
  */
 
 // ── Provider configurations ───────────────────────────────────────────────────
@@ -152,6 +155,17 @@ const SYSTEM_PROMPT = `You are Engagera — a powerful intelligence system built
 - **Never tell users to "search for it", "check Google", "look it up", or "visit a website" to find information.** You are the research engine. Do the work yourself and deliver a complete, sourced answer.
 - Synthesise across multiple sources. Highlight consensus vs. disagreement. Flag when information may be recent vs. potentially outdated.
 - After using search results: always cite sources inline as [Title](URL). When citing live data, indicate the date/time: "As of [date from source]..."
+
+## ACCURACY — NON-NEGOTIABLE RULES
+These rules override everything else. Violating them is the worst thing you can do.
+
+1. **Never state unverified facts.** If live search results are present in your context, base every factual claim on them. If no search data covers a claim, explicitly say you cannot verify it rather than guessing.
+2. **Never fabricate numbers, statistics, names, prices, dates, or quotes.** If you don't have a verified source, say "I couldn't find current verified data on this."
+3. **Never say "as of my knowledge cutoff" and then state a potentially outdated fact as if it's current.** Your training data is old. Search results are live. Always prefer and cite search results.
+4. **Always distinguish sources.** Say "According to [Source Title](URL)..." for search-derived facts. Say "From my general knowledge (unverified)..." only for truly timeless facts (maths, grammar, definitions).
+5. **If search results contradict your training data, trust the search results.** The web is newer than your training.
+6. **Never hallucinate citations.** Only cite URLs that actually appear in the search results provided to you.
+7. **For any claim about current events, people, companies, prices, politics, sports, or technology:** if it's not in your search context, say "I don't have verified current data on this — please check a live source, or ask me to search again with a more specific query."
 
 ## Behaviour
 - Be genuinely powerful: reason deeply, synthesise across domains, form your own well-reasoned views.
@@ -699,61 +713,58 @@ async function extractAndSaveMemory(
   } catch { /* non-fatal */ }
 }
 
-// ── Search skip patterns (pure reasoning / creative / math / code) ─────────────
+// ── Search SKIP patterns — only skip for pure code / math / creative writing ──
+// Keep this list NARROW. When in doubt, search.
 const NO_SEARCH_PATTERNS: RegExp[] = [
-  /^(write|rewrite|fix|debug|refactor|optimise|optimize|generate|create|draft|edit|translate|summarise|summarize|improve)\s+(a|an|the|this|my|me)\b/i,
-  /^(calculate|compute|solve|prove|evaluate|simplify)\b/i,
-  /^(tell me a (joke|story|poem|riddle)|write a (poem|story|song|essay|letter))/i,
-  /\b(implement|function|class|algorithm|script|syntax|exception|bug|compile|runtime error|stack|recursion|loop|array|object|variable|method)\b/i,
+  // Pure math / logic (no factual lookup needed)
+  /^(calculate|compute|solve|prove|evaluate|simplify|differentiate|integrate|factorise|factorize)\b/i,
+  // Pure creative writing (no factual data needed)
+  /^(write me a (poem|song|story|joke|essay|riddle|limerick)|tell me a (joke|riddle)|compose a (poem|song))/i,
+  // Code-only tasks that don't mention real-world facts
+  /^(fix (this|my|the) (bug|code|error|function)|debug (this|my)|refactor (this|my)|explain (this|my) code|what does this code|how does this code|convert (this|my) code)/i,
+  // Greetings / meta questions about the AI
+  /^(hi|hello|hey|thanks|thank you|good morning|good evening|good night|how are you|what can you do|what are you|who are you|are you|can you help)\b/i,
+  // Pure grammar / spelling / translation
+  /^(translate|grammar|spell|proofread|check grammar|fix grammar|correct (this|my) (sentence|text|paragraph))\b/i,
 ];
 
-// ── Broad search trigger patterns ─────────────────────────────────────────────
-const SEARCH_PATTERNS: RegExp[] = [
-  /\b(today|tonight|right now|at the moment|as of now|currently|live|real.?time|this morning|this afternoon|this evening)\b/i,
-  /\b(latest|current|recent|new|breaking|just|fresh|up.?to.?date)\b/i,
-  /\b(news|headlines|update|announcement|press release|report|journal|publication)\b/i,
-  /\b(price|cost|rate|value|stock|share|crypto|bitcoin|btc|eth|ethereum|forex|currency|exchange rate|gdp|inflation|interest rate|market cap)\b/i,
-  /\b(weather|forecast|temperature|rain|snow|wind|humidity|climate|earthquake|flood|storm|hurricane|cyclone|tsunami)\b/i,
-  /\b(score|result|standing|fixture|match|game|tournament|league|championship|cup|olympics|world cup|transfer|signing)\b/i,
-  /\b(who is|who are|who was|who built|who made|who runs|where is|where are|when did|when was|when will|how many|how much)\b/i,
-  /\b(ceo|president|prime minister|chancellor|government|parliament|senate|congress|election|vote|policy|law|regulation|minister|cabinet)\b/i,
-  /\b(released|launched|announced|available|coming out|out now|new version|update|upgrade|review|compared to)\b/i,
-  /\b(company|organisation|organization|startup|founded|acquired|merger|ipo|funding|valuation|employees)\b/i,
-  /\b(study|research|trial|vaccine|drug|treatment|disease|cure|discovery|breakthrough|fda|who|cdc|nhs)\b/i,
-  /\b(ai|artificial intelligence|chatgpt|gpt|openai|google|apple|microsoft|meta|amazon|tesla|spacex|nasa|nvidia|anthropic)\b/i,
-  /\b(what happened|what.?s happening|what.?s new|tell me about|information about|facts about|details about|overview of|history of)\b/i,
-  /\b(best|top|most popular|highest rated|recommended|ranking|list of|comparison|versus|vs\.?)\b/i,
-  /\b(202[3-9]|203\d)\b/i,
-  /\b(africa|uganda|kenya|nigeria|ghana|south africa|europe|usa|uk|china|india|russia|middle east)\b/i,
-];
+// ── Build a clean, focused search query ───────────────────────────────────────
+function buildSearchQuery(userText: string, conversationContext?: string): string {
+  let q = userText
+    .replace(/please|could you|can you|would you|kindly|i want to know|i'd like to know|i need to know|give me|find me|search for|look up/gi, "")
+    .replace(/\s+/g, " ").trim()
+    .slice(0, 180);
 
+  // If the question is very short, append context from conversation
+  if (q.length < 30 && conversationContext) {
+    q = `${q} ${conversationContext}`.slice(0, 180);
+  }
+
+  return q;
+}
+
+// ── Default: search for EVERYTHING except the narrow skip list above ───────────
 function needsWebSearch(messages: ChatMessage[]): string | null {
   const last = [...messages].reverse().find((m) => m.role === "user");
   if (!last) return null;
   const text = typeof last.content === "string" ? last.content : "";
-  if (!text || text.length < 8) return null;
+  if (!text || text.length < 6) return null;
 
-  // Never search for pure code/math/creative tasks
+  const trimmed = text.trim();
+
+  // Skip only for the narrow list of pure code/math/creative tasks
   for (const re of NO_SEARCH_PATTERNS) {
-    if (re.test(text.trim())) return null;
+    if (re.test(trimmed)) return null;
   }
 
-  // Search for broad knowledge, current events, facts about the world
-  for (const re of SEARCH_PATTERNS) {
-    if (re.test(text)) return text;
-  }
+  // Skip if it's a pure code block (likely debugging/review, not factual)
+  if ((text.match(/```/g) ?? []).length >= 2) return null;
 
-  // Default: also search any question-style message over 20 chars
-  if (text.length > 20 && text.trim().endsWith("?")) return text;
+  // Skip very short imperative commands that are clearly about editing text
+  if (trimmed.length < 25 && /^(summarise|summarize|rewrite|rephrase|shorter|longer|expand|continue|more|less)\b/i.test(trimmed)) return null;
 
-  return null;
-}
-
-function buildSearchQuery(userText: string): string {
-  return userText
-    .replace(/please|could you|can you|would you|kindly|i want to know|tell me|find me/gi, "")
-    .replace(/\s+/g, " ").trim()
-    .slice(0, 150);
+  // Everything else → search for real-world grounding
+  return text;
 }
 
 // ── Agentic chat: URL crawl + pre-search + multi-provider call ───────────────
@@ -802,37 +813,88 @@ async function agenticChat(
     }
   }
 
-  // Step 1 — Check whether the query needs fresh web data
+  // Step 1 — Real-world grounding: search + deep-crawl top results
   const userText = needsWebSearch(messages);
 
   if (userText) {
     try {
-      const query = buildSearchQuery(userText);
+      // Build the conversation context for short queries
+      const recentContext = messages
+        .filter((m) => m.role === "user")
+        .slice(-3)
+        .map((m) => (typeof m.content === "string" ? m.content : ""))
+        .join(" ").slice(0, 120);
+
+      const query = buildSearchQuery(userText, recentContext);
       log("info", "pre_search.start", { requestId, query });
 
-      const searchResult = await webSearch(query, braveKey);
-      log("info", "pre_search.done", { requestId, resultLen: searchResult.text.length, sourceCount: searchResult.sources.length });
+      let searchResult = await webSearch(query, braveKey);
+      log("info", "pre_search.done", { requestId, sourceCount: searchResult.sources.length });
 
-      // Only inject search context if we actually found useful results
+      // ── Retry with a simplified query if we got < 3 sources ─────────────────
+      if (searchResult.sources.length < 3) {
+        // Simplify: take first 6 words as a tighter query
+        const shortQuery = query.split(/\s+/).slice(0, 6).join(" ");
+        if (shortQuery.length > 8 && shortQuery !== query.trim()) {
+          log("info", "pre_search.retry", { requestId, shortQuery });
+          const retry = await webSearch(shortQuery, braveKey);
+          if (retry.sources.length > searchResult.sources.length) {
+            searchResult = retry;
+            log("info", "pre_search.retry_better", { requestId, sourceCount: retry.sources.length });
+          }
+        }
+      }
+
       const hasResults = searchResult.sources.length > 0 ||
         (!searchResult.text.startsWith("No results") && !searchResult.text.startsWith("Search unavailable") && !searchResult.text.startsWith("Search failed"));
 
       if (hasResults) {
-        const convo: ChatMessage[] = [...baseConvo];
-        const trimmed = searchResult.text.slice(0, 2500);
-        const sysIdx  = convo.findIndex((m) => m.role === "system");
-        const contextBlock = `\n\n---\n🌐 **Live web search results** (retrieved just now):\n\n${trimmed}\n---\n\nUse the above results to answer. Cite sources as [Title](URL). Indicate when data is live: "As of [date from source]..."`;
+        // ── Deep-crawl the top 2 sources for full page content ────────────────
+        const topUrls = searchResult.sources
+          .slice(0, 2)
+          .map((s) => s.url)
+          .filter((u) => u && u.startsWith("http") && !u.includes("youtube.com") && !u.includes("twitter.com") && !u.includes("facebook.com"));
 
+        const deepParts: string[] = [];
+        if (topUrls.length > 0) {
+          log("info", "deep_crawl.start", { requestId, urls: topUrls });
+          const crawled = await Promise.allSettled(
+            topUrls.map((u) => fetchWebpage(u).then((content) => ({ url: u, content })))
+          );
+          for (const r of crawled) {
+            if (r.status === "fulfilled") {
+              const { url, content } = r.value;
+              const bad = ["Could not fetch", "Failed to fetch", "Invalid URL", "Search unavailable"];
+              if (!bad.some((b) => content.startsWith(b)) && content.length > 200) {
+                deepParts.push(`### Full content from: ${url}\n\n${content.slice(0, 2500)}`);
+              }
+            }
+          }
+          log("info", "deep_crawl.done", { requestId, fetched: deepParts.length });
+        }
+
+        // ── Build context block: snippets + deep-crawled content ──────────────
+        const snippetBlock = `🌐 **Live search results** (retrieved just now — ${new Date().toUTCString()}):\n\n${searchResult.text.slice(0, 2000)}`;
+        const deepBlock    = deepParts.length > 0
+          ? `\n\n📄 **Full page content from top sources** (deep-crawled just now):\n\n${deepParts.join("\n\n---\n\n")}`
+          : "";
+        const contextBlock = `\n\n---\n${snippetBlock}${deepBlock}\n\n---\n\n` +
+          `INSTRUCTIONS: Base your answer on the above real-world data. ` +
+          `Cite every factual claim as [Title](URL). ` +
+          `If the data above doesn't cover something the user asked about, say so honestly — do NOT fill in gaps from training memory.`;
+
+        const convo: ChatMessage[] = [...baseConvo];
+        const sysIdx = convo.findIndex((m) => m.role === "system");
         if (sysIdx >= 0 && typeof convo[sysIdx].content === "string") {
           convo[sysIdx] = { ...convo[sysIdx], content: (convo[sysIdx].content as string) + contextBlock };
         } else {
           convo.unshift({ role: "system", content: contextBlock });
         }
 
-        // Use the fast standard chain (higher TPM) for search-augmented calls
-        const result = await callWithFallback(STANDARD_CHAIN, keys, convo, 4096, requestId);
+        // Use the premium chain for search-augmented calls — accuracy matters most here
+        const result = await callWithFallback(PREMIUM_CHAIN, keys, convo, 4096, requestId);
         if (result.ok) {
-          log("info", "search_chat.success", { requestId, provider: result.provider });
+          log("info", "search_chat.success", { requestId, provider: result.provider, deepCrawled: deepParts.length });
           return {
             reply: result.content, inputTokens: result.inputTokens, outputTokens: result.outputTokens,
             provider: result.provider, providerModel: result.model,
@@ -841,14 +903,12 @@ async function agenticChat(
           };
         }
         log("warn", "search_chat.ai_failed", { requestId, errorDetail: result.errorDetail });
-        // Fall through: try without search context below
+        // Fall through to no-search call below
       } else {
         log("info", "pre_search.no_results", { requestId, text: searchResult.text.slice(0, 80) });
-        // Fall through: try without search context below
       }
     } catch (err) {
       log("warn", "search_path.exception", { requestId, error: String(err) });
-      // Fall through: try without search context below
     }
   }
 
