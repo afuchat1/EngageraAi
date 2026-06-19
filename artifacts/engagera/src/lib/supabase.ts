@@ -13,6 +13,5 @@ const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | unde
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// Resolved URL — use this anywhere you need the Supabase project URL
-// (e.g. Edge Function calls) so Vercel builds work without env vars.
-export const SUPABASE_URL = supabaseUrl;
+export const SUPABASE_URL      = supabaseUrl;
+export const SUPABASE_ANON_KEY = supabaseAnonKey;

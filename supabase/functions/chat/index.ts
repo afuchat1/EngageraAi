@@ -293,13 +293,14 @@ async function callOpenAICompat(
   requestId: string,
   providerName: string,
   extraHeaders?: Record<string,string>,
+  timeoutMs = 11_000,
 ): Promise<AIResult> {
   const body = { model, messages, max_tokens: maxTokens };
 
   let res: Response | null = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     if (attempt > 0) {
-      await new Promise((r) => setTimeout(r, 1000));
+      await new Promise((r) => setTimeout(r, 800));
       log("warn", `${providerName}.retry`, { requestId, attempt });
     }
     try {
@@ -311,12 +312,12 @@ async function callOpenAICompat(
           ...extraHeaders,
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(25_000),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (err) {
       log("warn", `${providerName}.network_error`, { requestId, attempt, error: String(err) });
-      if (attempt === 1) return { ok: false, content: "", inputTokens: 0, outputTokens: 0, errorDetail: String(err) };
-      continue;
+      // On timeout, don't retry — move to next provider immediately
+      return { ok: false, content: "", inputTokens: 0, outputTokens: 0, errorDetail: String(err) };
     }
     if (res.ok || (res.status !== 429 && res.status !== 503)) break;
     log("warn", `${providerName}.rate_limited`, { requestId, status: res.status, attempt });
@@ -359,6 +360,7 @@ async function callGemini(
   messages: ChatMessage[],
   maxTokens: number,
   requestId: string,
+  timeoutMs = 11_000,
 ): Promise<AIResult> {
   // Separate system message from conversation turns
   const systemMsg  = messages.find((m) => m.role === "system");
@@ -388,7 +390,7 @@ async function callGemini(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(geminiBody),
-      signal: AbortSignal.timeout(25_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (err) {
     log("warn", "gemini.network_error", { requestId, error: String(err) });
@@ -439,29 +441,41 @@ async function callWithFallback(
   messages: ChatMessage[],
   maxTokens: number,
   requestId: string,
+  globalDeadlineMs = 48_000,
 ): Promise<AIResult> {
   const errors: string[] = [];
+  const deadline = Date.now() + globalDeadlineMs;
 
   for (const { provider, model } of chain) {
+    // Stop trying if we're running out of time
+    const remaining = deadline - Date.now();
+    if (remaining < 3_000) {
+      log("warn", "fallback.deadline_reached", { requestId, remaining });
+      break;
+    }
+
     const key = keys[provider];
     if (!key) {
       log("info", "provider.no_key", { requestId, provider, model });
       continue;
     }
 
+    // Each provider call gets at most 11s — enough for fast models, protects deadline
+    const perCallMs = Math.min(11_000, remaining - 2_000);
+
     let result: AIResult;
 
     if (provider === "groq") {
-      result = await callOpenAICompat(GROQ_API_URL, key, model, messages, maxTokens, requestId, "groq");
+      result = await callOpenAICompat(GROQ_API_URL, key, model, messages, maxTokens, requestId, "groq", undefined, perCallMs);
     } else if (provider === "deepseek") {
-      result = await callOpenAICompat(DEEPSEEK_API_URL, key, model, messages, maxTokens, requestId, "deepseek");
+      result = await callOpenAICompat(DEEPSEEK_API_URL, key, model, messages, maxTokens, requestId, "deepseek", undefined, perCallMs);
     } else if (provider === "openrouter") {
       result = await callOpenAICompat(OPENROUTER_API_URL, key, model, messages, maxTokens, requestId, "openrouter", {
         "HTTP-Referer": "https://engagera.afuchat.com",
         "X-Title": "Engagera",
-      });
+      }, perCallMs);
     } else if (provider === "gemini") {
-      result = await callGemini(key, model, messages, maxTokens, requestId);
+      result = await callGemini(key, model, messages, maxTokens, requestId, perCallMs);
     } else {
       continue;
     }

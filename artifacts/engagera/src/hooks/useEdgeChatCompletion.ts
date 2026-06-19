@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { supabase, SUPABASE_URL } from "@/lib/supabase";
+import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/supabase";
 
 export type ContentPart =
   | { type: "text"; text: string }
@@ -47,20 +47,22 @@ async function callEdgeChat(request: ChatRequest): Promise<ChatResponse> {
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData.session?.access_token;
 
+  const guestId =
+    sessionStorage.getItem("engagera_guest_id") ??
+    (() => {
+      const id = `guest_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      sessionStorage.setItem("engagera_guest_id", id);
+      return id;
+    })();
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    // Supabase gateway always requires Authorization; use user JWT or anon key for guests
+    "Authorization": `Bearer ${token ?? SUPABASE_ANON_KEY}`,
   };
 
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  } else {
-    const guestId =
-      sessionStorage.getItem("engagera_guest_id") ??
-      (() => {
-        const id = `guest_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        sessionStorage.setItem("engagera_guest_id", id);
-        return id;
-      })();
+  if (!token) {
+    // Guest session — anon key satisfies gateway, this header identifies the guest
     headers["x-guest-session-id"] = guestId;
   }
 
