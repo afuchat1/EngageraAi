@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
+import { logoSrc } from "@/lib/assets";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Menu, X, LogOut, Settings } from "lucide-react";
@@ -33,7 +34,7 @@ export function Navbar() {
       <div className="flex h-14 items-center px-4 md:px-8 max-w-screen-xl mx-auto">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2.5 mr-8 shrink-0">
-          <img src="/logo.png" alt="Engagera" className="h-7 w-7 object-contain" />
+          <img src={logoSrc} alt="Engagera" className="h-7 w-7 object-contain" />
           <span className="font-bold tracking-tight text-base text-foreground">Engagera</span>
         </Link>
 

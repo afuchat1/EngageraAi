@@ -113,7 +113,7 @@ export default function Playground() {
         <div className="flex-1 overflow-y-auto scrollbar-thin">
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center px-6">
-              <img src="/logo.png" alt="Engagera" className="h-12 w-12 object-contain opacity-20 mb-5" />
+              <img src={logoSrc} alt="Engagera" className="h-12 w-12 object-contain opacity-20 mb-5" />
               <p className="text-sm font-medium text-muted-foreground">Start a conversation</p>
               <p className="text-xs text-muted-foreground/60 mt-1">Type a message — the best model is chosen automatically</p>
             </div>
@@ -129,7 +129,7 @@ export default function Playground() {
                 >
                   {msg.role === "assistant" && (
                     <div className="h-7 w-7 rounded-md flex items-center justify-center shrink-0 mt-0.5">
-                      <img src="/logo.png" alt="" className="h-4 w-4 object-contain opacity-70" />
+                      <img src={logoSrc} alt="" className="h-4 w-4 object-contain opacity-70" />
                     </div>
                   )}
                   <div className={cn("max-w-[80%]", msg.role === "user" ? "" : "space-y-0")}>
@@ -160,7 +160,7 @@ export default function Playground() {
               {chatMutation.isPending && (
                 <div className="flex gap-3 justify-start">
                   <div className="h-7 w-7 rounded-md flex items-center justify-center shrink-0 mt-0.5">
-                    <img src="/logo.png" alt="" className="h-4 w-4 object-contain opacity-70" />
+                    <img src={logoSrc} alt="" className="h-4 w-4 object-contain opacity-70" />
                   </div>
                   <div className="bg-card border border-border rounded-xl rounded-bl-sm px-4 py-3 flex gap-1.5 items-center">
                     <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: "0ms" }} />

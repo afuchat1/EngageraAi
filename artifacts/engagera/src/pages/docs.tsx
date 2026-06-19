@@ -1,4 +1,5 @@
 import React from "react";
+import { logoSrc } from "@/lib/assets";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useListModels } from "@workspace/api-client-react";
@@ -40,7 +41,7 @@ export default function Docs() {
           {/* Hero */}
           <div className="mb-16">
             <div className="flex items-center gap-2 mb-6">
-              <img src="/logo.png" alt="Engagera" className="h-8 w-8 object-contain" />
+              <img src={logoSrc} alt="Engagera" className="h-8 w-8 object-contain" />
               <span className="text-sm text-muted-foreground font-medium">Documentation</span>
             </div>
             <h1 className="text-4xl md:text-5xl font-black tracking-tight mb-4 leading-none">
@@ -276,7 +277,7 @@ print(response.choices[0].message.content)`}</CodeBlock>
 
           <div className="mt-20 pt-8 border-t border-border flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <img src="/logo.png" alt="Engagera" className="h-5 w-5 object-contain opacity-40" />
+              <img src={logoSrc} alt="Engagera" className="h-5 w-5 object-contain opacity-40" />
               <span className="text-xs text-muted-foreground/50 font-medium">Engagera Platform</span>
             </div>
             <Link href="/sign-up">

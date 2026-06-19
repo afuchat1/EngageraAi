@@ -1,6 +1,7 @@
 import { Link } from "wouter";
 import { Sparkles, Zap, Brain, Globe, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { logoSrc } from "@/lib/assets";
 
 interface UpgradeModalProps {
   open: boolean;
@@ -44,7 +45,7 @@ export function UpgradeModal({ open, onClose, countdown, reason = "limit" }: Upg
           {/* Logo + heading */}
           <div className="flex items-center gap-3 mb-4">
             <div className="h-10 w-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
-              <img src="/logo.png" alt="" className="h-5 w-5 object-contain" />
+              <img src={logoSrc} alt="" className="h-5 w-5 object-contain" />
             </div>
             <div>
               <h2 className="text-base font-bold text-foreground leading-tight">

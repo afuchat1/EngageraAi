@@ -1,4 +1,5 @@
 import React from "react";
+import { logoSrc } from "@/lib/assets";
 import { Navbar } from "./Navbar";
 import { Sidebar } from "./Sidebar";
 import { useAuth } from "@/hooks/useAuth";
@@ -27,7 +28,7 @@ export function AppLayout({ children, requireAuth = false, showSidebar = false }
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-5">
-          <img src="/logo.png" alt="Engagera" className="h-10 w-10 object-contain opacity-80" />
+          <img src={logoSrc} alt="Engagera" className="h-10 w-10 object-contain opacity-80" />
           <div className="flex gap-1.5">
             <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50 animate-bounce" style={{ animationDelay: "0ms" }} />
             <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50 animate-bounce" style={{ animationDelay: "120ms" }} />

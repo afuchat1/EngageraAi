@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
+import { logoSrc } from "@/lib/assets";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -83,7 +84,7 @@ export default function ResetPassword() {
       {/* Left branding panel */}
       <div className="hidden lg:flex lg:w-1/2 flex-col justify-between p-12 border-r border-border bg-card">
         <Link href="/" className="flex items-center gap-3">
-          <img src="/logo.png" alt="Engagera" className="h-8 w-8 object-contain" />
+          <img src={logoSrc} alt="Engagera" className="h-8 w-8 object-contain" />
           <span className="font-bold text-lg tracking-tight">Engagera</span>
         </Link>
         <div className="space-y-6">
@@ -102,7 +103,7 @@ export default function ResetPassword() {
         <div className="w-full max-w-sm space-y-8">
           {/* Mobile logo */}
           <div className="lg:hidden flex items-center gap-3 mb-2">
-            <img src="/logo.png" alt="Engagera" className="h-7 w-7 object-contain" />
+            <img src={logoSrc} alt="Engagera" className="h-7 w-7 object-contain" />
             <span className="font-bold tracking-tight">Engagera</span>
           </div>
 

@@ -2,6 +2,7 @@ import React from "react";
 import { Link, useLocation } from "wouter";
 import { LayoutDashboard, Activity, FileText, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { logoSrc } from "@/lib/assets";
 
 const navItems = [
   { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -41,7 +42,7 @@ export function Sidebar() {
 
       <div className="px-3 py-4 border-t border-border">
         <div className="flex items-center gap-2.5 px-3 py-2">
-          <img src="/logo.png" alt="Engagera" className="h-5 w-5 object-contain opacity-40" />
+          <img src={logoSrc} alt="Engagera" className="h-5 w-5 object-contain opacity-40" />
           <span className="text-xs text-muted-foreground/50 font-medium tracking-tight">Engagera Platform</span>
         </div>
       </div>

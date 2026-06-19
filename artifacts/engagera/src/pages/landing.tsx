@@ -32,6 +32,7 @@ import {
   ImageIcon,
 } from "lucide-react";
 import { UpgradeModal } from "@/components/UpgradeModal";
+import { logoSrc } from "@/lib/assets";
 
 type MessageContent = string | ContentPart[];
 type Message = { role: "user" | "assistant"; content: MessageContent };
@@ -410,7 +411,7 @@ export default function Landing() {
       )}>
         {/* Logo */}
         <div className="flex items-center gap-2.5 px-4 h-12 border-b border-[#1a1a1a] shrink-0">
-          <img src="/logo.png" alt="Engagera" className="h-6 w-6 object-contain" />
+          <img src={logoSrc} alt="Engagera" className="h-6 w-6 object-contain" />
           <span className="font-semibold text-sm tracking-tight">Engagera</span>
         </div>
 
@@ -550,12 +551,12 @@ export default function Landing() {
 
           {/* Logo — always on mobile (sidebar is overlay so it's hidden); desktop: only when sidebar closed */}
           <div className="flex items-center gap-2 md:hidden">
-            <img src="/logo.png" alt="Engagera" className="h-5 w-5 object-contain" />
+            <img src={logoSrc} alt="Engagera" className="h-5 w-5 object-contain" />
             <span className="font-semibold text-sm tracking-tight">Engagera</span>
           </div>
           {!sidebarOpen && (
             <div className="hidden md:flex items-center gap-2">
-              <img src="/logo.png" alt="Engagera" className="h-5 w-5 object-contain" />
+              <img src={logoSrc} alt="Engagera" className="h-5 w-5 object-contain" />
               <span className="font-semibold text-sm tracking-tight">Engagera</span>
             </div>
           )}
@@ -594,7 +595,7 @@ export default function Landing() {
             <div className="flex flex-col items-center justify-center h-full px-4 py-8">
               <div className="mb-7 text-center">
                 <div className="h-12 w-12 border border-[#1a1a1a] flex items-center justify-center mx-auto mb-4">
-                  <img src="/logo.png" alt="Engagera" className="h-7 w-7 object-contain" />
+                  <img src={logoSrc} alt="Engagera" className="h-7 w-7 object-contain" />
                 </div>
                 <h1 className="text-xl font-semibold tracking-tight mb-1">What can I help with?</h1>
                 <p className="text-xs text-muted-foreground">
@@ -630,7 +631,7 @@ export default function Landing() {
                 <div key={i} className={cn("flex gap-3", msg.role === "user" ? "justify-end" : "justify-start")}>
                   {msg.role === "assistant" && (
                     <div className="h-7 w-7 flex items-center justify-center shrink-0 mt-0.5">
-                      <img src="/logo.png" alt="" className="h-4 w-4 object-contain opacity-70" />
+                      <img src={logoSrc} alt="" className="h-4 w-4 object-contain opacity-70" />
                     </div>
                   )}
                   <div className={cn(
@@ -665,7 +666,7 @@ export default function Landing() {
               {chatMutation.isPending && (
                 <div className="flex gap-3 justify-start">
                   <div className="h-7 w-7 flex items-center justify-center shrink-0 mt-0.5">
-                    <img src="/logo.png" alt="" className="h-4 w-4 object-contain opacity-70" />
+                    <img src={logoSrc} alt="" className="h-4 w-4 object-contain opacity-70" />
                   </div>
                   {isImageGen ? (
                     /* ── Image generation loading state ─────────────────────── */
