@@ -22,6 +22,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 const GROQ_API_URL      = "https://api.groq.com/openai/v1/chat/completions";
 const DEEPSEEK_API_URL  = "https://api.deepseek.com/v1/chat/completions";
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
+const OPENAI_API_URL    = "https://api.openai.com/v1/chat/completions";
 const GEMINI_API_BASE   = "https://generativelanguage.googleapis.com/v1beta/models";
 
 const GUEST_LIMIT     = 5;
@@ -31,7 +32,7 @@ const WINDOW_MS       = 24 * 60 * 60 * 1000;
 //   Each entry: { provider, model, apiUrlOrKey }
 //   The callWithFallback() function fills in the actual key at runtime.
 
-type Provider = "groq" | "deepseek" | "openrouter" | "gemini";
+type Provider = "groq" | "deepseek" | "openrouter" | "openai" | "gemini";
 
 interface ProviderModel {
   provider: Provider;
@@ -40,21 +41,25 @@ interface ProviderModel {
 
 const STANDARD_CHAIN: ProviderModel[] = [
   { provider: "groq",       model: "llama-3.1-8b-instant" },
+  { provider: "groq",       model: "llama-3.3-70b-versatile" },   // separate rate-limit bucket
+  { provider: "openai",     model: "gpt-4o-mini" },
   { provider: "deepseek",   model: "deepseek-chat" },
-  { provider: "openrouter", model: "meta-llama/llama-3.1-8b-instruct:free" },
   { provider: "gemini",     model: "gemini-1.5-flash-latest" },
+  { provider: "openrouter", model: "meta-llama/llama-3.1-8b-instruct:free" },
 ];
 
 const PREMIUM_CHAIN: ProviderModel[] = [
   { provider: "groq",       model: "llama-3.3-70b-versatile" },
+  { provider: "openai",     model: "gpt-4o" },
   { provider: "deepseek",   model: "deepseek-chat" },
   { provider: "gemini",     model: "gemini-1.5-pro-latest" },
   { provider: "openrouter", model: "deepseek/deepseek-r1:free" },
-  { provider: "groq",       model: "llama-3.1-8b-instant" },  // last resort
+  { provider: "groq",       model: "llama-3.1-8b-instant" },
 ];
 
 const CODE_CHAIN: ProviderModel[] = [
   { provider: "groq",       model: "llama-3.3-70b-versatile" },
+  { provider: "openai",     model: "gpt-4o-mini" },
   { provider: "deepseek",   model: "deepseek-chat" },
   { provider: "openrouter", model: "qwen/qwen-2.5-coder-32b-instruct:free" },
   { provider: "gemini",     model: "gemini-1.5-pro-latest" },
@@ -62,9 +67,10 @@ const CODE_CHAIN: ProviderModel[] = [
 ];
 
 const IMAGE_CHAIN: ProviderModel[] = [
-  { provider: "groq",   model: "llama-3.1-8b-instant" },      // fastest  -  good enough for SVG
-  { provider: "groq",   model: "llama-3.3-70b-versatile" },   // richer SVG if 8b fails
-  { provider: "gemini", model: "gemini-1.5-flash-latest" },   // fast Gemini fallback
+  { provider: "groq",   model: "llama-3.1-8b-instant" },
+  { provider: "openai", model: "gpt-4o-mini" },
+  { provider: "groq",   model: "llama-3.3-70b-versatile" },
+  { provider: "gemini", model: "gemini-1.5-flash-latest" },
 ];
 
 // Map Engagera model ID → provider chain
@@ -297,30 +303,23 @@ async function callOpenAICompat(
 ): Promise<AIResult> {
   const body = { model, messages, max_tokens: maxTokens };
 
-  let res: Response | null = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    if (attempt > 0) {
-      await new Promise((r) => setTimeout(r, 800));
-      log("warn", `${providerName}.retry`, { requestId, attempt });
-    }
-    try {
-      res = await fetch(apiUrl, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          ...extraHeaders,
-        },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-    } catch (err) {
-      log("warn", `${providerName}.network_error`, { requestId, attempt, error: String(err) });
-      // On timeout, don't retry — move to next provider immediately
-      return { ok: false, content: "", inputTokens: 0, outputTokens: 0, errorDetail: String(err) };
-    }
-    if (res.ok || (res.status !== 429 && res.status !== 503)) break;
-    log("warn", `${providerName}.rate_limited`, { requestId, status: res.status, attempt });
+  // Single attempt per provider — on 429/timeout, immediately try next provider.
+  // Retrying the same provider wastes precious seconds from the global deadline.
+  let res: Response;
+  try {
+    res = await fetch(apiUrl, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        ...extraHeaders,
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (err) {
+    log("warn", `${providerName}.network_error`, { requestId, error: String(err) });
+    return { ok: false, content: "", inputTokens: 0, outputTokens: 0, errorDetail: String(err) };
   }
 
   if (!res || !res.ok) {
@@ -432,6 +431,7 @@ interface ProviderKeys {
   groq?:       string;
   deepseek?:   string;
   openrouter?: string;
+  openai?:     string;
   gemini?:     string;
 }
 
@@ -460,13 +460,15 @@ async function callWithFallback(
       continue;
     }
 
-    // Each provider call gets at most 11s — enough for fast models, protects deadline
-    const perCallMs = Math.min(11_000, remaining - 2_000);
+    // Each provider call gets at most 8s — enough for fast models; 6 providers × 8s = 48s budget
+    const perCallMs = Math.min(8_000, remaining - 2_000);
 
     let result: AIResult;
 
     if (provider === "groq") {
       result = await callOpenAICompat(GROQ_API_URL, key, model, messages, maxTokens, requestId, "groq", undefined, perCallMs);
+    } else if (provider === "openai") {
+      result = await callOpenAICompat(OPENAI_API_URL, key, model, messages, maxTokens, requestId, "openai", undefined, perCallMs);
     } else if (provider === "deepseek") {
       result = await callOpenAICompat(DEEPSEEK_API_URL, key, model, messages, maxTokens, requestId, "deepseek", undefined, perCallMs);
     } else if (provider === "openrouter") {
@@ -1080,6 +1082,7 @@ Deno.serve(async (req: Request) => {
     // Provider keys  -  all optional except at least one must be present
     const keys: ProviderKeys = {
       groq:       Deno.env.get("GROQ_API_KEY")       || undefined,
+      openai:     Deno.env.get("OPENAI_API_KEY")     || undefined,
       deepseek:   Deno.env.get("DEEPSEEK_API_KEY")   || undefined,
       openrouter: Deno.env.get("OPENROUTER_API_KEY") || undefined,
       gemini:     Deno.env.get("GEMINI_API_KEY")      || undefined,

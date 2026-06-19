@@ -1,8 +1,8 @@
 - [Engagera DB convention](engagera-db-convention.md) — all tables in `public` schema with `engagera_` prefix; always use `engageraDb` alias
 - [Engagera guest access](engagera-guest-access.md) — guest session ID via `setGuestSessionId()` global, 5-message limit, 429 on breach
-- [AI provider status](openrouter-free-models.md) — Groq (GROQ_API_KEY in Supabase secrets); llama-3.1-8b-instant default (20K TPM), llama-3.3-70b for premium models only
+- [AI provider status](openrouter-free-models.md) — 5 providers: Groq/OpenAI/DeepSeek/Gemini/OpenRouter; no retry (fast failover); 8s per call, 48s global deadline; STANDARD_CHAIN starts with Groq 8b then 70b (separate buckets)
 - [Engagera storage audit](engagera-storage-audit.md) — Supabase-only confirmed; DATABASE_URL and @workspace/db removed; engagera schema dropped
-- [Engagera edge function](engagera-edge-function.md) — chat v38 live; URL auto-crawl via Jina AI (detectURLs→fetchWebpage, 3K char cap); cross-session memory (engagera_user_memory: key/value/strength, UUID user_id); fire-and-forget memory extraction after each chat; crawledUrls in all return paths
+- [Engagera edge function](engagera-edge-function.md) — chat v41 live; send-reset-email uses Resend with noreply@afuchat.com + onboarding@resend.dev fallback; guest auth needs Authorization: Bearer ANON_KEY header always
 - [Engagera Vercel deployment](engagera-vercel.md) — vercel.json + api/index.ts adapter; 4 env vars required in Vercel dashboard
 - [Engagera image generation](image-generation.md) — SVG via gpt-4o edge fn; pollinations.ai went fully paid June 2026 (all models 402)
 - [TTS service status](tts-service-status.md) — ElevenLabs free tier disabled (proxy detect), OpenAI TTS quota exhausted; hook uses SpeechSynthesis with fast-fail

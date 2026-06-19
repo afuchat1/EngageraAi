@@ -34,7 +34,7 @@ const BRAND = {
   logoUrl: "https://engagera.afuchat.com/logo.png",
   primaryColor: "#6366f1",
   accentGradient: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a78bfa 100%)",
-  fromEmail: "noreply@engagera.afuchat.com",
+  fromEmail: "noreply@afuchat.com",
   fromName: "Engagera",
   year: new Date().getFullYear(),
 };
@@ -371,9 +371,29 @@ Deno.serve(async (req: Request) => {
     });
 
     if (!emailRes.ok) {
-      const errText = await emailRes.text();
-      console.error("Resend error:", emailRes.status, errText);
-      return json({ error: "Failed to send email" }, 500);
+      const resendErr = await emailRes.json().catch(() => ({}));
+      console.error("Resend error:", emailRes.status, JSON.stringify(resendErr));
+
+      // Fallback: try sending from Resend's verified onboarding domain
+      const fallbackRes = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${resendKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: "Engagera <onboarding@resend.dev>",
+          to: [email],
+          subject: "Reset your Engagera password",
+          html: buildEmailHtml(resetUrl, email),
+        }),
+      });
+
+      if (!fallbackRes.ok) {
+        const fallbackErr = await fallbackRes.text();
+        console.error("Resend fallback error:", fallbackRes.status, fallbackErr);
+        return json({ error: "Failed to send email" }, 500);
+      }
     }
 
     return json({ success: true });
