@@ -2,7 +2,8 @@
 - [Engagera guest access](engagera-guest-access.md) — guest session ID via `setGuestSessionId()` global, 5-message limit, 429 on breach
 - [AI provider status](openrouter-free-models.md) — 5 providers: Groq/OpenAI/DeepSeek/Gemini/OpenRouter; no retry (fast failover); 8s per call, 48s global deadline; STANDARD_CHAIN starts with Groq 8b then 70b (separate buckets)
 - [Engagera storage audit](engagera-storage-audit.md) — Supabase-only confirmed; DATABASE_URL and @workspace/db removed; engagera schema dropped
-- [Engagera edge function](engagera-edge-function.md) — chat v41 live; send-reset-email uses Resend with noreply@afuchat.com + onboarding@resend.dev fallback; guest auth needs Authorization: Bearer ANON_KEY header always
+- [Engagera edge function](engagera-edge-function.md) — chat deployed with Dev Mode (mode:"dev" → ENGAGERA_DEV_SYSTEM_PROMPT); all 8 Edge Functions live; URL mapper in custom-fetch.ts routes /api/... → Supabase Edge Functions; anon key as fallback bearer in App.tsx
+- [Engagera api routing](engagera-api-routing.md) — setUrlMapper in custom-fetch.ts rewrites /api/* to Supabase Edge Function URLs; setFallbackBearerToken(SUPABASE_ANON_KEY) for guests; configured once at App.tsx module level
 - [Engagera Vercel deployment](engagera-vercel.md) — vercel.json + api/index.ts adapter; 4 env vars required in Vercel dashboard
 - [Engagera image generation](image-generation.md) — SVG via gpt-4o edge fn; pollinations.ai went fully paid June 2026 (all models 402)
 - [TTS service status](tts-service-status.md) — ElevenLabs free tier disabled (proxy detect), OpenAI TTS quota exhausted; hook uses SpeechSynthesis with fast-fail

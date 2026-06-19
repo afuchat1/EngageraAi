@@ -18,6 +18,27 @@ const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
 let _guestSessionId: string | null = null;
+let _fallbackBearerToken: string | null = null;
+let _urlMapper: ((path: string) => string) | null = null;
+
+/**
+ * Set a URL mapper that rewrites relative paths before fetch.
+ * The mapper receives the full relative URL (path + query string)
+ * and returns the final absolute URL to use.
+ * Pass `null` to clear.
+ */
+export function setUrlMapper(mapper: ((path: string) => string) | null): void {
+  _urlMapper = mapper;
+}
+
+/**
+ * Set a fallback bearer token used when the auth token getter returns null
+ * (e.g. the Supabase anon key for unauthenticated / guest requests).
+ * Pass `null` to clear.
+ */
+export function setFallbackBearerToken(token: string | null): void {
+  _fallbackBearerToken = token;
+}
 
 /**
  * Set a base URL that is prepended to every relative request URL
@@ -71,8 +92,17 @@ function isUrl(input: RequestInfo | URL): input is URL {
 }
 
 function applyBaseUrl(input: RequestInfo | URL): RequestInfo | URL {
-  if (!_baseUrl) return input;
   const url = resolveUrl(input);
+
+  // URL mapper takes priority — rewrites relative paths to absolute URLs
+  if (_urlMapper && url.startsWith("/")) {
+    const mapped = _urlMapper(url);
+    if (typeof input === "string") return mapped;
+    if (isUrl(input)) return new URL(mapped);
+    return new Request(mapped, input as Request);
+  }
+
+  if (!_baseUrl) return input;
   // Only prepend to relative paths (starting with /)
   if (!url.startsWith("/")) return input;
 
@@ -359,12 +389,18 @@ export async function customFetch<T = unknown>(
     headers.set("accept", DEFAULT_JSON_ACCEPT);
   }
 
-  // Attach bearer token when an auth getter is configured and no
-  // Authorization header has been explicitly provided.
-  if (_authTokenGetter && !headers.has("authorization")) {
-    const token = await _authTokenGetter();
-    if (token) {
-      headers.set("authorization", `Bearer ${token}`);
+  // Attach bearer token when no Authorization header has been explicitly provided.
+  if (!headers.has("authorization")) {
+    let bearer: string | null = null;
+    if (_authTokenGetter) {
+      bearer = await _authTokenGetter();
+    }
+    // Fall back to the configured anon/fallback token (e.g. Supabase anon key for guests)
+    if (!bearer && _fallbackBearerToken) {
+      bearer = _fallbackBearerToken;
+    }
+    if (bearer) {
+      headers.set("authorization", `Bearer ${bearer}`);
     }
   }
 
