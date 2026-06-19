@@ -43,14 +43,9 @@ export function Navbar() {
             Docs
           </Link>
           {user && (
-            <>
-              <Link href="/playground" className="text-muted-foreground hover:text-foreground transition-colors">
-                Playground
-              </Link>
-              <Link href="/usage" className="text-muted-foreground hover:text-foreground transition-colors">
-                Usage
-              </Link>
-            </>
+            <Link href="/usage" className="text-muted-foreground hover:text-foreground transition-colors">
+              Usage
+            </Link>
           )}
         </nav>
 
@@ -135,7 +130,6 @@ export function Navbar() {
           {user && (
             <>
               <MobileNavLink href="/dashboard" onClick={() => setMobileOpen(false)}>Dashboard</MobileNavLink>
-              <MobileNavLink href="/playground" onClick={() => setMobileOpen(false)}>Playground</MobileNavLink>
               <MobileNavLink href="/usage" onClick={() => setMobileOpen(false)}>Usage</MobileNavLink>
             </>
           )}

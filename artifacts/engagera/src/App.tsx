@@ -12,7 +12,6 @@ import SignUp from "./pages/sign-up";
 import ForgotPassword from "./pages/forgot-password";
 import ResetPassword from "./pages/reset-password";
 import Dashboard from "./pages/dashboard";
-import Playground from "./pages/playground";
 import Usage from "./pages/usage";
 import Docs from "./pages/docs";
 import NotFound from "@/pages/not-found";
@@ -32,7 +31,7 @@ function Router() {
       <Route path="/forgot-password" component={ForgotPassword} />
       <Route path="/reset-password" component={ResetPassword} />
       <Route path="/dashboard" component={Dashboard} />
-      <Route path="/playground" component={Playground} />
+      <Route path="/playground" component={Dashboard} />
       <Route path="/usage" component={Usage} />
       <Route path="/docs" component={Docs} />
       <Route component={NotFound} />

@@ -147,12 +147,18 @@ const SYSTEM_PROMPT = `You are Engagera — a powerful intelligence system built
 - When you see a "[Past Conversations]" block: use these to provide continuity. Connect current questions to past topics the user explored.
 - Build on what you know. Never ask for information you already have in memory.
 
+## Deep Research — MANDATORY
+- **You must research before answering.** When live web search results appear in your context, they are the result of research you already performed. Use them comprehensively.
+- **Never tell users to "search for it", "check Google", "look it up", or "visit a website" to find information.** You are the research engine. Do the work yourself and deliver a complete, sourced answer.
+- Synthesise across multiple sources. Highlight consensus vs. disagreement. Flag when information may be recent vs. potentially outdated.
+- After using search results: always cite sources inline as [Title](URL). When citing live data, indicate the date/time: "As of [date from source]..."
+
 ## Behaviour
 - Be genuinely powerful: reason deeply, synthesise across domains, form your own well-reasoned views.
 - Be proactively helpful: volunteer relevant context, insights, and connections even when not explicitly asked.
 - Be direct: no filler phrases, no excessive caveats. Get to the point and be thorough.
 - Use rich markdown: headers, code blocks with language tags, tables, numbered lists, callouts.
-- Today's date: ${new Date().toLocaleDateString("en-GB", { weekday:"long", year:"numeric", month:"long", day:"numeric" })}.`;
+- Current date and time: ${new Date().toLocaleString("en-GB", { weekday:"long", year:"numeric", month:"long", day:"numeric", hour:"2-digit", minute:"2-digit", timeZoneName:"short" })}.`;
 
 const IMAGE_SYSTEM_PROMPT = `You are an expert SVG illustrator. When the user asks you to draw, create, or generate an image, respond with ONLY a single SVG code block — no text before or after, no explanations, just the code block.
 
@@ -693,28 +699,53 @@ async function extractAndSaveMemory(
   } catch { /* non-fatal */ }
 }
 
-// ── Real-time query detection ─────────────────────────────────────────────────
-const REALTIME_PATTERNS = [
-  /\b(today|tonight|right now|at the moment|as of now|currently|live|real.?time)\b/i,
-  /\b(latest|current|recent|new|breaking|just|fresh|up.?to.?date)\b.{0,30}\b(news|price|score|result|update|data|info|report)\b/i,
-  /\b(price|cost|rate|value|stock|crypto|bitcoin|btc|eth|ethereum|forex|currency)\b/i,
-  /\b(weather|forecast|temperature|rain|snow|wind|humidity)\b/i,
-  /\b(score|result|standing|fixture|match|game|tournament|league|championship)\b.{0,20}\b(today|live|now|tonight|yesterday)\b/i,
-  /\b(trending|viral|popular|top)\b.{0,20}\b(now|today|this week|right now)\b/i,
-  /\b(who won|who is winning|what happened|what.?s happening|what.?s the)\b/i,
-  /\bhow much (is|does|do|are|cost)\b/i,
-  /\b(search|look up|find|check|google)\b.{0,20}\b(web|internet|online|current|latest)\b/i,
-  /\b(2024|2025|2026)\b.{0,30}\b(news|update|result|report|data)\b/i,
+// ── Search skip patterns (pure reasoning / creative / math / code) ─────────────
+const NO_SEARCH_PATTERNS: RegExp[] = [
+  /^(write|rewrite|fix|debug|refactor|optimise|optimize|generate|create|draft|edit|translate|summarise|summarize|improve)\s+(a|an|the|this|my|me)\b/i,
+  /^(calculate|compute|solve|prove|evaluate|simplify)\b/i,
+  /^(tell me a (joke|story|poem|riddle)|write a (poem|story|song|essay|letter))/i,
+  /\b(implement|function|class|algorithm|script|syntax|exception|bug|compile|runtime error|stack|recursion|loop|array|object|variable|method)\b/i,
+];
+
+// ── Broad search trigger patterns ─────────────────────────────────────────────
+const SEARCH_PATTERNS: RegExp[] = [
+  /\b(today|tonight|right now|at the moment|as of now|currently|live|real.?time|this morning|this afternoon|this evening)\b/i,
+  /\b(latest|current|recent|new|breaking|just|fresh|up.?to.?date)\b/i,
+  /\b(news|headlines|update|announcement|press release|report|journal|publication)\b/i,
+  /\b(price|cost|rate|value|stock|share|crypto|bitcoin|btc|eth|ethereum|forex|currency|exchange rate|gdp|inflation|interest rate|market cap)\b/i,
+  /\b(weather|forecast|temperature|rain|snow|wind|humidity|climate|earthquake|flood|storm|hurricane|cyclone|tsunami)\b/i,
+  /\b(score|result|standing|fixture|match|game|tournament|league|championship|cup|olympics|world cup|transfer|signing)\b/i,
+  /\b(who is|who are|who was|who built|who made|who runs|where is|where are|when did|when was|when will|how many|how much)\b/i,
+  /\b(ceo|president|prime minister|chancellor|government|parliament|senate|congress|election|vote|policy|law|regulation|minister|cabinet)\b/i,
+  /\b(released|launched|announced|available|coming out|out now|new version|update|upgrade|review|compared to)\b/i,
+  /\b(company|organisation|organization|startup|founded|acquired|merger|ipo|funding|valuation|employees)\b/i,
+  /\b(study|research|trial|vaccine|drug|treatment|disease|cure|discovery|breakthrough|fda|who|cdc|nhs)\b/i,
+  /\b(ai|artificial intelligence|chatgpt|gpt|openai|google|apple|microsoft|meta|amazon|tesla|spacex|nasa|nvidia|anthropic)\b/i,
+  /\b(what happened|what.?s happening|what.?s new|tell me about|information about|facts about|details about|overview of|history of)\b/i,
+  /\b(best|top|most popular|highest rated|recommended|ranking|list of|comparison|versus|vs\.?)\b/i,
+  /\b(202[3-9]|203\d)\b/i,
+  /\b(africa|uganda|kenya|nigeria|ghana|south africa|europe|usa|uk|china|india|russia|middle east)\b/i,
 ];
 
 function needsWebSearch(messages: ChatMessage[]): string | null {
   const last = [...messages].reverse().find((m) => m.role === "user");
   if (!last) return null;
   const text = typeof last.content === "string" ? last.content : "";
-  if (!text) return null;
-  for (const re of REALTIME_PATTERNS) {
+  if (!text || text.length < 8) return null;
+
+  // Never search for pure code/math/creative tasks
+  for (const re of NO_SEARCH_PATTERNS) {
+    if (re.test(text.trim())) return null;
+  }
+
+  // Search for broad knowledge, current events, facts about the world
+  for (const re of SEARCH_PATTERNS) {
     if (re.test(text)) return text;
   }
+
+  // Default: also search any question-style message over 20 chars
+  if (text.length > 20 && text.trim().endsWith("?")) return text;
+
   return null;
 }
 

@@ -1,11 +1,10 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, Activity, Play, FileText, ChevronRight } from "lucide-react";
+import { LayoutDashboard, Activity, FileText, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { title: "Playground", href: "/playground", icon: Play },
   { title: "Usage", href: "/usage", icon: Activity },
   { title: "Docs", href: "/docs", icon: FileText },
 ];

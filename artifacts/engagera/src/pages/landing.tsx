@@ -31,6 +31,7 @@ import {
   X,
   ImageIcon,
 } from "lucide-react";
+import { UpgradeModal } from "@/components/UpgradeModal";
 
 type MessageContent = string | ContentPart[];
 type Message = { role: "user" | "assistant"; content: MessageContent };
@@ -133,6 +134,7 @@ export default function Landing() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [windowResetAt, setWindowResetAt] = useState<string | null>(null);
   const [countdown, setCountdown] = useState("");
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -360,6 +362,7 @@ export default function Landing() {
             if (e?.data?.windowResetAt) setWindowResetAt(e.data.windowResetAt);
             if (e?.data?.guestMessageCount !== undefined) setGuestMessageCount(e.data.guestMessageCount);
             setMessages(messages);
+            setUpgradeModalOpen(true);
           } else {
             setMessages([...updated, { role: "assistant", content: "Sorry, something went wrong. Please try again." }]);
           }
@@ -720,15 +723,16 @@ export default function Landing() {
 
             {/* 24hr limit notice */}
             {isGuest && windowResetAt && (
-              <div className="flex items-center justify-between mb-3 px-4 py-2 border border-[#1a1a1a] bg-[#0d0d0d] text-xs">
+              <button
+                onClick={() => setUpgradeModalOpen(true)}
+                className="flex items-center justify-between mb-3 px-4 py-2.5 border border-amber-500/20 bg-amber-500/5 rounded-xl text-xs w-full text-left hover:bg-amber-500/10 transition-colors"
+              >
                 <div className="flex items-center gap-2 text-amber-400/80">
                   <Clock className="h-3.5 w-3.5 shrink-0" />
-                  <span>Daily limit reached · Resets in <span className="font-semibold">{countdown}</span></span>
+                  <span>Free limit reached · Resets in <span className="font-semibold">{countdown}</span></span>
                 </div>
-                <Link href="/sign-up">
-                  <span className="text-primary cursor-pointer hover:underline font-medium">Sign up free →</span>
-                </Link>
-              </div>
+                <span className="text-primary font-semibold shrink-0">Unlock unlimited →</span>
+              </button>
             )}
 
             {/* Attachment preview strip */}
@@ -836,6 +840,14 @@ export default function Landing() {
             </p>
           </div>
         )}
+
+      {/* Upgrade modal — shown when free limit is hit */}
+      <UpgradeModal
+        open={upgradeModalOpen}
+        onClose={() => setUpgradeModalOpen(false)}
+        countdown={countdown || undefined}
+        reason="limit"
+      />
 
       </div>
     </div>
