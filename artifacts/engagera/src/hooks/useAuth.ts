@@ -38,9 +38,17 @@ export function useAuth() {
   };
 
   const resetPasswordForEmail = async (email: string) => {
-    return supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: "https://engagera.afuchat.com/reset-password",
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    const res = await fetch(`${supabaseUrl}/functions/v1/send-reset-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
     });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      return { data: null, error: { message: (body as any).error ?? "Failed to send reset email" } };
+    }
+    return { data: {}, error: null };
   };
 
   const updatePassword = async (newPassword: string) => {
