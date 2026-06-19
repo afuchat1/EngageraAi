@@ -9,6 +9,8 @@ import { supabase } from "@/lib/supabase";
 import Landing from "./pages/landing";
 import SignIn from "./pages/sign-in";
 import SignUp from "./pages/sign-up";
+import ForgotPassword from "./pages/forgot-password";
+import ResetPassword from "./pages/reset-password";
 import Dashboard from "./pages/dashboard";
 import Playground from "./pages/playground";
 import Usage from "./pages/usage";
@@ -27,6 +29,8 @@ function Router() {
       <Route path="/" component={Landing} />
       <Route path="/sign-in" component={SignIn} />
       <Route path="/sign-up" component={SignUp} />
+      <Route path="/forgot-password" component={ForgotPassword} />
+      <Route path="/reset-password" component={ResetPassword} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/playground" component={Playground} />
       <Route path="/usage" component={Usage} />

@@ -37,6 +37,16 @@ export function useAuth() {
     return supabase.auth.signOut();
   };
 
+  const resetPasswordForEmail = async (email: string) => {
+    return supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: "https://engagera.afuchat.com/reset-password",
+    });
+  };
+
+  const updatePassword = async (newPassword: string) => {
+    return supabase.auth.updateUser({ password: newPassword });
+  };
+
   const avatarUrl: string | null =
     user?.user_metadata?.avatar_url ?? user?.user_metadata?.picture ?? null;
 
@@ -52,5 +62,7 @@ export function useAuth() {
     signIn,
     signUp,
     signOut,
+    resetPasswordForEmail,
+    updatePassword,
   };
 }
