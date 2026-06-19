@@ -37,6 +37,7 @@ interface ChatResponse {
   guestMessageCount?: number;
   guestMessageLimit?: number;
   searchInfo?: SearchInfo;
+  crawledUrls?: string[];
 }
 
 const EDGE_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/chat`;

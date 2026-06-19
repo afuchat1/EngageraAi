@@ -5,6 +5,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useEdgeChatCompletion, type SearchInfo } from "@/hooks/useEdgeChatCompletion";
 import { MessageContent } from "@/components/MessageContent";
 import { WebSearchIndicator } from "@/components/WebSearchIndicator";
+import { WebCrawlIndicator } from "@/components/WebCrawlIndicator";
 import { detectModel } from "@/lib/autoModel";
 import { Send, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -13,6 +14,7 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   searchInfo?: SearchInfo;
+  crawledUrls?: string[];
 }
 
 export default function Playground() {
@@ -52,6 +54,7 @@ export default function Playground() {
             role: "assistant",
             content: response.message.content,
             searchInfo: response.searchInfo,
+            crawledUrls: response.crawledUrls,
           }]);
           setLastUsage(response.usage);
         },
@@ -130,6 +133,9 @@ export default function Playground() {
                     </div>
                   )}
                   <div className={cn("max-w-[80%]", msg.role === "user" ? "" : "space-y-0")}>
+                    {msg.role === "assistant" && msg.crawledUrls && msg.crawledUrls.length > 0 && (
+                      <WebCrawlIndicator urls={msg.crawledUrls} />
+                    )}
                     {msg.role === "assistant" && msg.searchInfo && (
                       <WebSearchIndicator searchInfo={msg.searchInfo} />
                     )}

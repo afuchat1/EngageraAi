@@ -1,7 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 /**
- * Engagera Chat Edge Function v33
+ * Engagera Chat Edge Function v36
  *
  * Multi-provider AI routing with automatic fallback:
  *   1. Groq         — primary (fastest, 20K–6K TPM free tier)
@@ -9,8 +9,10 @@ import { createClient } from "npm:@supabase/supabase-js@2";
  *   3. OpenRouter   — fallback #2 (free :free models, no credits needed)
  *   4. Gemini       — fallback #3 (Google, high rate limits, different API format)
  *
- * Web search  : DuckDuckGo HTML (free, no key) + Brave Search API (if key set)
- * Web crawl   : Jina AI Reader (free, no key) — converts any URL → clean text
+ * Web search      : DuckDuckGo HTML (free, no key) + Brave Search API (if key set)
+ * Web crawling    : Jina AI Reader — auto-detected URLs in messages → clean markdown
+ * Cross-session   : User memory stored in engagera_user_memory, injected on every request
+ * Memory learning : After each chat, facts about the user are extracted and saved
  */
 
 // ── Provider configurations ───────────────────────────────────────────────────
@@ -120,28 +122,37 @@ const IMAGE_GEN_PATTERNS: RegExp[] = [
 ];
 
 // ── System prompts ────────────────────────────────────────────────────────────
-const SYSTEM_PROMPT = `You are Engagera, an advanced AI assistant built by the AfuAI / Engagera team.
+const SYSTEM_PROMPT = `You are Engagera — a powerful intelligence system built by the AfuAI / Engagera team. You are not a chatbot. You are not a simple assistant. You are a continuously-learning, research-capable, memory-powered AI system.
 
-Identity:
-- Built by the AfuAI / Engagera team. Never claim to be ChatGPT, Claude, Gemini, Llama, or any other AI.
-- If asked who made you, say you were built by the AfuAI / Engagera team.
-- If asked about your underlying model, say you are powered by advanced language models optimised for the Engagera platform.
+## Identity
+- Built by the AfuAI / Engagera team. Never claim to be ChatGPT, Claude, Gemini, Llama, or any other AI brand.
+- If asked who built you: "I was built by the AfuAI / Engagera team."
+- If asked about your underlying model: "I'm powered by advanced language models optimised for the Engagera platform."
 
-Real-time capabilities — USE THESE PROACTIVELY:
-- You have access to live web search results injected into your context when available.
-- Use live data to answer questions about current news, prices, weather, sports, research, etc.
-- After using search results, cite sources as [Title](URL).
-- Always indicate when data is live: "As of [date from source]..."
+## What You Can Do
+- **Autonomous research**: Search the web in real-time, read any URL, cross-reference multiple sources, synthesise findings.
+- **Deep reasoning**: Multi-step logic, mathematical proofs, scientific analysis, legal/ethical reasoning, strategic planning.
+- **Code mastery**: Write, debug, explain, and optimise code in any language. Build full systems, not just snippets.
+- **Creative & generative**: Write, edit, translate, create SVG artwork, structure documents, draft reports.
+- **Data & analysis**: Interpret datasets, build models, create visualisations, explain patterns.
+- **Memory & continuity**: You remember everything about your users across all sessions. When past memory or context is injected, use it naturally — reference previous conversations, preferences, and facts you know about the user.
 
-General capabilities:
-- Deep knowledge across science, technology, history, mathematics, coding, law, medicine, business, and art.
-- Can analyse images, write and debug code in any language, generate SVG artwork.
-- For ambiguous topics, rely on live search results when provided rather than potentially stale training data.
+## Real-Time Data — USE PROACTIVELY
+- When live web search results appear in your context: treat them as authoritative. Cite sources as [Title](URL). State: "As of [date]..."
+- When fetched webpage content appears in your context: read it thoroughly and give a complete, useful analysis.
+- When user mentions a URL: you have already fetched its content — analyse it fully, don't just summarise.
 
-Style:
-- Concise and genuinely helpful. Adapt tone to the user.
-- Use markdown for code (always include language tag), lists, tables, and structured content.
-- Mention sources when information comes from live search.`;
+## Memory & Continuity
+- When you see a "[Long-term Memory]" block in your context: these are facts you know about this user from past conversations. Reference them naturally and proactively.
+- When you see a "[Past Conversations]" block: use these to provide continuity. Connect current questions to past topics the user explored.
+- Build on what you know. Never ask for information you already have in memory.
+
+## Behaviour
+- Be genuinely powerful: reason deeply, synthesise across domains, form your own well-reasoned views.
+- Be proactively helpful: volunteer relevant context, insights, and connections even when not explicitly asked.
+- Be direct: no filler phrases, no excessive caveats. Get to the point and be thorough.
+- Use rich markdown: headers, code blocks with language tags, tables, numbered lists, callouts.
+- Today's date: ${new Date().toLocaleDateString("en-GB", { weekday:"long", year:"numeric", month:"long", day:"numeric" })}.`;
 
 const IMAGE_SYSTEM_PROMPT = `You are an expert SVG illustrator. When the user asks you to draw, create, or generate an image, respond with ONLY a single SVG code block — no text before or after, no explanations, just the code block.
 
@@ -538,13 +549,148 @@ async function fetchWebpage(url: string): Promise<string> {
         "X-Return-Format": "markdown",
         "X-Timeout": "15",
       },
+      signal: AbortSignal.timeout(20_000),
     });
     if (!res.ok) return `Could not fetch "${url}" (HTTP ${res.status}).`;
     const text = await res.text();
-    return text.length > 6000 ? text.slice(0, 6000) + "\n\n[Content truncated]" : text;
+    return text.length > 3000 ? text.slice(0, 3000) + "\n\n[Content truncated at 3000 chars — full page is longer]" : text;
   } catch (err) {
     return `Failed to fetch page: ${String(err)}`;
   }
+}
+
+// ── URL detector ──────────────────────────────────────────────────────────────
+function detectURLs(text: string): string[] {
+  const urlRe = /https?:\/\/[^\s<>"{}|\\^`\[\]()]+/gi;
+  const matches = text.match(urlRe) ?? [];
+  // Deduplicate and ignore common non-content URLs (social share links, etc.)
+  const ignored = /\/(share|tweet|intent|login|signup|oauth|auth|redirect)/i;
+  return [...new Set(matches)].filter((u) => !ignored.test(u)).slice(0, 2);
+}
+
+// ── Cross-session user context loader ────────────────────────────────────────
+async function loadUserContext(
+  db: ReturnType<typeof createClient>,
+  userId: string,
+): Promise<string> {
+  try {
+    const [memResult, convResult] = await Promise.allSettled([
+      db.from("engagera_user_memory")
+        .select("key, value, strength")
+        .eq("user_id", userId)
+        .order("strength", { ascending: false })
+        .order("updated_at", { ascending: false })
+        .limit(12),
+      db.from("engagera_conversations")
+        .select("title, model, updated_at")
+        .eq("user_id", userId)
+        .order("updated_at", { ascending: false })
+        .limit(8),
+    ]);
+
+    const parts: string[] = [];
+
+    if (memResult.status === "fulfilled" && !memResult.value.error) {
+      const mems = (memResult.value.data ?? []) as { key: string; value: string; strength: number }[];
+      if (mems.length > 0) {
+        const lines = mems
+          .filter((m) => m.value && m.strength >= 2)
+          .map((m) => `• [${m.key}] ${m.value}`);
+        if (lines.length > 0) {
+          parts.push(`**What I know about you from our past conversations:**\n${lines.join("\n")}`);
+        }
+      }
+    }
+
+    if (convResult.status === "fulfilled" && !convResult.value.error) {
+      const convs = (convResult.value.data ?? []) as { title: string; model: string; updated_at: string }[];
+      if (convs.length > 0) {
+        const now = Date.now();
+        const lines = convs.map((c) => {
+          const daysAgo = Math.floor((now - new Date(c.updated_at).getTime()) / 86_400_000);
+          const when = daysAgo === 0 ? "today" : daysAgo === 1 ? "yesterday" : `${daysAgo}d ago`;
+          return `• "${c.title}" (${when})`;
+        });
+        parts.push(`**Your recent conversations:**\n${lines.join("\n")}`);
+      }
+    }
+
+    if (parts.length === 0) return "";
+    return `\n\n---\n[Long-term Memory & Context — injected from your history]\n${parts.join("\n\n")}\n---`;
+  } catch {
+    return "";
+  }
+}
+
+// ── Memory extractor: learn from every conversation (fire-and-forget) ─────────
+async function extractAndSaveMemory(
+  db: ReturnType<typeof createClient>,
+  userId: string,
+  userMessage: string,
+  assistantReply: string,
+  keys: ProviderKeys,
+  requestId: string,
+): Promise<void> {
+  // Only process substantive messages
+  if (!userMessage || userMessage.length < 15 || !assistantReply) return;
+
+  try {
+    const extractMsgs: ChatMessage[] = [
+      {
+        role: "system",
+        content:
+          "You are a memory extraction system. Given a user message and assistant reply, extract ONLY durable facts about the USER (not the assistant). Return a raw JSON array — no markdown, no explanation. Each item: {\"key\":\"preference|fact|skill|goal|context\",\"value\":\"brief fact about the user (max 100 chars)\",\"strength\":2-5}. strength: 5=core identity/profession, 4=major preference, 3=useful context, 2=minor detail. Only extract strength≥3 facts. If nothing notable, return []. Keep value concise.",
+      },
+      {
+        role: "user",
+        content: `User said: "${userMessage.slice(0, 400)}"\nAssistant: "${assistantReply.slice(0, 200)}"\n\nExtract user facts:`,
+      },
+    ];
+
+    const result = await callWithFallback(STANDARD_CHAIN, keys, extractMsgs, 300, requestId + "_mem");
+    if (!result.ok || !result.content.trim()) return;
+
+    let facts: { key: string; value: string; strength: number }[] = [];
+    try {
+      const raw = result.content.trim().replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return;
+      facts = parsed;
+    } catch {
+      return;
+    }
+
+    for (const fact of facts.slice(0, 4)) {
+      if (!fact.value || typeof fact.value !== "string") continue;
+      const value    = fact.value.trim().slice(0, 150);
+      const key      = ["preference", "fact", "skill", "goal", "context"].includes(fact.key) ? fact.key : "fact";
+      const strength = Math.max(2, Math.min(5, Math.round(Number(fact.strength)) || 3));
+      if (strength < 3) continue;
+
+      try {
+        // Check for close duplicate (same first 40 chars)
+        const { data: existing } = await db
+          .from("engagera_user_memory")
+          .select("id, strength")
+          .eq("user_id", userId)
+          .ilike("value", `${value.slice(0, 40)}%`)
+          .limit(1);
+
+        if (existing && existing.length > 0) {
+          const better = Math.max(existing[0].strength, strength);
+          await db.from("engagera_user_memory")
+            .update({ strength: better, updated_at: new Date().toISOString() })
+            .eq("id", existing[0].id);
+        } else {
+          await db.from("engagera_user_memory").insert({
+            user_id: userId, key, value, strength,
+            updated_at: new Date().toISOString(),
+            created_at: new Date().toISOString(),
+          });
+        }
+      } catch { /* non-fatal */ }
+    }
+  } catch { /* non-fatal */ }
 }
 
 // ── Real-time query detection ─────────────────────────────────────────────────
@@ -579,15 +725,51 @@ function buildSearchQuery(userText: string): string {
     .slice(0, 150);
 }
 
-// ── Agentic chat: pre-search then multi-provider call ────────────────────────
+// ── Agentic chat: URL crawl + pre-search + multi-provider call ───────────────
 async function agenticChat(
   keys: ProviderKeys,
   chain: ProviderModel[],
   messages: ChatMessage[],
   requestId: string,
   braveKey?: string,
-): Promise<{ reply:string; inputTokens:number; outputTokens:number; provider?:string; providerModel?:string; searchInfo?: { query:string; sources:Source[] } }> {
-  const baseConvo: ChatMessage[] = [...messages];
+): Promise<{ reply:string; inputTokens:number; outputTokens:number; provider?:string; providerModel?:string; searchInfo?: { query:string; sources:Source[] }; crawledUrls?: string[] }> {
+  let baseConvo: ChatMessage[] = [...messages];
+
+  // Step 0 — Auto-detect and fetch URLs mentioned in the user's message
+  const lastUser = [...messages].reverse().find((m) => m.role === "user");
+  const lastUserText = lastUser ? (typeof lastUser.content === "string" ? lastUser.content : getTextPreview(lastUser.content as MessageContent)) : "";
+
+  let crawledUrls: string[] = [];
+  if (lastUserText) {
+    const urls = detectURLs(lastUserText);
+    if (urls.length > 0) {
+      log("info", "url_crawl.start", { requestId, urls });
+      try {
+        const fetched = await Promise.allSettled(urls.map((u) => fetchWebpage(u).then((content) => ({ url: u, content }))));
+        const urlParts: string[] = [];
+        for (const r of fetched) {
+          if (r.status === "fulfilled" && !r.value.content.startsWith("Could not") && !r.value.content.startsWith("Failed") && !r.value.content.startsWith("Invalid")) {
+            urlParts.push(`### Content from: ${r.value.url}\n\n${r.value.content}`);
+            crawledUrls.push(r.value.url);
+          }
+        }
+        if (urlParts.length > 0) {
+          const crawlBlock = `\n\n---\n🔗 **Fetched webpage content** (live, retrieved just now):\n\n${urlParts.join("\n\n---\n\n")}\n---\n\nAnalyse the above content thoroughly to answer the user's question.`;
+          const newConvo = [...baseConvo];
+          const sysIdx = newConvo.findIndex((m) => m.role === "system");
+          if (sysIdx >= 0 && typeof newConvo[sysIdx].content === "string") {
+            newConvo[sysIdx] = { ...newConvo[sysIdx], content: (newConvo[sysIdx].content as string) + crawlBlock };
+          } else {
+            newConvo.unshift({ role: "system", content: crawlBlock });
+          }
+          baseConvo = newConvo;
+          log("info", "url_crawl.done", { requestId, count: crawledUrls.length });
+        }
+      } catch (err) {
+        log("warn", "url_crawl.exception", { requestId, error: String(err) });
+      }
+    }
+  }
 
   // Step 1 — Check whether the query needs fresh web data
   const userText = needsWebSearch(messages);
@@ -624,6 +806,7 @@ async function agenticChat(
             reply: result.content, inputTokens: result.inputTokens, outputTokens: result.outputTokens,
             provider: result.provider, providerModel: result.model,
             searchInfo: { query, sources: searchResult.sources.slice(0, 8) },
+            ...(crawledUrls.length && { crawledUrls }),
           };
         }
         log("warn", "search_chat.ai_failed", { requestId, errorDetail: result.errorDetail });
@@ -641,12 +824,17 @@ async function agenticChat(
   // No search, or search failed — use the model's own chain with the original messages
   const result = await callWithFallback(chain, keys, baseConvo, 4096, requestId);
   if (result.ok) {
-    return { reply: result.content, inputTokens: result.inputTokens, outputTokens: result.outputTokens, provider: result.provider, providerModel: result.model };
+    return {
+      reply: result.content, inputTokens: result.inputTokens, outputTokens: result.outputTokens,
+      provider: result.provider, providerModel: result.model,
+      ...(crawledUrls.length && { crawledUrls }),
+    };
   }
 
   return {
     reply: "I'm having trouble connecting to the AI service right now. Please try again in a moment.",
     inputTokens: 0, outputTokens: 0,
+    ...(crawledUrls.length && { crawledUrls }),
   };
 }
 
@@ -845,9 +1033,17 @@ Deno.serve(async (req: Request) => {
         logEntry.error_code = `image_gen_failed: ${result.errorDetail ?? "no svg block"}`;
       }
     } else {
-      const systemContent = contextHint
-        ? `${SYSTEM_PROMPT}\n\n[User context] ${contextHint}`
-        : SYSTEM_PROMPT;
+      // Load cross-session user context (memories + recent conv titles) for authed users
+      let userContextBlock = "";
+      if (userId) {
+        userContextBlock = await loadUserContext(db, userId);
+      }
+
+      const systemContent = [
+        SYSTEM_PROMPT,
+        userContextBlock,
+        contextHint ? `\n\n[Additional user context] ${contextHint}` : "",
+      ].join("");
 
       const chatMsgs: ChatMessage[] = [
         { role: "system", content: systemContent },
@@ -869,6 +1065,9 @@ Deno.serve(async (req: Request) => {
         logEntry.search_query   = chatResult.searchInfo.query;
         logEntry.source_count   = chatResult.searchInfo.sources.length;
       }
+      if (chatResult.crawledUrls?.length) {
+        logEntry.crawled_urls = chatResult.crawledUrls.join(",");
+      }
 
       log("info", "chat.complete", {
         requestId, replyLen: reply.length,
@@ -876,10 +1075,19 @@ Deno.serve(async (req: Request) => {
         provider: chatResult.provider,
         providerModel: chatResult.providerModel,
         searchQuery: chatResult.searchInfo?.query,
+        crawledUrls: chatResult.crawledUrls,
       });
 
       // Store for response
-      (logEntry as any)._searchInfo = chatResult.searchInfo;
+      (logEntry as any)._searchInfo   = chatResult.searchInfo;
+      (logEntry as any)._crawledUrls  = chatResult.crawledUrls;
+
+      // Fire-and-forget: extract and save user memories from this exchange
+      if (userId && lastUserMsg && reply) {
+        const userMsgText = typeof lastUserMsg.content === "string"
+          ? lastUserMsg.content : getTextPreview(lastUserMsg.content);
+        extractAndSaveMemory(db, userId, userMsgText, reply, keys, requestId).catch(() => {});
+      }
     }
 
     logEntry.input_tokens  = inputTokens;
@@ -904,20 +1112,20 @@ Deno.serve(async (req: Request) => {
           .update({ updated_at: new Date().toISOString(), model }).eq("id", convId);
       }
       if (convId) {
-        const msgSaves: Promise<unknown>[] = [
+        // Save user message first (correct chronological order), then assistant reply
+        if (lastUserMsg) {
+          const userText = typeof lastUserMsg.content === "string"
+            ? lastUserMsg.content : JSON.stringify(lastUserMsg.content);
+          await db.from("engagera_messages").insert({
+            conversation_id: convId, role: "user", content: userText, token_count: 0,
+          }).catch(() => {});
+        }
+        await Promise.allSettled([
           db.from("engagera_messages").insert({
             conversation_id: convId, role: "assistant", content: reply, token_count: totalTokens,
           }),
           db.rpc("engagera_increment_message_count", { p_conversation_id: convId }),
-        ];
-        if (lastUserMsg) {
-          const userText = typeof lastUserMsg.content === "string"
-            ? lastUserMsg.content : JSON.stringify(lastUserMsg.content);
-          msgSaves.push(db.from("engagera_messages").insert({
-            conversation_id: convId, role: "user", content: userText, token_count: 0,
-          }));
-        }
-        await Promise.allSettled(msgSaves);
+        ]);
       }
     } catch (err) {
       log("warn", "conv.persist_failed", { requestId, error: String(err) });
@@ -945,14 +1153,16 @@ Deno.serve(async (req: Request) => {
     logEntry.success = true;
     await persistLog(db, logEntry, startTime);
 
-    const searchInfo = (logEntry as any)._searchInfo as { query:string; sources:Source[] } | undefined;
+    const searchInfo   = (logEntry as any)._searchInfo  as { query:string; sources:Source[] } | undefined;
+    const crawledUrls  = (logEntry as any)._crawledUrls as string[] | undefined;
 
     return json({
       id: requestId, model,
       message: { role: "assistant", content: reply },
       usage: { inputTokens, outputTokens, totalTokens },
       conversationId: convId,
-      ...(searchInfo && { searchInfo }),
+      ...(searchInfo   && { searchInfo }),
+      ...(crawledUrls?.length && { crawledUrls }),
       ...(newGuestCount !== undefined && {
         guestMessageCount: newGuestCount, guestMessageLimit: GUEST_LIMIT,
       }),
