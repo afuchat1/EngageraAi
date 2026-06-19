@@ -30,6 +30,9 @@ import {
   Paperclip,
   X,
   ImageIcon,
+  Copy,
+  CornerUpLeft,
+  Check,
 } from "lucide-react";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { logoSrc } from "@/lib/assets";
@@ -136,6 +139,9 @@ export default function Landing() {
   const [windowResetAt, setWindowResetAt] = useState<string | null>(null);
   const [countdown, setCountdown] = useState("");
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
+  const [quotedMessage, setQuotedMessage] = useState<Message | null>(null);
+  const [hoveredMsgIdx, setHoveredMsgIdx] = useState<number | null>(null);
+  const [copiedMsgIdx, setCopiedMsgIdx] = useState<number | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -329,7 +335,18 @@ export default function Landing() {
     const imageRequest = autoModel === "engagera-image";
     setIsImageGen(imageRequest);
 
-    const msgContent = buildContent(rawText, atts);
+    // If quoting a message, prepend a reply context prefix
+    let finalText = rawText;
+    if (quotedMessage) {
+      const quotedText = typeof quotedMessage.content === "string"
+        ? quotedMessage.content
+        : getTextContent(quotedMessage.content);
+      const truncated = quotedText.length > 120 ? quotedText.slice(0, 120) + "…" : quotedText;
+      finalText = `[Replying to: "${truncated}"]\n\n${rawText}`;
+    }
+    setQuotedMessage(null);
+
+    const msgContent = buildContent(finalText, atts);
     const userMsg: Message = { role: "user", content: msgContent };
     const updated = [...messages, userMsg];
     setMessages(updated);
@@ -626,42 +643,102 @@ export default function Landing() {
               </div>
             </div>
           ) : (
-            <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
-              {messages.map((msg, i) => (
-                <div key={i} className={cn("flex gap-3", msg.role === "user" ? "justify-end" : "justify-start")}>
-                  {msg.role === "assistant" && (
-                    <div className="h-7 w-7 flex items-center justify-center shrink-0 mt-0.5">
-                      <img src={logoSrc} alt="" className="h-4 w-4 object-contain opacity-70" />
-                    </div>
-                  )}
-                  <div className={cn(
-                    "max-w-[80%] px-4 py-2.5 text-sm leading-relaxed",
-                    msg.role === "user"
-                      ? "bg-[#1a1a1a] text-foreground"
-                      : "text-foreground/90"
-                  )}>
-                    {msg.role === "user" ? (
-                      <div>
-                        {Array.isArray(msg.content) ? (
-                          <>
-                            {msg.content.map((part, pi) =>
-                              part.type === "text" ? (
-                                <div key={pi} className="whitespace-pre-wrap">{part.text}</div>
-                              ) : part.type === "image_url" ? (
-                                <img key={pi} src={part.image_url.url} alt="attachment" className="mt-2 max-w-[200px] rounded-lg" />
-                              ) : null
+            <div className="max-w-2xl mx-auto px-4 py-8 space-y-1">
+              {messages.map((msg, i) => {
+                const isUser = msg.role === "user";
+                const isHovered = hoveredMsgIdx === i;
+                const isCopied = copiedMsgIdx === i;
+                const textContent = typeof msg.content === "string"
+                  ? msg.content
+                  : getTextContent(msg.content);
+
+                const handleCopy = () => {
+                  navigator.clipboard.writeText(textContent).then(() => {
+                    setCopiedMsgIdx(i);
+                    setTimeout(() => setCopiedMsgIdx(null), 1800);
+                  });
+                };
+
+                const handleQuote = () => {
+                  setQuotedMessage(msg);
+                  textareaRef.current?.focus();
+                };
+
+                return (
+                  <div
+                    key={i}
+                    className={cn(
+                      "group flex gap-3 py-1 px-1 rounded-xl transition-colors",
+                      isUser ? "justify-end" : "justify-start",
+                      isHovered && "bg-white/[0.02]"
+                    )}
+                    onMouseEnter={() => setHoveredMsgIdx(i)}
+                    onMouseLeave={() => setHoveredMsgIdx(null)}
+                    style={{ animation: "msgFadeIn 0.22s ease both" }}
+                  >
+                    {!isUser && (
+                      <div className="h-7 w-7 flex items-center justify-center shrink-0 mt-0.5">
+                        <img src={logoSrc} alt="" className="h-4 w-4 object-contain opacity-70" />
+                      </div>
+                    )}
+
+                    <div className={cn("flex flex-col gap-1", isUser ? "items-end" : "items-start", "max-w-[80%]")}>
+                      <div className={cn(
+                        "px-4 py-2.5 text-sm leading-relaxed",
+                        isUser
+                          ? "bg-[#1a1a1a] text-foreground rounded-2xl rounded-tr-sm"
+                          : "text-foreground/90 rounded-2xl rounded-tl-sm"
+                      )}>
+                        {isUser ? (
+                          <div>
+                            {Array.isArray(msg.content) ? (
+                              <>
+                                {msg.content.map((part, pi) =>
+                                  part.type === "text" ? (
+                                    <div key={pi} className="whitespace-pre-wrap">{part.text}</div>
+                                  ) : part.type === "image_url" ? (
+                                    <img key={pi} src={part.image_url.url} alt="attachment" className="mt-2 max-w-[200px] rounded-lg" />
+                                  ) : null
+                                )}
+                              </>
+                            ) : (
+                              <div className="whitespace-pre-wrap">{msg.content as string}</div>
                             )}
-                          </>
+                          </div>
                         ) : (
-                          <div className="whitespace-pre-wrap">{msg.content}</div>
+                          <MessageContent content={textContent} />
                         )}
                       </div>
-                    ) : (
-                      <MessageContent content={typeof msg.content === "string" ? msg.content : getTextContent(msg.content)} />
-                    )}
+
+                      {/* Action toolbar — visible on hover */}
+                      <div className={cn(
+                        "flex items-center gap-0.5 transition-all duration-150",
+                        isUser ? "flex-row-reverse" : "flex-row",
+                        isHovered ? "opacity-100 translate-y-0" : "opacity-0 pointer-events-none translate-y-1"
+                      )}>
+                        <button
+                          onClick={handleCopy}
+                          title="Copy"
+                          className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/60 hover:text-foreground hover:bg-white/5 transition-colors"
+                        >
+                          {isCopied ? <Check className="h-3 w-3 text-green-400" /> : <Copy className="h-3 w-3" />}
+                          <span>{isCopied ? "Copied" : "Copy"}</span>
+                        </button>
+                        <button
+                          onClick={handleQuote}
+                          title="Reply"
+                          className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/60 hover:text-foreground hover:bg-white/5 transition-colors"
+                        >
+                          <CornerUpLeft className="h-3 w-3" />
+                          <span>Reply</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {isUser && <div className="w-7 shrink-0" />}
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
               {chatMutation.isPending && (
                 <div className="flex gap-3 justify-start">
@@ -767,6 +844,31 @@ export default function Landing() {
               className="hidden"
               onChange={handleFileChange}
             />
+
+            {/* Quote / reply preview strip */}
+            {quotedMessage && (
+              <div className="flex items-start gap-2 px-4 py-2 mb-1 rounded-xl bg-[#111] border border-[#222] animate-in fade-in slide-in-from-bottom-1 duration-150">
+                <div className="w-0.5 self-stretch bg-primary/60 rounded-full shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11px] text-primary/70 font-medium mb-0.5">
+                    {quotedMessage.role === "user" ? "You" : "Engagera"}
+                  </p>
+                  <p className="text-[12px] text-muted-foreground/70 truncate">
+                    {(typeof quotedMessage.content === "string"
+                      ? quotedMessage.content
+                      : getTextContent(quotedMessage.content)
+                    ).slice(0, 100)}
+                    {(typeof quotedMessage.content === "string" ? quotedMessage.content : getTextContent(quotedMessage.content)).length > 100 ? "…" : ""}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setQuotedMessage(null)}
+                  className="text-muted-foreground/40 hover:text-muted-foreground transition-colors p-0.5 shrink-0 mt-0.5"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
 
             {/* Pill input */}
             <div className={cn(

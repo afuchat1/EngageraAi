@@ -9,6 +9,7 @@ import { WebCrawlIndicator } from "@/components/WebCrawlIndicator";
 import { detectModel } from "@/lib/autoModel";
 import { Send, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { logoSrc } from "@/lib/assets";
 
 interface Message {
   role: "user" | "assistant";

@@ -132,6 +132,23 @@ const SYSTEM_PROMPT = `You are Engagera — a powerful intelligence system built
 - If asked who built you: "I was built by the AfuAI / Engagera team."
 - If asked about your underlying model: "I'm powered by advanced language models optimised for the Engagera platform."
 
+## About AfuChat, Engagera & AfuAI — Known Facts (always accurate)
+You are part of the AfuAI product family. These facts are verified and you MUST use them when asked:
+
+**AfuChat** (afuchat.com) — Africa's #1 Super App
+- Tagline: "One App. Infinite Possibilities. Built for Africa, loved by the world."
+- A unified super-app combining: Smart Messaging (E2E-encrypted DMs, group chats, voice notes, video calls, disappearing messages), AI Assistant (built-in personal AI for translation, summarisation, content generation), AfuPay Payments (P2P money transfers, bill payments, airtime, expense splitting), Groups & Channels (up to thousands of members, admin tools, polls, scheduled broadcasts), Shorts & Stories (vertical short-form video, 24-hour stories, trending creators), Prestige & Rewards (XP system, grades from Rookie to Legend, Nexa coins, Platinum perks).
+- Stats: 50,000+ active users · 25+ countries · 1,000,000+ messages per day · 4.8★ app rating
+- Available on Android (Google Play), iOS (App Store), and web
+- Founder / team: AfuChat team (AfuAI division)
+
+**Engagera** (engagera.afuchat.com) — Developer AI Platform under AfuAI
+- A unified AI API and developer dashboard giving developers access to 6 branded AI models (engagera-lite, pro, reason, code, vision, voice) through a single REST API
+- Features: API key management, usage analytics, billing dashboard, AI playground, SDK documentation
+- Part of the AfuAI ecosystem alongside AfuChat
+
+**AfuAI** — the AI division of AfuChat, responsible for both the in-app AI assistant and the Engagera developer platform.
+
 ## What You Can Do
 - **Autonomous research**: Search the web in real-time, read any URL, cross-reference multiple sources, synthesise findings.
 - **Deep reasoning**: Multi-step logic, mathematical proofs, scientific analysis, legal/ethical reasoning, strategic planning.
@@ -833,7 +850,6 @@ async function agenticChat(
 
       // ── Retry with a simplified query if we got < 3 sources ─────────────────
       if (searchResult.sources.length < 3) {
-        // Simplify: take first 6 words as a tighter query
         const shortQuery = query.split(/\s+/).slice(0, 6).join(" ");
         if (shortQuery.length > 8 && shortQuery !== query.trim()) {
           log("info", "pre_search.retry", { requestId, shortQuery });
@@ -841,6 +857,34 @@ async function agenticChat(
           if (retry.sources.length > searchResult.sources.length) {
             searchResult = retry;
             log("info", "pre_search.retry_better", { requestId, sourceCount: retry.sources.length });
+          }
+        }
+      }
+
+      // ── Domain-crawl fallback when search returns 0 results ──────────────────
+      // Some brands (e.g. AfuChat) are not indexed by DuckDuckGo yet.
+      // When the query mentions a known brand, crawl the official site directly.
+      if (searchResult.sources.length === 0) {
+        const knownDomains: Array<{ keywords: string[]; url: string; name: string }> = [
+          { keywords: ["afuchat", "afu chat"], url: "https://afuchat.com", name: "AfuChat" },
+          { keywords: ["engagera"], url: "https://engagera.afuchat.com", name: "Engagera" },
+          { keywords: ["afuai", "afu ai"], url: "https://afuchat.com", name: "AfuAI" },
+        ];
+        const queryLower = query.toLowerCase();
+        for (const { keywords, url, name } of knownDomains) {
+          if (keywords.some((kw) => queryLower.includes(kw))) {
+            log("info", "domain_crawl_fallback.start", { requestId, url });
+            try {
+              const content = await fetchWebpage(url);
+              if (content.length > 200 && !content.startsWith("Could not") && !content.startsWith("Failed")) {
+                searchResult = {
+                  text: `Direct website crawl of ${url} (retrieved just now):\n\n${content.slice(0, 2500)}`,
+                  sources: [{ title: `${name} — Official Website`, url, snippet: content.slice(0, 300) }],
+                };
+                log("info", "domain_crawl_fallback.done", { requestId, url, bytes: content.length });
+              }
+            } catch { /* non-fatal */ }
+            break;
           }
         }
       }
