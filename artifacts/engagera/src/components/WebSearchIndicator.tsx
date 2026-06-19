@@ -4,8 +4,17 @@ import type { SearchInfo, SearchSource } from "@/hooks/useEdgeChatCompletion";
 
 function getFaviconUrl(url: string): string {
   try {
-    const domain = new URL(url).hostname;
-    return `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+    const { hostname } = new URL(url);
+    return `https://icons.duckduckgo.com/ip3/${hostname}.ico`;
+  } catch {
+    return "";
+  }
+}
+
+function getFaviconFallback(url: string): string {
+  try {
+    const { hostname } = new URL(url);
+    return `https://www.google.com/s2/favicons?domain=${hostname}&sz=64`;
   } catch {
     return "";
   }
@@ -30,10 +39,10 @@ function getSiteName(source: SearchSource): string {
 }
 
 function Favicon({ url, size = 16 }: { url: string; size?: number }) {
-  const [failed, setFailed] = useState(false);
-  const faviconUrl = getFaviconUrl(url);
+  const [src, setSrc] = useState(() => getFaviconUrl(url));
+  const [tries, setTries] = useState(0);
 
-  if (!faviconUrl || failed) {
+  if (!src || tries >= 2) {
     return (
       <div
         className="rounded-full bg-white/10 flex items-center justify-center shrink-0"
@@ -46,13 +55,20 @@ function Favicon({ url, size = 16 }: { url: string; size?: number }) {
 
   return (
     <img
-      src={faviconUrl}
+      src={src}
       alt=""
       width={size}
       height={size}
-      className="rounded-full object-contain shrink-0"
+      className="rounded-full object-contain shrink-0 bg-white/5"
       style={{ width: size, height: size }}
-      onError={() => setFailed(true)}
+      onError={() => {
+        if (tries === 0) {
+          setSrc(getFaviconFallback(url));
+          setTries(1);
+        } else {
+          setTries(2);
+        }
+      }}
     />
   );
 }

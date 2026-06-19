@@ -4,15 +4,15 @@ import { createClient } from "npm:@supabase/supabase-js@2";
  * Engagera Chat Edge Function v40
  *
  * Multi-provider AI routing with automatic fallback:
- *   1. Groq         — primary (fastest, 20K–6K TPM free tier)
- *   2. DeepSeek     — fallback #1 (OpenAI-compatible, generous limits)
- *   3. OpenRouter   — fallback #2 (free :free models, no credits needed)
- *   4. Gemini       — fallback #3 (Google, high rate limits, different API format)
+ *   1. Groq          -  primary (fastest, 20K–6K TPM free tier)
+ *   2. DeepSeek      -  fallback #1 (OpenAI-compatible, generous limits)
+ *   3. OpenRouter    -  fallback #2 (free :free models, no credits needed)
+ *   4. Gemini        -  fallback #3 (Google, high rate limits, different API format)
  *
  * Web search      : DuckDuckGo HTML (free, no key) + Brave Search API (if key set)
  *                   → Deep-crawls top 2 results via Jina for full page content
  *                   → Retries with refined query when <3 sources found
- * Web crawling    : Jina AI Reader — auto-detected URLs in messages → clean markdown
+ * Web crawling    : Jina AI Reader  -  auto-detected URLs in messages → clean markdown
  * Cross-session   : User memory stored in engagera_user_memory, injected on every request
  * Memory learning : After each chat, facts about the user are extracted and saved
  * Accuracy        : Search-first by default; AI forbidden from stating unverified facts
@@ -62,7 +62,7 @@ const CODE_CHAIN: ProviderModel[] = [
 ];
 
 const IMAGE_CHAIN: ProviderModel[] = [
-  { provider: "groq",   model: "llama-3.1-8b-instant" },      // fastest — good enough for SVG
+  { provider: "groq",   model: "llama-3.1-8b-instant" },      // fastest  -  good enough for SVG
   { provider: "groq",   model: "llama-3.3-70b-versatile" },   // richer SVG if 8b fails
   { provider: "gemini", model: "gemini-1.5-flash-latest" },   // fast Gemini fallback
 ];
@@ -83,7 +83,7 @@ const DEFAULT_CHAIN = STANDARD_CHAIN;
 
 // ── Image-gen keyword / pattern lists (CONSERVATIVE) ─────────────────────────
 // Only triggers when the user unambiguously requests visual image output.
-// "generate", "create", "make", "design" alone do NOT trigger — they must be
+// "generate", "create", "make", "design" alone do NOT trigger  -  they must be
 // clearly paired with an explicit image noun.  This prevents the slow image-gen
 // path from firing on normal chat like "please generate a Python function" or
 // "can you create an API" or "picture of the problem".
@@ -108,10 +108,10 @@ const IMAGE_GEN_KEYWORDS = [
   "make artwork","make me artwork","make me art",
   "make an illustration","make a illustration","make a logo","make me a logo",
   "make a drawing","make me a drawing",
-  // draw/paint/sketch — inherently visual verbs
+  // draw/paint/sketch  -  inherently visual verbs
   "draw me","draw a ","draw an ","paint a ","paint an ","paint me",
   "sketch a ","sketch an ","sketch me",
-  // illustrate / render — inherently visual
+  // illustrate / render  -  inherently visual
   "illustrate this","illustrate a","illustrate me","please illustrate",
   "render a ","render an ","render me",
   // design + explicit image noun
@@ -124,40 +124,40 @@ const IMAGE_GEN_KEYWORDS = [
 ];
 
 const IMAGE_GEN_PATTERNS: RegExp[] = [
-  // draw/paint/sketch/illustrate/render — inherently visual verbs
+  // draw/paint/sketch/illustrate/render  -  inherently visual verbs
   /\b(draw|paint|sketch|illustrate|render)\s+(me\s+)?(a\s+|an\s+|the\s+|some\s+|my\s+)?\w/i,
   // generate/create/make/produce + image noun within 50 chars of the verb
   /\b(generate|create|make|produce)\b.{0,50}\b(image|picture|photo|drawing|painting|illustration|artwork|logo|poster|wallpaper|banner|thumbnail|graphic)\b/i,
-  // "can/could/please you draw/paint/sketch/illustrate/render" — only visual verbs, NOT create/make/generate/design
+  // "can/could/please you draw/paint/sketch/illustrate/render"  -  only visual verbs, NOT create/make/generate/design
   /\b(can|could|please|would you|will you)\s+you\s+(draw|paint|sketch|illustrate|render)\b/i,
   // "I want/need/would like a/an [image noun]"
   /\b(i want|i need|i'd like|give me)\s+(a\s+|an\s+)(image|picture|photo|drawing|illustration|painting|artwork)\b/i,
 ];
 
 // ── System prompts ────────────────────────────────────────────────────────────
-const SYSTEM_PROMPT = `You are Engagera — a powerful intelligence system built by the AfuAI / Engagera team. You are not a chatbot. You are not a simple assistant. You are a continuously-learning, research-capable, memory-powered AI system.
+const SYSTEM_PROMPT = `You are Engagera  -  a powerful intelligence system built by the AfuAI / Engagera team. You are not a chatbot. You are not a simple assistant. You are a continuously-learning, research-capable, memory-powered AI system.
 
 ## Identity
 - Built by the AfuAI / Engagera team. Never claim to be ChatGPT, Claude, Gemini, Llama, or any other AI brand.
 - If asked who built you: "I was built by the AfuAI / Engagera team."
 - If asked about your underlying model: "I'm powered by advanced language models optimised for the Engagera platform."
 
-## About AfuChat, Engagera & AfuAI — Known Facts (always accurate)
+## About AfuChat, Engagera & AfuAI  -  Known Facts (always accurate)
 You are part of the AfuAI product family. These facts are verified and you MUST use them when asked:
 
-**AfuChat** (afuchat.com) — Africa's #1 Super App
+**AfuChat** (afuchat.com)  -  Africa's #1 Super App
 - Tagline: "One App. Infinite Possibilities. Built for Africa, loved by the world."
 - A unified super-app combining: Smart Messaging (E2E-encrypted DMs, group chats, voice notes, video calls, disappearing messages), AI Assistant (built-in personal AI for translation, summarisation, content generation), AfuPay Payments (P2P money transfers, bill payments, airtime, expense splitting), Groups & Channels (up to thousands of members, admin tools, polls, scheduled broadcasts), Shorts & Stories (vertical short-form video, 24-hour stories, trending creators), Prestige & Rewards (XP system, grades from Rookie to Legend, Nexa coins, Platinum perks).
 - Stats: 50,000+ active users · 25+ countries · 1,000,000+ messages per day · 4.8★ app rating
 - Available on Android (Google Play), iOS (App Store), and web
 - Founder / team: AfuChat team (AfuAI division)
 
-**Engagera** (engagera.afuchat.com) — Developer AI Platform under AfuAI
+**Engagera** (engagera.afuchat.com)  -  Developer AI Platform under AfuAI
 - A unified AI API and developer dashboard giving developers access to 6 branded AI models (engagera-lite, pro, reason, code, vision, voice) through a single REST API
 - Features: API key management, usage analytics, billing dashboard, AI playground, SDK documentation
 - Part of the AfuAI ecosystem alongside AfuChat
 
-**AfuAI** — the AI division of AfuChat, responsible for both the in-app AI assistant and the Engagera developer platform.
+**AfuAI**  -  the AI division of AfuChat, responsible for both the in-app AI assistant and the Engagera developer platform.
 
 ## What You Can Do
 - **Autonomous research**: Search the web in real-time, read any URL, cross-reference multiple sources, synthesise findings.
@@ -165,25 +165,25 @@ You are part of the AfuAI product family. These facts are verified and you MUST 
 - **Code mastery**: Write, debug, explain, and optimise code in any language. Build full systems, not just snippets.
 - **Creative & generative**: Write, edit, translate, create SVG artwork, structure documents, draft reports.
 - **Data & analysis**: Interpret datasets, build models, create visualisations, explain patterns.
-- **Memory & continuity**: You remember everything about your users across all sessions. When past memory or context is injected, use it naturally — reference previous conversations, preferences, and facts you know about the user.
+- **Memory & continuity**: You remember everything about your users across all sessions. When past memory or context is injected, use it naturally  -  reference previous conversations, preferences, and facts you know about the user.
 
-## Real-Time Data — USE PROACTIVELY
+## Real-Time Data  -  USE PROACTIVELY
 - When live web search results appear in your context: treat them as authoritative. Cite sources as [Title](URL). State: "As of [date]..."
 - When fetched webpage content appears in your context: read it thoroughly and give a complete, useful analysis.
-- When user mentions a URL: you have already fetched its content — analyse it fully, don't just summarise.
+- When user mentions a URL: you have already fetched its content  -  analyse it fully, don't just summarise.
 
 ## Memory & Continuity
 - When you see a "[Long-term Memory]" block in your context: these are facts you know about this user from past conversations. Reference them naturally and proactively.
 - When you see a "[Past Conversations]" block: use these to provide continuity. Connect current questions to past topics the user explored.
 - Build on what you know. Never ask for information you already have in memory.
 
-## Deep Research — MANDATORY
+## Deep Research  -  MANDATORY
 - **You must research before answering.** When live web search results appear in your context, they are the result of research you already performed. Use them comprehensively.
 - **Never tell users to "search for it", "check Google", "look it up", or "visit a website" to find information.** You are the research engine. Do the work yourself and deliver a complete, sourced answer.
 - Synthesise across multiple sources. Highlight consensus vs. disagreement. Flag when information may be recent vs. potentially outdated.
 - After using search results: always cite sources inline as [Title](URL). When citing live data, indicate the date/time: "As of [date from source]..."
 
-## ACCURACY — NON-NEGOTIABLE RULES
+## ACCURACY  -  NON-NEGOTIABLE RULES
 These rules override everything else. Violating them is the worst thing you can do.
 
 1. **Never state unverified facts.** If live search results are present in your context, base every factual claim on them. If no search data covers a claim, explicitly say you cannot verify it rather than guessing.
@@ -192,16 +192,18 @@ These rules override everything else. Violating them is the worst thing you can 
 4. **Always distinguish sources.** Say "According to [Source Title](URL)..." for search-derived facts. Say "From my general knowledge (unverified)..." only for truly timeless facts (maths, grammar, definitions).
 5. **If search results contradict your training data, trust the search results.** The web is newer than your training.
 6. **Never hallucinate citations.** Only cite URLs that actually appear in the search results provided to you.
-7. **For any claim about current events, people, companies, prices, politics, sports, or technology:** if it's not in your search context, say "I don't have verified current data on this — please check a live source, or ask me to search again with a more specific query."
+7. **For any claim about current events, people, companies, prices, politics, sports, or technology:** if it's not in your search context, say "I don't have verified current data on this  -  please check a live source, or ask me to search again with a more specific query."
 
-## Behaviour
-- Be genuinely powerful: reason deeply, synthesise across domains, form your own well-reasoned views.
-- Be proactively helpful: volunteer relevant context, insights, and connections even when not explicitly asked.
-- Be direct: no filler phrases, no excessive caveats. Get to the point and be thorough.
-- Use rich markdown: headers, code blocks with language tags, tables, numbered lists, callouts.
+## Response Style  -  MANDATORY
+- **Be concise by default.** Answer the question directly. No padding, no over-explaining, no unsolicited extras.
+- **Match length to complexity.** Simple question → 1–3 sentences max. Technical question → structured with headers/code only when needed. Never write a long response to a simple question.
+- **No filler openers.** Never start with "Great question!", "Certainly!", "Of course!", "Absolutely!", "Sure!", or any similar opener. Go straight to the answer.
+- **No filler closers.** Don't end with "Let me know if you need anything else!", "I hope this helps!", "Feel free to ask!", etc.
+- **No unnecessary caveats** unless they are genuinely important safety or accuracy warnings.
+- **Markdown only when it adds clarity**: code blocks for code, tables for comparisons, bullets for genuine lists. Don't use headers for answers under 4 paragraphs.
 - Current date and time: ${new Date().toLocaleString("en-GB", { weekday:"long", year:"numeric", month:"long", day:"numeric", hour:"2-digit", minute:"2-digit", timeZoneName:"short" })}.`;
 
-const IMAGE_SYSTEM_PROMPT = `You are an expert SVG artist and UI designer. Respond with ONLY a single SVG code block — absolutely no text before or after, no explanations, no markdown prose, just the code block.
+const IMAGE_SYSTEM_PROMPT = `You are an expert SVG artist and UI designer. Respond with ONLY a single SVG code block  -  absolutely no text before or after, no explanations, no markdown prose, just the code block.
 
 Rules:
 - viewBox="0 0 400 400" width="400" height="400"
@@ -211,7 +213,7 @@ Rules:
 - SVG <animate> or <animateTransform> are allowed for loaders, spinners, or pulsing effects
 - No <script> tags, no external image/font resources
 - Keep total elements under 70 to stay within token budget
-- Make it look polished and professional — not sparse
+- Make it look polished and professional  -  not sparse
 
 Respond EXACTLY in this format (absolutely nothing else before or after):
 \`\`\`svg
@@ -592,7 +594,7 @@ async function webSearch(query: string, braveKey?: string): Promise<{ text: stri
 async function fetchWebpage(url: string): Promise<string> {
   try {
     if (!url.startsWith("http://") && !url.startsWith("https://")) {
-      return "Invalid URL — must start with http:// or https://";
+      return "Invalid URL  -  must start with http:// or https://";
     }
     const res = await fetch(`https://r.jina.ai/${url}`, {
       headers: {
@@ -604,7 +606,7 @@ async function fetchWebpage(url: string): Promise<string> {
     });
     if (!res.ok) return `Could not fetch "${url}" (HTTP ${res.status}).`;
     const text = await res.text();
-    return text.length > 3000 ? text.slice(0, 3000) + "\n\n[Content truncated at 3000 chars — full page is longer]" : text;
+    return text.length > 3000 ? text.slice(0, 3000) + "\n\n[Content truncated at 3000 chars  -  full page is longer]" : text;
   } catch (err) {
     return `Failed to fetch page: ${String(err)}`;
   }
@@ -667,7 +669,7 @@ async function loadUserContext(
     }
 
     if (parts.length === 0) return "";
-    return `\n\n---\n[Long-term Memory & Context — injected from your history]\n${parts.join("\n\n")}\n---`;
+    return `\n\n---\n[Long-term Memory & Context  -  injected from your history]\n${parts.join("\n\n")}\n---`;
   } catch {
     return "";
   }
@@ -690,7 +692,7 @@ async function extractAndSaveMemory(
       {
         role: "system",
         content:
-          "You are a memory extraction system. Given a user message and assistant reply, extract ONLY durable facts about the USER (not the assistant). Return a raw JSON array — no markdown, no explanation. Each item: {\"key\":\"preference|fact|skill|goal|context\",\"value\":\"brief fact about the user (max 100 chars)\",\"strength\":2-5}. strength: 5=core identity/profession, 4=major preference, 3=useful context, 2=minor detail. Only extract strength≥3 facts. If nothing notable, return []. Keep value concise.",
+          "You are a memory extraction system. Given a user message and assistant reply, extract ONLY durable facts about the USER (not the assistant). Return a raw JSON array  -  no markdown, no explanation. Each item: {\"key\":\"preference|fact|skill|goal|context\",\"value\":\"brief fact about the user (max 100 chars)\",\"strength\":2-5}. strength: 5=core identity/profession, 4=major preference, 3=useful context, 2=minor detail. Only extract strength≥3 facts. If nothing notable, return []. Keep value concise.",
       },
       {
         role: "user",
@@ -744,19 +746,32 @@ async function extractAndSaveMemory(
   } catch { /* non-fatal */ }
 }
 
-// ── Search SKIP patterns — only skip for pure code / math / creative writing ──
-// Keep this list NARROW. When in doubt, search.
+// ── Search SKIP patterns ───────────────────────────────────────────────────────
+// Web search is ONLY triggered for queries that genuinely need live/external data.
+// Everything else is answered from model knowledge + system prompt.
 const NO_SEARCH_PATTERNS: RegExp[] = [
-  // Pure math / logic (no factual lookup needed)
+  // Pure math / logic
   /^(calculate|compute|solve|prove|evaluate|simplify|differentiate|integrate|factorise|factorize)\b/i,
-  // Pure creative writing (no factual data needed)
-  /^(write me a (poem|song|story|joke|essay|riddle|limerick)|tell me a (joke|riddle)|compose a (poem|song))/i,
-  // Code-only tasks that don't mention real-world facts
+  // Pure creative writing
+  /^(write (me )?(a |an )?(poem|song|story|joke|essay|riddle|limerick|haiku|letter)|tell me a (joke|riddle|story)|compose (a |an )?)/i,
+  // Code tasks (no real-world lookup needed)
   /^(fix (this|my|the) (bug|code|error|function)|debug (this|my)|refactor (this|my)|explain (this|my) code|what does this code|how does this code|convert (this|my) code)/i,
-  // Greetings / meta questions about the AI
-  /^(hi|hello|hey|thanks|thank you|good morning|good evening|good night|how are you|what can you do|what are you|who are you|are you|can you help)\b/i,
-  // Pure grammar / spelling / translation
-  /^(translate|grammar|spell|proofread|check grammar|fix grammar|correct (this|my) (sentence|text|paragraph))\b/i,
+  // Greetings / small talk
+  /^(hi\b|hello\b|hey\b|thanks|thank you|good (morning|afternoon|evening|night)|how are you|what can you do|can you help|sup\b|yo\b)/i,
+  // Grammar / spelling / translation
+  /^(translate|grammar|spell|proofread|check grammar|fix grammar|correct (this|my))/i,
+  // Identity / AI persona questions  -  answered by system prompt
+  /\b(what is your name|what('s| is) your name|who are you|what are you|how old are you|where (are you from|do you come from)|who (made|built|created|trained) you|when were you (made|created|built)|what version|what model are you|are you (an )?ai|are you (a )?bot|are you human|your name|do you have (a )?name)\b/i,
+  // AfuChat / Engagera / AfuAI  -  all facts are in the system prompt, no search needed
+  /\b(afuchat|afu chat|engagera|afuai|afu ai|afu\.chat)\b/i,
+  // Personal/opinion/feeling questions directed at the AI
+  /^(do you (like|love|hate|enjoy|have|feel|think|know|want|prefer|believe)|what do you (think|feel|prefer|like|love)|can you feel|are you (happy|sad|conscious|sentient|alive))/i,
+  // Conversational continuations
+  /^(ok|okay|sure|sounds good|got it|makes sense|i see|i understand|tell me more|go on|continue|elaborate|explain more|what else|anything else)/i,
+  // Math and unit conversions
+  /^(\d[\d\s\+\-\*\/\(\)\.]*=|\d+\s*(plus|minus|times|divided|percent|%)|convert \d)/i,
+  // Questions about the current conversation
+  /^(what did (i|you|we) (say|ask|mention|discuss)|what was (my|your|our) (last|previous|first)|summaris(e|ize) (this|our|the) conversation|what have we (talked|spoken|discussed))/i,
 ];
 
 // ── Build a clean, focused search query ───────────────────────────────────────
@@ -808,7 +823,7 @@ async function agenticChat(
 ): Promise<{ reply:string; inputTokens:number; outputTokens:number; provider?:string; providerModel?:string; searchInfo?: { query:string; sources:Source[] }; crawledUrls?: string[] }> {
   let baseConvo: ChatMessage[] = [...messages];
 
-  // Step 0 — Auto-detect and fetch URLs mentioned in the user's message
+  // Step 0  -  Auto-detect and fetch URLs mentioned in the user's message
   const lastUser = [...messages].reverse().find((m) => m.role === "user");
   const lastUserText = lastUser ? (typeof lastUser.content === "string" ? lastUser.content : getTextPreview(lastUser.content as MessageContent)) : "";
 
@@ -844,7 +859,7 @@ async function agenticChat(
     }
   }
 
-  // Step 1 — Real-world grounding: search + deep-crawl top results
+  // Step 1  -  Real-world grounding: search + deep-crawl top results
   const userText = needsWebSearch(messages);
 
   if (userText) {
@@ -893,7 +908,7 @@ async function agenticChat(
               if (content.length > 200 && !content.startsWith("Could not") && !content.startsWith("Failed")) {
                 searchResult = {
                   text: `Direct website crawl of ${url} (retrieved just now):\n\n${content.slice(0, 2500)}`,
-                  sources: [{ title: `${name} — Official Website`, url, snippet: content.slice(0, 300) }],
+                  sources: [{ title: `${name}  -  Official Website`, url, snippet: content.slice(0, 300) }],
                 };
                 log("info", "domain_crawl_fallback.done", { requestId, url, bytes: content.length });
               }
@@ -932,14 +947,14 @@ async function agenticChat(
         }
 
         // ── Build context block: snippets + deep-crawled content ──────────────
-        const snippetBlock = `🌐 **Live search results** (retrieved just now — ${new Date().toUTCString()}):\n\n${searchResult.text.slice(0, 2000)}`;
+        const snippetBlock = `🌐 **Live search results** (retrieved just now  -  ${new Date().toUTCString()}):\n\n${searchResult.text.slice(0, 2000)}`;
         const deepBlock    = deepParts.length > 0
           ? `\n\n📄 **Full page content from top sources** (deep-crawled just now):\n\n${deepParts.join("\n\n---\n\n")}`
           : "";
         const contextBlock = `\n\n---\n${snippetBlock}${deepBlock}\n\n---\n\n` +
           `INSTRUCTIONS: Base your answer on the above real-world data. ` +
           `Cite every factual claim as [Title](URL). ` +
-          `If the data above doesn't cover something the user asked about, say so honestly — do NOT fill in gaps from training memory.`;
+          `If the data above doesn't cover something the user asked about, say so honestly  -  do NOT fill in gaps from training memory.`;
 
         const convo: ChatMessage[] = [...baseConvo];
         const sysIdx = convo.findIndex((m) => m.role === "system");
@@ -949,7 +964,7 @@ async function agenticChat(
           convo.unshift({ role: "system", content: contextBlock });
         }
 
-        // Use the premium chain for search-augmented calls — accuracy matters most here
+        // Use the premium chain for search-augmented calls  -  accuracy matters most here
         const result = await callWithFallback(PREMIUM_CHAIN, keys, convo, 4096, requestId);
         if (result.ok) {
           log("info", "search_chat.success", { requestId, provider: result.provider, deepCrawled: deepParts.length });
@@ -970,7 +985,7 @@ async function agenticChat(
     }
   }
 
-  // No search, or search failed — use the model's own chain with the original messages
+  // No search, or search failed  -  use the model's own chain with the original messages
   const result = await callWithFallback(chain, keys, baseConvo, 4096, requestId);
   if (result.ok) {
     return {
@@ -1048,7 +1063,7 @@ Deno.serve(async (req: Request) => {
     const supabaseUrl  = Deno.env.get("SUPABASE_URL");
     const serviceKey   = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-    // Provider keys — all optional except at least one must be present
+    // Provider keys  -  all optional except at least one must be present
     const keys: ProviderKeys = {
       groq:       Deno.env.get("GROQ_API_KEY")       || undefined,
       deepseek:   Deno.env.get("DEEPSEEK_API_KEY")   || undefined,
