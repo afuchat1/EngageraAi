@@ -1,43 +1,69 @@
 ---
-name: Engagera web search
-description: How web search works in the chat edge function — pre-search architecture, why Groq tool-calling was abandoned, and rate limit strategy.
+name: Engagera web search + multi-provider routing
+description: How web search works and how multi-provider fallback is architected in the chat edge function (v33+).
 ---
 
-## Architecture (v32+)
+## Multi-provider fallback (v33+)
 
-Pre-search approach (NOT Groq tool-calling API):
+The chat function now tries 4 providers in order. If any provider fails (rate limit, network error, quota), it automatically moves to the next.
 
-1. `needsWebSearch()` — keyword regex patterns detect real-time queries (prices, weather, news, scores, etc.)
-2. `webSearch()` — DuckDuckGo HTML scrape (free, no key); optionally Brave Search API if `BRAVE_SEARCH_API_KEY` is set
-3. Results (trimmed to 2500 chars) are injected into the system message as a context block
-4. Single `callGroq()` call without tools — no second round-trip
-5. Fast model (`llama-3.1-8b-instant`) used when search was done to stay under the 20K TPM limit
+### Provider priority chains
 
-## Why Groq tool-calling was abandoned
+**Standard models** (engagera-2.0, 2.1, lite, vision, voice):
+1. Groq `llama-3.1-8b-instant` (20K TPM, fastest)
+2. DeepSeek `deepseek-chat` (generous limits)
+3. OpenRouter `meta-llama/llama-3.1-8b-instruct:free` (free, no credits)
+4. Gemini `gemini-1.5-flash-latest` (Google, high limits)
 
-`llama-3.3-70b-versatile` on Groq embeds function calls in the `content` field as XML (`<function\nweb_search {...}>`) rather than returning structured `tool_calls` JSON. The second Groq call (with tool results in the conversation) hit HTTP 429 rate limits because the assembled conversation was too large for the 6,000 TPM free-tier limit.
+**Premium models** (engagera-pro, engagera-reason):
+1. Groq `llama-3.3-70b-versatile`
+2. DeepSeek `deepseek-chat`
+3. Gemini `gemini-1.5-pro-latest`
+4. OpenRouter `deepseek/deepseek-r1:free`
+5. Groq `llama-3.1-8b-instant` (last resort)
 
-**Why:** Groq free tier for 70b = 6,000 TPM. A pre-search conversation with system prompt + search results + user message = ~2,000 tokens. At 3 requests/minute that hits the cap.
+**Code model** (engagera-code):
+1. Groq `llama-3.3-70b-versatile`
+2. DeepSeek `deepseek-chat`
+3. OpenRouter `qwen/qwen-2.5-coder-32b-instruct:free`
+4. Gemini `gemini-1.5-pro-latest`
+5. Groq `llama-3.1-8b-instant`
 
-**How to apply:** If tool-calling is needed in future, use `llama-3.1-8b-instant` (20K TPM) and keep the full conversation under 1,000 tokens.
+**Image gen** (SVG via chat):
+1. Groq `llama-3.3-70b-versatile`
+2. DeepSeek `deepseek-chat`
+3. Gemini `gemini-1.5-pro-latest`
 
-## Rate limit model strategy
+### Keys required in Supabase secrets
+- `GROQ_API_KEY` — primary
+- `DEEPSEEK_API_KEY` — fallback #1
+- `OPENROUTER_API_KEY` — fallback #2 (free models, no credits needed)
+- `GEMINI_API_KEY` — fallback #3 (different API format — handled by `callGemini()`)
 
-- `engagera-2.0`, `engagera-2.1`, `engagera-lite`, `engagera-vision`, `engagera-voice`, `engagera-image` → `llama-3.1-8b-instant` (20K TPM)
-- `engagera-pro`, `engagera-reason`, `engagera-code` → `llama-3.3-70b-versatile` (6K TPM, premium only)
-- Search-augmented calls always use `GROQ_MODEL_FAST` regardless of model requested
+### Gemini API differences
+Gemini uses a completely different REST format:
+- URL: `https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}`
+- Role "assistant" → "model" in Gemini
+- System message → `system_instruction.parts[0].text`
+- Response → `candidates[0].content.parts[].text`
+- Usage → `usageMetadata.promptTokenCount / candidatesTokenCount`
+This is handled by `callGemini()` which converts to/from OpenAI message format.
 
-## Retry logic
+## Web search architecture (unchanged from v32)
 
-`callGroq()` has 3 attempts with 3s/6s backoff for HTTP 429. Still fails under sustained load — user needs Groq paid plan for production volume.
+Pre-search approach (NOT tool-calling API):
+1. `needsWebSearch()` — keyword regex detects real-time queries
+2. `webSearch()` — DuckDuckGo HTML scrape (free); Brave Search API if `BRAVE_SEARCH_API_KEY` set
+3. Results injected into system message (trimmed to 2500 chars)
+4. Fast chain (STANDARD_CHAIN) used for search-augmented calls
 
 ## Deployment
 
 Deploy via Supabase Management API (CLI bundler fails in Replit network):
 ```
+node -e "const fs=require('fs'); const src=fs.readFileSync('supabase/functions/chat/index.ts','utf8'); fs.writeFileSync('/tmp/payload.json', JSON.stringify({body:src,entrypoint_path:'index.ts',import_map_path:null}));"
 curl -X PATCH https://api.supabase.com/v1/projects/rhnsjqqtdzlkvqazfcbg/functions/chat \
   -H "Authorization: Bearer $SUPABASE_PAT" \
   -H "Content-Type: application/json" \
   --data-binary @/tmp/payload.json
 ```
-Build payload with Node.js `JSON.stringify` — Python not available.

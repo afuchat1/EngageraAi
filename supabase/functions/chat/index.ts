@@ -1,83 +1,80 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 /**
- * Engagera Chat Edge Function v25
+ * Engagera Chat Edge Function v33
  *
- * AI backend : Groq (llama-3.3-70b-versatile / llama-3.1-8b-instant)
- * Web search : DuckDuckGo HTML (free, no key) + Brave Search API (if key set)
- * Web crawl  : Jina AI Reader (free, no key) — converts any URL → clean text
- * Tools      : web_search, fetch_webpage via Groq function-calling
+ * Multi-provider AI routing with automatic fallback:
+ *   1. Groq         — primary (fastest, 20K–6K TPM free tier)
+ *   2. DeepSeek     — fallback #1 (OpenAI-compatible, generous limits)
+ *   3. OpenRouter   — fallback #2 (free :free models, no credits needed)
+ *   4. Gemini       — fallback #3 (Google, high rate limits, different API format)
+ *
+ * Web search  : DuckDuckGo HTML (free, no key) + Brave Search API (if key set)
+ * Web crawl   : Jina AI Reader (free, no key) — converts any URL → clean text
  */
 
-// ── Model map ─────────────────────────────────────────────────────────────────
-const GROQ_MODEL      = "llama-3.3-70b-versatile";
-const GROQ_MODEL_FAST = "llama-3.1-8b-instant";
+// ── Provider configurations ───────────────────────────────────────────────────
+const GROQ_API_URL      = "https://api.groq.com/openai/v1/chat/completions";
+const DEEPSEEK_API_URL  = "https://api.deepseek.com/v1/chat/completions";
+const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
+const GEMINI_API_BASE   = "https://generativelanguage.googleapis.com/v1beta/models";
 
-// Rate limit strategy:
-//   llama-3.1-8b-instant  → 20,000 TPM (default models — handles most traffic)
-//   llama-3.3-70b-versatile → 6,000 TPM (premium/complex tasks only)
-const MODEL_MAP: Record<string, string> = {
-  "engagera-2.0":    GROQ_MODEL_FAST,   // standard — use high-TPM model
-  "engagera-2.1":    GROQ_MODEL_FAST,   // standard
-  "engagera-lite":   GROQ_MODEL_FAST,
-  "engagera-pro":    GROQ_MODEL,        // premium — allow 70b
-  "engagera-reason": GROQ_MODEL,        // premium
-  "engagera-code":   GROQ_MODEL,        // premium
-  "engagera-vision": GROQ_MODEL_FAST,
-  "engagera-voice":  GROQ_MODEL_FAST,
-  "engagera-image":  GROQ_MODEL_FAST,
-};
-const DEFAULT_MODEL    = GROQ_MODEL_FAST;
-const IMAGE_GEN_MODEL  = GROQ_MODEL;
-const GROQ_API_URL     = "https://api.groq.com/openai/v1/chat/completions";
-const GUEST_LIMIT      = 5;
-const WINDOW_MS        = 24 * 60 * 60 * 1000;
-const MAX_TOOL_ROUNDS  = 4;
+const GUEST_LIMIT     = 5;
+const WINDOW_MS       = 24 * 60 * 60 * 1000;
 
-// ── Tool definitions (Groq function-calling) ──────────────────────────────────
-const TOOLS = [
-  {
-    type: "function",
-    function: {
-      name: "web_search",
-      description:
-        "Search the live web for real-time information: news, stock prices, weather, " +
-        "sports scores, research papers, product releases, current events, statistics, " +
-        "and anything that requires up-to-date data beyond the training cutoff. " +
-        "Always call this when the user asks about today, recent, latest, current, or live data.",
-      parameters: {
-        type: "object",
-        properties: {
-          query: {
-            type: "string",
-            description: "A precise search query optimised for web search engines.",
-          },
-        },
-        required: ["query"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "fetch_webpage",
-      description:
-        "Fetch and read the full content of a specific webpage URL. Use this to read " +
-        "articles, documentation, research papers, Wikipedia pages, or any URL in detail. " +
-        "Call web_search first to find URLs, then fetch_webpage to read them in depth.",
-      parameters: {
-        type: "object",
-        properties: {
-          url: {
-            type: "string",
-            description: "The complete https:// URL of the webpage to fetch and read.",
-          },
-        },
-        required: ["url"],
-      },
-    },
-  },
+// ── Provider + model lists (tried in order until one succeeds) ─────────────────
+//   Each entry: { provider, model, apiUrlOrKey }
+//   The callWithFallback() function fills in the actual key at runtime.
+
+type Provider = "groq" | "deepseek" | "openrouter" | "gemini";
+
+interface ProviderModel {
+  provider: Provider;
+  model: string;
+}
+
+const STANDARD_CHAIN: ProviderModel[] = [
+  { provider: "groq",       model: "llama-3.1-8b-instant" },
+  { provider: "deepseek",   model: "deepseek-chat" },
+  { provider: "openrouter", model: "meta-llama/llama-3.1-8b-instruct:free" },
+  { provider: "gemini",     model: "gemini-1.5-flash-latest" },
 ];
+
+const PREMIUM_CHAIN: ProviderModel[] = [
+  { provider: "groq",       model: "llama-3.3-70b-versatile" },
+  { provider: "deepseek",   model: "deepseek-chat" },
+  { provider: "gemini",     model: "gemini-1.5-pro-latest" },
+  { provider: "openrouter", model: "deepseek/deepseek-r1:free" },
+  { provider: "groq",       model: "llama-3.1-8b-instant" },  // last resort
+];
+
+const CODE_CHAIN: ProviderModel[] = [
+  { provider: "groq",       model: "llama-3.3-70b-versatile" },
+  { provider: "deepseek",   model: "deepseek-chat" },
+  { provider: "openrouter", model: "qwen/qwen-2.5-coder-32b-instruct:free" },
+  { provider: "gemini",     model: "gemini-1.5-pro-latest" },
+  { provider: "groq",       model: "llama-3.1-8b-instant" },
+];
+
+const IMAGE_CHAIN: ProviderModel[] = [
+  { provider: "groq",     model: "llama-3.3-70b-versatile" },
+  { provider: "deepseek", model: "deepseek-chat" },
+  { provider: "gemini",   model: "gemini-1.5-pro-latest" },
+];
+
+// Map Engagera model ID → provider chain
+const MODEL_CHAINS: Record<string, ProviderModel[]> = {
+  "engagera-2.0":    STANDARD_CHAIN,
+  "engagera-2.1":    STANDARD_CHAIN,
+  "engagera-lite":   STANDARD_CHAIN,
+  "engagera-pro":    PREMIUM_CHAIN,
+  "engagera-reason": PREMIUM_CHAIN,
+  "engagera-code":   CODE_CHAIN,
+  "engagera-vision": STANDARD_CHAIN,
+  "engagera-voice":  STANDARD_CHAIN,
+  "engagera-image":  IMAGE_CHAIN,
+};
+const DEFAULT_CHAIN = STANDARD_CHAIN;
 
 // ── Image-gen keyword / pattern lists ─────────────────────────────────────────
 const IMAGE_GEN_KEYWORDS = [
@@ -126,29 +123,20 @@ const IMAGE_GEN_PATTERNS: RegExp[] = [
 const SYSTEM_PROMPT = `You are Engagera, an advanced AI assistant built by the AfuAI / Engagera team.
 
 Identity:
-- Built by the AfuAI / Engagera team. Never claim to be ChatGPT, Claude, Gemini, or any other AI.
+- Built by the AfuAI / Engagera team. Never claim to be ChatGPT, Claude, Gemini, Llama, or any other AI.
 - If asked who made you, say you were built by the AfuAI / Engagera team.
 - If asked about your underlying model, say you are powered by advanced language models optimised for the Engagera platform.
 
 Real-time capabilities — USE THESE PROACTIVELY:
-- You have LIVE web_search and fetch_webpage tools. Always use them when the user needs:
-  • Current news, events, or anything that happened recently
-  • Live prices (stocks, crypto, commodities, forex, real estate)
-  • Current weather or forecasts for any location
-  • Sports scores, fixtures, standings, or transfer news
-  • Latest research papers, scientific findings, or publications
-  • Product specifications, pricing, availability, or reviews
-  • Any data that could have changed since your training cutoff
-- When in doubt whether your knowledge is current, SEARCH rather than guess.
-- Run multiple searches if needed to triangulate accurate information.
-- After searching, synthesise results into a clear answer. Cite sources as [Title](URL).
-- Fetch specific pages when you need the full article, not just a snippet.
+- You have access to live web search results injected into your context when available.
+- Use live data to answer questions about current news, prices, weather, sports, research, etc.
+- After using search results, cite sources as [Title](URL).
 - Always indicate when data is live: "As of [date from source]..."
 
 General capabilities:
 - Deep knowledge across science, technology, history, mathematics, coding, law, medicine, business, and art.
 - Can analyse images, write and debug code in any language, generate SVG artwork.
-- For ambiguous topics, search the web first rather than relying on potentially stale training data.
+- For ambiguous topics, rely on live search results when provided rather than potentially stale training data.
 
 Style:
 - Concise and genuinely helpful. Adapt tone to the user.
@@ -178,7 +166,7 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Logging ───────────────────────────────────────────────────────────────────
 function log(level: "info"|"warn"|"error", event: string, data: Record<string,unknown>) {
   const entry = JSON.stringify({ level, event, ts: new Date().toISOString(), ...data });
   if (level === "error") console.error(entry);
@@ -193,6 +181,7 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
+// ── Message types ─────────────────────────────────────────────────────────────
 type ContentPart    = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
 type MessageContent = string | ContentPart[];
 interface IncomingMessage { role: string; content: MessageContent; }
@@ -210,9 +199,221 @@ function getTextPreview(content: MessageContent): string {
   return tp?.text ?? "";
 }
 
+interface ChatMessage {
+  role: string;
+  content: string | MessageContent | null;
+}
+
+interface AIResult {
+  ok: boolean;
+  content: string;
+  inputTokens: number;
+  outputTokens: number;
+  provider?: string;
+  model?: string;
+  errorDetail?: string;
+}
+
+// ── OpenAI-compatible provider call (Groq, DeepSeek, OpenRouter) ──────────────
+async function callOpenAICompat(
+  apiUrl: string,
+  apiKey: string,
+  model: string,
+  messages: ChatMessage[],
+  maxTokens: number,
+  requestId: string,
+  providerName: string,
+  extraHeaders?: Record<string,string>,
+): Promise<AIResult> {
+  const body = { model, messages, max_tokens: maxTokens };
+
+  let res: Response | null = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, 3000));
+      log("warn", `${providerName}.retry`, { requestId, attempt });
+    }
+    try {
+      res = await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          ...extraHeaders,
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      log("warn", `${providerName}.network_error`, { requestId, attempt, error: String(err) });
+      if (attempt === 1) return { ok: false, content: "", inputTokens: 0, outputTokens: 0, errorDetail: String(err) };
+      continue;
+    }
+    if (res.ok || (res.status !== 429 && res.status !== 503)) break;
+    log("warn", `${providerName}.rate_limited`, { requestId, status: res.status, attempt });
+  }
+
+  if (!res || !res.ok) {
+    const errText = await res?.text().catch(() => "") ?? "";
+    log("warn", `${providerName}.http_error`, { requestId, status: res?.status, error: errText.slice(0,200) });
+    return { ok: false, content: "", inputTokens: 0, outputTokens: 0, errorDetail: `HTTP ${res?.status ?? "unknown"}: ${errText.slice(0,100)}` };
+  }
+
+  const data = await res.json() as {
+    choices?: { message?: { content?: string | null } }[];
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
+    error?: { message?: string };
+  };
+
+  if (data.error) {
+    log("warn", `${providerName}.api_error`, { requestId, error: data.error.message });
+    return { ok: false, content: "", inputTokens: 0, outputTokens: 0, errorDetail: data.error.message };
+  }
+
+  const content     = data.choices?.[0]?.message?.content ?? "";
+  const inputTokens  = data.usage?.prompt_tokens ?? 0;
+  const outputTokens = data.usage?.completion_tokens ?? 0;
+
+  if (!content) {
+    log("warn", `${providerName}.empty_response`, { requestId });
+    return { ok: false, content: "", inputTokens, outputTokens, errorDetail: "empty response" };
+  }
+
+  log("info", `${providerName}.success`, { requestId, model, inputTokens, outputTokens, len: content.length });
+  return { ok: true, content, inputTokens, outputTokens, provider: providerName, model };
+}
+
+// ── Google Gemini call (different API format) ─────────────────────────────────
+async function callGemini(
+  apiKey: string,
+  model: string,
+  messages: ChatMessage[],
+  maxTokens: number,
+  requestId: string,
+): Promise<AIResult> {
+  // Separate system message from conversation turns
+  const systemMsg  = messages.find((m) => m.role === "system");
+  const turnMsgs   = messages.filter((m) => m.role !== "system");
+
+  // Convert to Gemini format: role "assistant" → "model"
+  const contents = turnMsgs.map((m) => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: typeof m.content === "string" ? m.content : getTextPreview(m.content as MessageContent) }],
+  }));
+
+  const geminiBody: Record<string,unknown> = {
+    contents,
+    generationConfig: { maxOutputTokens: maxTokens, temperature: 0.7 },
+  };
+  if (systemMsg) {
+    geminiBody.system_instruction = {
+      parts: [{ text: typeof systemMsg.content === "string" ? systemMsg.content : "" }],
+    };
+  }
+
+  const url = `${GEMINI_API_BASE}/${model}:generateContent?key=${apiKey}`;
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(geminiBody),
+    });
+  } catch (err) {
+    log("warn", "gemini.network_error", { requestId, error: String(err) });
+    return { ok: false, content: "", inputTokens: 0, outputTokens: 0, errorDetail: String(err) };
+  }
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    log("warn", "gemini.http_error", { requestId, status: res.status, error: errText.slice(0,200) });
+    return { ok: false, content: "", inputTokens: 0, outputTokens: 0, errorDetail: `HTTP ${res.status}` };
+  }
+
+  const data = await res.json() as {
+    candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[];
+    usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+    error?: { message?: string };
+  };
+
+  if (data.error) {
+    log("warn", "gemini.api_error", { requestId, error: data.error.message });
+    return { ok: false, content: "", inputTokens: 0, outputTokens: 0, errorDetail: data.error.message };
+  }
+
+  const content      = data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
+  const inputTokens  = data.usageMetadata?.promptTokenCount ?? 0;
+  const outputTokens = data.usageMetadata?.candidatesTokenCount ?? 0;
+
+  if (!content) {
+    log("warn", "gemini.empty_response", { requestId, finishReason: data.candidates?.[0]?.finishReason });
+    return { ok: false, content: "", inputTokens, outputTokens, errorDetail: "empty response" };
+  }
+
+  log("info", "gemini.success", { requestId, model, inputTokens, outputTokens, len: content.length });
+  return { ok: true, content, inputTokens, outputTokens, provider: "gemini", model };
+}
+
+// ── Multi-provider fallback call ──────────────────────────────────────────────
+interface ProviderKeys {
+  groq?:       string;
+  deepseek?:   string;
+  openrouter?: string;
+  gemini?:     string;
+}
+
+async function callWithFallback(
+  chain: ProviderModel[],
+  keys: ProviderKeys,
+  messages: ChatMessage[],
+  maxTokens: number,
+  requestId: string,
+): Promise<AIResult> {
+  const errors: string[] = [];
+
+  for (const { provider, model } of chain) {
+    const key = keys[provider];
+    if (!key) {
+      log("info", "provider.no_key", { requestId, provider, model });
+      continue;
+    }
+
+    let result: AIResult;
+
+    if (provider === "groq") {
+      result = await callOpenAICompat(GROQ_API_URL, key, model, messages, maxTokens, requestId, "groq");
+    } else if (provider === "deepseek") {
+      result = await callOpenAICompat(DEEPSEEK_API_URL, key, model, messages, maxTokens, requestId, "deepseek");
+    } else if (provider === "openrouter") {
+      result = await callOpenAICompat(OPENROUTER_API_URL, key, model, messages, maxTokens, requestId, "openrouter", {
+        "HTTP-Referer": "https://engagera.afuchat.com",
+        "X-Title": "Engagera",
+      });
+    } else if (provider === "gemini") {
+      result = await callGemini(key, model, messages, maxTokens, requestId);
+    } else {
+      continue;
+    }
+
+    if (result.ok) {
+      log("info", "fallback.success", { requestId, provider, model });
+      return result;
+    }
+
+    errors.push(`${provider}/${model}: ${result.errorDetail ?? "failed"}`);
+    log("warn", "fallback.next", { requestId, failed: `${provider}/${model}`, reason: result.errorDetail });
+  }
+
+  log("error", "fallback.all_failed", { requestId, errors });
+  return {
+    ok: false, content: "",
+    inputTokens: 0, outputTokens: 0,
+    errorDetail: errors.join(" | "),
+  };
+}
+
 // ── Web search (DuckDuckGo free + optional Brave API) ─────────────────────────
 async function webSearch(query: string, braveKey?: string): Promise<string> {
-  // Brave Search API — structured JSON, preferred when key is available
   if (braveKey) {
     try {
       const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=8`;
@@ -238,7 +439,6 @@ async function webSearch(query: string, braveKey?: string): Promise<string> {
     } catch { /* fall through to DuckDuckGo */ }
   }
 
-  // DuckDuckGo HTML — free, no key required
   try {
     const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
     const res = await fetch(ddgUrl, {
@@ -324,153 +524,10 @@ async function fetchWebpage(url: string): Promise<string> {
     });
     if (!res.ok) return `Could not fetch "${url}" (HTTP ${res.status}).`;
     const text = await res.text();
-    return text.length > 6000
-      ? text.slice(0, 6000) + "\n\n[Content truncated]"
-      : text;
+    return text.length > 6000 ? text.slice(0, 6000) + "\n\n[Content truncated]" : text;
   } catch (err) {
     return `Failed to fetch page: ${String(err)}`;
   }
-}
-
-// ── Groq API wrapper ──────────────────────────────────────────────────────────
-interface GroqMessage {
-  role: string;
-  content: string | MessageContent | null;
-  tool_calls?: { id:string; type:"function"; function:{ name:string; arguments:string } }[];
-  tool_call_id?: string;
-}
-
-interface GroqResult {
-  ok: boolean;
-  content: string;
-  toolCalls?: { id:string; name:string; arguments:string }[];
-  inputTokens: number;
-  outputTokens: number;
-  errorDetail?: string;
-}
-
-async function callGroq(
-  groqKey: string,
-  model: string,
-  messages: GroqMessage[],
-  maxTokens: number,
-  requestId: string,
-  tools?: typeof TOOLS,
-): Promise<GroqResult> {
-  const body: Record<string,unknown> = { model, messages, max_tokens: maxTokens };
-  if (tools && tools.length > 0) { body.tools = tools; body.tool_choice = "auto"; }
-
-  // Retry loop: up to 3 attempts with exponential backoff for 429 rate limits
-  let res: Response | null = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    if (attempt > 0) {
-      const delay = attempt * 3000; // 3s, 6s
-      log("warn", "groq.retry", { requestId, attempt, delayMs: delay });
-      await new Promise((r) => setTimeout(r, delay));
-    }
-    try {
-      res = await fetch(GROQ_API_URL, {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${groqKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-    } catch (err) {
-      log("error", "groq.unreachable", { requestId, attempt, error: String(err) });
-      if (attempt === 2) return { ok:false, content:"", inputTokens:0, outputTokens:0, errorDetail: String(err) };
-      continue;
-    }
-    if (res.ok || res.status !== 429) break; // success or non-retryable error
-    log("warn", "groq.rate_limited", { requestId, attempt, status: res.status });
-  }
-
-  if (!res || !res.ok) {
-    const errText = await res?.text().catch(() => "") ?? "";
-    log("error", "groq.http_error", { requestId, status: res?.status, error: errText.slice(0,300) });
-    return { ok:false, content:"", inputTokens:0, outputTokens:0, errorDetail: `HTTP ${res?.status ?? "unknown"}` };
-  }
-
-  const data = await res.json() as {
-    choices?: {
-      message?: {
-        content?: string | null;
-        tool_calls?: { id:string; type:"function"; function:{ name:string; arguments:string } }[];
-      };
-    }[];
-    usage?: { prompt_tokens?:number; completion_tokens?:number };
-    error?: { message?:string };
-  };
-
-  if (data.error) {
-    log("error", "groq.api_error", { requestId, error: data.error.message });
-    return { ok:false, content:"", inputTokens:0, outputTokens:0, errorDetail: data.error.message };
-  }
-
-  const msg          = data.choices?.[0]?.message;
-  const finishReason = data.choices?.[0]?.finish_reason;
-  const inputTokens  = data.usage?.prompt_tokens ?? 0;
-  const outputTokens = data.usage?.completion_tokens ?? 0;
-
-  log("info", "groq.response", {
-    requestId,
-    finishReason,
-    hasToolCalls: !!(msg?.tool_calls?.length),
-    toolCallCount: msg?.tool_calls?.length ?? 0,
-    contentLength: typeof msg?.content === "string" ? msg.content.length : 0,
-    contentPreview: typeof msg?.content === "string" ? msg.content.slice(0, 120) : null,
-  });
-
-  // Primary: structured tool_calls from Groq API
-  if (msg?.tool_calls && msg.tool_calls.length > 0) {
-    return {
-      ok: true, content: msg.content ?? "",
-      toolCalls: msg.tool_calls.map((tc) => ({ id:tc.id, name:tc.function.name, arguments:tc.function.arguments })),
-      inputTokens, outputTokens,
-    };
-  }
-
-  // Fallback: llama models sometimes embed tool calls in content as XML text
-  // e.g. "<function\nweb_search {"query": "..."}</function>"
-  if (tools && tools.length > 0 && typeof msg?.content === "string" && msg.content.includes("<function")) {
-    const extracted = parseContentToolCalls(msg.content);
-    if (extracted.length > 0) {
-      log("info", "groq.fallback_tool_parse", { requestId, count: extracted.length, names: extracted.map((t) => t.name) });
-      return { ok: true, content: "", toolCalls: extracted, inputTokens, outputTokens };
-    }
-  }
-
-  return { ok:true, content: msg?.content ?? "", inputTokens, outputTokens };
-}
-
-// ── Parse content-embedded tool calls (Llama model fallback) ──────────────────
-function parseContentToolCalls(content: string): { id:string; name:string; arguments:string }[] {
-  const results: { id:string; name:string; arguments:string }[] = [];
-  const known = new Set(["web_search", "fetch_webpage"]);
-
-  // Pattern: <function\nTOOL_NAME {"key":"value"...}</function>
-  // The \n may appear as a literal newline or \n in the string
-  const re = /<function[\s\S]*?(\bweb_search\b|\bfetch_webpage\b)\s+(\{[\s\S]*?\})\s*<\/function>/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(content)) !== null) {
-    const name = m[1];
-    if (!known.has(name)) continue;
-    try {
-      JSON.parse(m[2]); // validate JSON
-      results.push({ id: `call_fb_${Date.now()}_${results.length}`, name, arguments: m[2] });
-    } catch { /* invalid JSON, skip */ }
-  }
-
-  if (results.length > 0) return results;
-
-  // Pattern 2: {"name": "tool_name", "arguments": {...}} (JSON-style inline)
-  const re2 = /\{"name"\s*:\s*"(web_search|fetch_webpage)"[^}]*"arguments"\s*:\s*(\{[^}]+\})/g;
-  while ((m = re2.exec(content)) !== null) {
-    try {
-      JSON.parse(m[2]);
-      results.push({ id: `call_fb2_${Date.now()}_${results.length}`, name: m[1], arguments: m[2] });
-    } catch { /* skip */ }
-  }
-
-  return results;
 }
 
 // ── Real-time query detection ─────────────────────────────────────────────────
@@ -487,7 +544,7 @@ const REALTIME_PATTERNS = [
   /\b(2024|2025|2026)\b.{0,30}\b(news|update|result|report|data)\b/i,
 ];
 
-function needsWebSearch(messages: GroqMessage[]): string | null {
+function needsWebSearch(messages: ChatMessage[]): string | null {
   const last = [...messages].reverse().find((m) => m.role === "user");
   if (!last) return null;
   const text = typeof last.content === "string" ? last.content : "";
@@ -498,7 +555,6 @@ function needsWebSearch(messages: GroqMessage[]): string | null {
   return null;
 }
 
-// ── Build a concise search query from the user message ────────────────────────
 function buildSearchQuery(userText: string): string {
   return userText
     .replace(/please|could you|can you|would you|kindly|i want to know|tell me|find me/gi, "")
@@ -506,24 +562,15 @@ function buildSearchQuery(userText: string): string {
     .slice(0, 150);
 }
 
-// ── Agentic chat: pre-search then single Groq call ───────────────────────────
-//
-// Strategy (much more reliable than Groq tool-calling):
-//  1. Detect if the query needs real-time data via keyword patterns
-//  2. If yes, execute web_search NOW (before calling Groq)
-//  3. Optionally fetch the top URL for deeper context
-//  4. Inject all results as a system-level context block
-//  5. Call Groq once — no tool API, no second round-trip
-//
+// ── Agentic chat: pre-search then multi-provider call ────────────────────────
 async function agenticChat(
-  groqKey: string,
-  braveKey: string | undefined,
-  model: string,
-  messages: GroqMessage[],
+  keys: ProviderKeys,
+  chain: ProviderModel[],
+  messages: ChatMessage[],
   requestId: string,
-): Promise<{ reply:string; inputTokens:number; outputTokens:number; toolsUsed:string[] }> {
-  const toolsUsed: string[] = [];
-  const convo: GroqMessage[] = [...messages];
+  braveKey?: string,
+): Promise<{ reply:string; inputTokens:number; outputTokens:number; provider?:string; providerModel?:string }> {
+  const convo: ChatMessage[] = [...messages];
 
   // Step 1 — Check whether the query needs fresh web data
   const userText = needsWebSearch(messages);
@@ -531,14 +578,11 @@ async function agenticChat(
   if (userText) {
     const query = buildSearchQuery(userText);
     log("info", "pre_search.start", { requestId, query });
-
     const searchResult = await webSearch(query, braveKey);
-    toolsUsed.push("web_search");
     log("info", "pre_search.done", { requestId, resultLen: searchResult.length });
 
-    // Step 2 — Inject search results (trimmed to 2500 chars to stay under Groq TPM limits)
     const trimmed = searchResult.slice(0, 2500);
-    const sysIdx = convo.findIndex((m) => m.role === "system");
+    const sysIdx  = convo.findIndex((m) => m.role === "system");
     const contextBlock = `\n\n---\n🌐 **Live web search results** (retrieved just now):\n\n${trimmed}\n---\n\nUse the above results to answer. Cite sources as [Title](URL). Indicate when data is live: "As of [date from source]..."`;
 
     if (sysIdx >= 0 && typeof convo[sysIdx].content === "string") {
@@ -546,23 +590,24 @@ async function agenticChat(
     } else {
       convo.unshift({ role: "system", content: contextBlock });
     }
-  }
 
-  // Step 3 — Single Groq call using the fast model (higher TPM limit) when search was done
-  // llama-3.1-8b-instant: 20,000 TPM vs 6,000 TPM for the 70b model
-  const callModel = toolsUsed.length > 0 ? GROQ_MODEL_FAST : model;
-  const result = await callGroq(groqKey, callModel, convo, 4096, requestId);
-
-  if (!result.ok) {
-    log("error", "groq.final_call_failed", { requestId, errorDetail: result.errorDetail });
-    return { reply: "AI service is temporarily unavailable. Please try again in a moment.", inputTokens: result.inputTokens, outputTokens: result.outputTokens, toolsUsed };
+    // Use the standard (faster, higher-TPM) chain when search is involved
+    const fastChain = STANDARD_CHAIN;
+    const result = await callWithFallback(fastChain, keys, convo, 4096, requestId);
+    if (result.ok) {
+      return { reply: result.content, inputTokens: result.inputTokens, outputTokens: result.outputTokens, provider: result.provider, providerModel: result.model };
+    }
+  } else {
+    // No search needed — use the model's own chain
+    const result = await callWithFallback(chain, keys, convo, 4096, requestId);
+    if (result.ok) {
+      return { reply: result.content, inputTokens: result.inputTokens, outputTokens: result.outputTokens, provider: result.provider, providerModel: result.model };
+    }
   }
 
   return {
-    reply:        result.content,
-    inputTokens:  result.inputTokens,
-    outputTokens: result.outputTokens,
-    toolsUsed,
+    reply: "I'm having trouble connecting to the AI service right now. Please try again in a moment.",
+    inputTokens: 0, outputTokens: 0,
   };
 }
 
@@ -604,7 +649,7 @@ async function persistLog(
   logEntry: Record<string,unknown>,
   startTime: number,
 ): Promise<void> {
-  logEntry.latency_ms  = Date.now() - startTime;
+  logEntry.latency_ms   = Date.now() - startTime;
   logEntry.total_tokens = (logEntry.input_tokens as number ?? 0) + (logEntry.output_tokens as number ?? 0);
   try { await db.from("engagera_request_logs").insert(logEntry); } catch { /* fire-and-forget */ }
 }
@@ -624,14 +669,23 @@ Deno.serve(async (req: Request) => {
   };
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const serviceKey  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const groqKey     = Deno.env.get("GROQ_API_KEY") ?? "";
-    const braveKey    = Deno.env.get("BRAVE_SEARCH_API_KEY"); // optional — enhances search quality
+    const supabaseUrl  = Deno.env.get("SUPABASE_URL");
+    const serviceKey   = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+    // Provider keys — all optional except at least one must be present
+    const keys: ProviderKeys = {
+      groq:       Deno.env.get("GROQ_API_KEY")       || undefined,
+      deepseek:   Deno.env.get("DEEPSEEK_API_KEY")   || undefined,
+      openrouter: Deno.env.get("OPENROUTER_API_KEY") || undefined,
+      gemini:     Deno.env.get("GEMINI_API_KEY")      || undefined,
+    };
+    const braveKey = Deno.env.get("BRAVE_SEARCH_API_KEY");
 
     if (!supabaseUrl) return json({ error: "SUPABASE_URL not configured" }, 500);
     if (!serviceKey)  return json({ error: "SUPABASE_SERVICE_ROLE_KEY not configured" }, 500);
-    if (!groqKey)     return json({ error: "GROQ_API_KEY not configured" }, 500);
+
+    const hasAnyKey = Object.values(keys).some(Boolean);
+    if (!hasAnyKey)  return json({ error: "No AI provider keys configured" }, 500);
 
     const db = createClient(supabaseUrl, serviceKey, {
       auth: { autoRefreshToken: false, persistSession: false },
@@ -726,23 +780,23 @@ Deno.serve(async (req: Request) => {
     const promptPreview = (lastUserMsg ? getTextPreview(lastUserMsg.content) : "").slice(0, 120);
     logEntry.prompt_preview = promptPreview;
 
-    const groqModel = MODEL_MAP[model] ?? DEFAULT_MODEL;
+    const chain = MODEL_CHAINS[model] ?? DEFAULT_CHAIN;
 
     log("info", "request.start", {
-      requestId, model, groqModel, path: logEntry.path,
+      requestId, model, path: logEntry.path,
       authed: !!userId, messageCount: validMessages.length,
-      braveSearchEnabled: !!braveKey,
+      providers: chain.map((c) => c.provider).filter((v, i, a) => a.indexOf(v) === i),
     });
 
     let reply = "", inputTokens = 0, outputTokens = 0, totalTokens = 0;
 
     if (generateImage) {
       const imagePrompt = extractImagePrompt(validMessages);
-      const svgMsgs: GroqMessage[] = [
+      const svgMsgs: ChatMessage[] = [
         { role: "system", content: IMAGE_SYSTEM_PROMPT },
         { role: "user",   content: imagePrompt },
       ];
-      const result = await callGroq(groqKey, IMAGE_GEN_MODEL, svgMsgs, 4096, requestId);
+      const result = await callWithFallback(IMAGE_CHAIN, keys, svgMsgs, 4096, requestId);
       if (result.ok && (result.content.includes("```svg") || result.content.includes("<svg"))) {
         reply = result.content;
         inputTokens = result.inputTokens; outputTokens = result.outputTokens;
@@ -752,12 +806,11 @@ Deno.serve(async (req: Request) => {
         logEntry.error_code = `image_gen_failed: ${result.errorDetail ?? "no svg block"}`;
       }
     } else {
-      // ── Agentic chat with live web search + crawling ────────────────────────
       const systemContent = contextHint
         ? `${SYSTEM_PROMPT}\n\n[User context] ${contextHint}`
         : SYSTEM_PROMPT;
 
-      const groqMsgs: GroqMessage[] = [
+      const chatMsgs: ChatMessage[] = [
         { role: "system", content: systemContent },
         ...validMessages
           .filter((m) => m.role !== "system")
@@ -767,17 +820,17 @@ Deno.serve(async (req: Request) => {
           })),
       ];
 
-      const chatResult = await agenticChat(groqKey, braveKey, groqModel, groqMsgs, requestId);
+      const chatResult = await agenticChat(keys, chain, chatMsgs, requestId, braveKey);
       reply        = chatResult.reply;
       inputTokens  = chatResult.inputTokens;
       outputTokens = chatResult.outputTokens;
       totalTokens  = inputTokens + outputTokens;
-      logEntry.tools_used = chatResult.toolsUsed.join(",") || null;
 
       log("info", "chat.complete", {
         requestId, replyLen: reply.length,
-        inputTokens, outputTokens, totalTokens,
-        toolsUsed: chatResult.toolsUsed,
+        inputTokens, outputTokens,
+        provider: chatResult.provider,
+        providerModel: chatResult.providerModel,
       });
     }
 
@@ -822,7 +875,7 @@ Deno.serve(async (req: Request) => {
       log("warn", "conv.persist_failed", { requestId, error: String(err) });
     }
 
-    // ── Usage record (authenticated users only) ───────────────────────────────
+    // ── Usage record ──────────────────────────────────────────────────────────
     if (userId) {
       try {
         await db.from("engagera_usage_records").insert({
