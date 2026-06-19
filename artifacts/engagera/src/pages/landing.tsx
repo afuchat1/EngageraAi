@@ -242,6 +242,7 @@ export default function Landing() {
   const handleSelectConversation = useCallback((id: number) => {
     setLoadingConvId(id);
     setMessages([]);
+    setSidebarOpen(false);
   }, []);
 
   const handleDeleteConversation = useCallback(async (e: React.MouseEvent, id: number) => {
@@ -695,9 +696,9 @@ export default function Landing() {
                       </div>
                     )}
 
-                    <div className={cn("flex flex-col gap-1", isUser ? "items-end" : "items-start", "max-w-[80%]")}>
+                    <div className={cn("flex flex-col gap-1 min-w-0 overflow-hidden", isUser ? "items-end" : "items-start", "max-w-[80%]")}>
                       <div className={cn(
-                        "px-4 py-2.5 text-sm leading-relaxed",
+                        "px-4 py-2.5 text-sm leading-relaxed overflow-hidden min-w-0",
                         isUser
                           ? "bg-[#1a1a1a] text-foreground rounded-2xl rounded-tr-sm"
                           : "text-foreground/90 rounded-2xl rounded-tl-sm"
@@ -708,14 +709,14 @@ export default function Landing() {
                               <>
                                 {msg.content.map((part, pi) =>
                                   part.type === "text" ? (
-                                    <div key={pi} className="whitespace-pre-wrap">{part.text}</div>
+                                    <div key={pi} className="whitespace-pre-wrap break-words">{part.text}</div>
                                   ) : part.type === "image_url" ? (
                                     <img key={pi} src={part.image_url.url} alt="attachment" className="mt-2 max-w-[200px] rounded-lg" />
                                   ) : null
                                 )}
                               </>
                             ) : (
-                              <div className="whitespace-pre-wrap">{msg.content as string}</div>
+                              <div className="whitespace-pre-wrap break-words">{msg.content as string}</div>
                             )}
                           </div>
                         ) : (

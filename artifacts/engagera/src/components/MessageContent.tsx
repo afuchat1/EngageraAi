@@ -52,7 +52,7 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
   };
 
   return (
-    <div className="relative my-3 group">
+    <div className="relative my-3 group overflow-hidden rounded-md">
       <div className="flex items-center justify-between px-4 py-2 bg-[#1e1e1e] border border-white/[0.08] rounded-t-md">
         <span className="text-[10px] text-muted-foreground/60 font-mono uppercase tracking-wider">
           {language || "code"}
@@ -161,7 +161,7 @@ function ImageBlock({ src, alt }: { src: string; alt?: string }) {
 
 export function MessageContent({ content }: MessageContentProps) {
   return (
-    <div className="prose-sm text-[0.875rem] leading-relaxed text-foreground/90">
+    <div className="prose-sm text-[0.875rem] leading-relaxed text-foreground/90 min-w-0 overflow-hidden">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
