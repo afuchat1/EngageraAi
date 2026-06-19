@@ -178,6 +178,7 @@ export default function Playground() {
               >
                 <Code2 className="h-3 w-3" />
                 Dev Mode
+                <span className="ml-0.5 px-1 py-px text-[9px] font-semibold tracking-wide rounded bg-foreground/10 text-foreground/60 uppercase leading-none">Beta</span>
               </button>
             </div>
 
