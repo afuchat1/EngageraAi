@@ -9,11 +9,13 @@ import {
 } from "@workspace/api-client-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useUserPreferences } from "@/hooks/useUserPreferences";
-import { useEdgeChatCompletion, ContentPart } from "@/hooks/useEdgeChatCompletion";
+import { useEdgeChatCompletion, ContentPart, type SearchInfo } from "@/hooks/useEdgeChatCompletion";
 import { usePhoneVoice, type PhoneState } from "@/hooks/usePhoneVoice";
 import { cn } from "@/lib/utils";
 import { detectModel } from "@/lib/autoModel";
 import { MessageContent } from "@/components/MessageContent";
+import { WebSearchIndicator } from "@/components/WebSearchIndicator";
+import { WebCrawlIndicator } from "@/components/WebCrawlIndicator";
 import {
   LayoutDashboard,
   Activity,
@@ -38,7 +40,12 @@ import { UpgradeModal } from "@/components/UpgradeModal";
 import { logoSrc } from "@/lib/assets";
 
 type MessageContent = string | ContentPart[];
-type Message = { role: "user" | "assistant"; content: MessageContent };
+type Message = {
+  role: "user" | "assistant";
+  content: MessageContent;
+  searchInfo?: SearchInfo;
+  crawledUrls?: string[];
+};
 
 interface Attachment {
   id: string;
@@ -366,7 +373,13 @@ export default function Landing() {
       {
         onSuccess: (res) => {
           setIsImageGen(false);
-          const withReply: Message[] = [...updated, { role: "assistant", content: res.message.content }];
+          const assistantMsg: Message = {
+            role: "assistant",
+            content: res.message.content,
+            ...(res.searchInfo ? { searchInfo: res.searchInfo } : {}),
+            ...(res.crawledUrls?.length ? { crawledUrls: res.crawledUrls } : {}),
+          };
+          const withReply: Message[] = [...updated, assistantMsg];
           setMessages(withReply);
           if (res.conversationId) setActiveConversationId(res.conversationId);
           if (res.guestMessageCount !== undefined) setGuestMessageCount(res.guestMessageCount);
@@ -706,7 +719,15 @@ export default function Landing() {
                             )}
                           </div>
                         ) : (
-                          <MessageContent content={textContent} />
+                          <div>
+                            {msg.crawledUrls && msg.crawledUrls.length > 0 && (
+                              <WebCrawlIndicator urls={msg.crawledUrls} />
+                            )}
+                            {msg.searchInfo && (
+                              <WebSearchIndicator searchInfo={msg.searchInfo} />
+                            )}
+                            <MessageContent content={textContent} />
+                          </div>
                         )}
                       </div>
 
