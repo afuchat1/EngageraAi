@@ -122,7 +122,7 @@ export default function Landing() {
       <div className="p-4 border-b border-white/15">
         <button
           onClick={handleNewChat}
-          className="w-full flex items-center gap-2 px-4 py-2 border border-white/20 hover:bg-white/10 transition-colors text-sm font-medium"
+          className="w-full flex items-center gap-2 px-4 py-2 border border-white/20 hover:bg-white/10 transition-colors text-sm font-medium rounded-full"
         >
           <Plus className="w-4 h-4" />
           New Chat
@@ -185,13 +185,13 @@ export default function Landing() {
         )}
 
         {/* Chat Area */}
-        <div className="flex-1 flex flex-col h-full min-w-0 bg-black relative">
-          {/* Mobile Header (For Sidebar Toggle if auth'd) */}
-          {user && (
-            <div className="md:hidden flex items-center p-3 border-b border-white/15 shrink-0 bg-black">
+        <div className="flex-1 flex flex-col h-full min-w-0 bg-black overflow-hidden">
+          {/* Top bar — model selector for guests OR mobile sidebar toggle for auth'd users */}
+          <div className="shrink-0 flex items-center px-3 py-2 border-b border-white/15 bg-black gap-3">
+            {user ? (
               <Sheet open={isMobileSidebarOpen} onOpenChange={setIsMobileSidebarOpen}>
                 <SheetTrigger asChild>
-                  <button className="p-2 border border-white/20 hover:bg-white/10">
+                  <button className="md:hidden p-2 rounded-full border border-white/20 hover:bg-white/10">
                     <Menu className="w-4 h-4" />
                   </button>
                 </SheetTrigger>
@@ -199,32 +199,24 @@ export default function Landing() {
                   <SidebarContent />
                 </SheetContent>
               </Sheet>
-              <div className="ml-4 font-mono text-sm tracking-tight font-bold">
-                ENGAGERA_CHAT
-              </div>
-            </div>
-          )}
-
-          {/* Model Selector for Guests (Desktop & Mobile) */}
-          {!user && (
-            <div className="absolute top-4 right-4 z-10 w-48">
-               <Select value={selectedModel} onValueChange={setSelectedModel}>
-                <SelectTrigger className="w-full bg-black border-white/20 rounded-none h-10 text-xs">
-                  <div className="flex items-center gap-2">
-                    <Cpu className="w-3.5 h-3.5 text-white/60" />
-                    <SelectValue placeholder="Select Model" />
-                  </div>
-                </SelectTrigger>
-                <SelectContent className="bg-black border-white/20 rounded-none text-xs">
-                  {availableModels.map((m: any) => (
-                    <SelectItem key={m.id} value={m.id} className="rounded-none hover:bg-white/10 focus:bg-white/10">
-                      {m.name || m.id}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+            ) : null}
+            <div className="flex-1" />
+            <Select value={selectedModel} onValueChange={setSelectedModel}>
+              <SelectTrigger className="w-44 bg-black border-white/20 rounded-full h-8 text-xs px-3">
+                <div className="flex items-center gap-2">
+                  <Cpu className="w-3.5 h-3.5 text-white/60 shrink-0" />
+                  <SelectValue placeholder="Select Model" />
+                </div>
+              </SelectTrigger>
+              <SelectContent className="bg-black border-white/20 rounded-xl text-xs">
+                {availableModels.map((m: any) => (
+                  <SelectItem key={m.id} value={m.id} className="rounded-lg hover:bg-white/10 focus:bg-white/10">
+                    {m.name || m.id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 md:p-8 scrollbar-thin">
@@ -250,7 +242,7 @@ export default function Landing() {
                     <div 
                       className={`max-w-[85%] break-words whitespace-pre-wrap ${
                         msg.role === "user" 
-                          ? "bg-white text-black px-4 py-3 rounded-none" 
+                          ? "bg-white text-black px-4 py-3 rounded-2xl rounded-br-sm" 
                           : "text-white"
                       }`}
                     >
@@ -286,13 +278,13 @@ export default function Landing() {
               <div className="flex gap-4">
                 <button 
                   onClick={() => setLocation("/sign-up")}
-                  className="flex-1 py-2 bg-white text-black font-medium hover:bg-white/90 text-sm"
+                  className="flex-1 py-2 bg-white text-black font-medium hover:bg-white/90 text-sm rounded-full"
                 >
                   Sign Up Free
                 </button>
                 <button 
                   onClick={() => setLocation("/sign-in")}
-                  className="flex-1 py-2 border border-white/20 hover:bg-white/10 text-sm"
+                  className="flex-1 py-2 border border-white/20 hover:bg-white/10 text-sm rounded-full"
                 >
                   Sign In
                 </button>
@@ -310,7 +302,7 @@ export default function Landing() {
                 onKeyDown={handleKeyDown}
                 placeholder={guestLimitReached ? "Sign up to continue..." : "Message Engagera..."}
                 disabled={guestLimitReached || chatCompletion.isPending}
-                className="w-full bg-transparent border border-white/30 focus:border-white outline-none resize-none py-3 pl-4 pr-12 text-sm max-h-48 scrollbar-thin min-h-[50px] transition-colors disabled:opacity-50"
+                className="w-full bg-transparent border border-white/30 focus:border-white outline-none resize-none py-3 pl-4 pr-12 text-sm max-h-48 scrollbar-thin min-h-[50px] transition-colors disabled:opacity-50 rounded-2xl"
                 rows={1}
                 style={{
                   height: "auto",

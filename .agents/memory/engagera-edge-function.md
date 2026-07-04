@@ -37,7 +37,15 @@ description: Chat AI calls go through a Supabase Edge Function; OPENROUTER_API_K
 ## Deployment
 - **Cannot use `supabase functions deploy` CLI** from Replit — Docker container can't reach internet
 - Deploy via Management API: `PATCH https://api.supabase.com/v1/projects/{ref}/functions/{slug}` with body `{ body: "<source code>", verify_jwt: false }`
-- Requires `SUPABASE_ACCESS_TOKEN` (Replit secret)
+- Requires `SUPABASE_ACCESS_TOKEN` (Replit secret) — if secret is set but empty, Management API returns 401; user must reset it from Supabase Dashboard → Account → Access Tokens
+- Alternative: paste source directly in Supabase Dashboard → Edge Functions → chat → Edit
+
+## Knowledge base system (added)
+- Cross-user shared KB: `engagera_knowledge_base` table in `public` schema
+- Migration SQL: `supabase/migrations/20250705000000_engagera_knowledge_base.sql`
+- KB functions: `normalizeKbKey`, `lookupKB`, `saveToKB`, `classifyKbQuery`, `kbTtlMs` in chat/index.ts
+- Robots.txt-aware direct crawler: `isAllowedByRobots` + `fetchWebpageDirect` — falls back to Jina if blocked
+- `agenticChat` now accepts `db` as first parameter (call site updated)
 
 ## Secrets in Supabase
 - `OPENROUTER_API_KEY` — set via Management API `/v1/projects/{ref}/secrets`

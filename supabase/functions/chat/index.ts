@@ -278,6 +278,10 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+// ── Robots.txt compliance cache (warm per Deno isolate) ──────────────────────
+const _robotsCache = new Map<string, { allowed: boolean; ts: number }>();
+const _ROBOTS_TTL  = 12 * 60 * 60_000; // 12 h per domain
+
 // ── Source type ───────────────────────────────────────────────────────────────
 interface Source {
   title: string;
@@ -672,6 +676,92 @@ async function fetchWebpage(url: string): Promise<string> {
   }
 }
 
+// ── Robots.txt-aware direct web crawler ──────────────────────────────────────
+// Primary crawler: checks robots.txt, fetches directly with EngageraBot UA.
+// Falls back to Jina AI reader (which handles its own compliance) if:
+//   · robots.txt disallows us  · direct fetch fails  · HTML is empty
+async function isAllowedByRobots(rawUrl: string): Promise<boolean> {
+  try {
+    const parsed  = new URL(rawUrl);
+    const host    = parsed.hostname;
+    const cached  = _robotsCache.get(host);
+    if (cached && Date.now() - cached.ts < _ROBOTS_TTL) return cached.allowed;
+
+    const robotsUrl = `${parsed.protocol}//${host}/robots.txt`;
+    const res = await fetch(robotsUrl, {
+      signal:  AbortSignal.timeout(3_000),
+      headers: { "User-Agent": "EngageraBot/1.0 (+https://engagera.afuchat.com/bot)" },
+    });
+
+    if (!res.ok) {
+      _robotsCache.set(host, { allowed: true, ts: Date.now() });
+      return true; // No robots.txt = allowed
+    }
+
+    const text    = await res.text();
+    const path    = parsed.pathname;
+    let inBlock   = false;
+    let allowed   = true;
+
+    for (const rawLine of text.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (/^user-agent\s*:/i.test(line)) {
+        const agent = line.replace(/^user-agent\s*:\s*/i, "").toLowerCase();
+        inBlock = agent === "*" || agent.includes("engagerabot");
+      } else if (inBlock && /^disallow\s*:/i.test(line)) {
+        const dp = line.replace(/^disallow\s*:\s*/i, "").trim();
+        if (dp === "/" || (dp.length > 0 && path.startsWith(dp))) {
+          allowed = false;
+          break;
+        }
+      }
+    }
+    _robotsCache.set(host, { allowed, ts: Date.now() });
+    return allowed;
+  } catch {
+    return true; // default to allowed on parse/network error
+  }
+}
+
+async function fetchWebpageDirect(url: string, requestId: string): Promise<string> {
+  try {
+    if (!url.startsWith("http://") && !url.startsWith("https://")) return "Invalid URL";
+    const allowed = await isAllowedByRobots(url);
+    if (!allowed) {
+      log("info", "robots.disallowed_use_jina", { requestId, url });
+      return fetchWebpage(url); // Jina handles its own compliance
+    }
+    const res = await fetch(url, {
+      signal:  AbortSignal.timeout(10_000),
+      headers: {
+        "User-Agent":      "EngageraBot/1.0 (+https://engagera.afuchat.com/bot; web-research)",
+        "Accept":          "text/html,application/xhtml+xml,text/plain;q=0.9",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Cache-Control":   "no-cache",
+      },
+    });
+    if (!res.ok) return fetchWebpage(url);
+    const html = await res.text();
+    const text = html
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<nav[\s\S]*?<\/nav>/gi, " ")
+      .replace(/<header[\s\S]*?<\/header>/gi, " ")
+      .replace(/<footer[\s\S]*?<\/footer>/gi, " ")
+      .replace(/<aside[\s\S]*?<\/aside>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&[a-z]+;/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const clean = text.slice(0, 4000);
+    if (!clean) return fetchWebpage(url);
+    log("info", "direct_crawl.success", { requestId, url, chars: clean.length });
+    return clean;
+  } catch {
+    return fetchWebpage(url); // fall back to Jina on any error
+  }
+}
+
 // ── URL detector ──────────────────────────────────────────────────────────────
 function detectURLs(text: string): string[] {
   const urlRe = /https?:\/\/[^\s<>"{}|\\^`\[\]()]+/gi;
@@ -806,6 +896,86 @@ async function extractAndSaveMemory(
   } catch { /* non-fatal */ }
 }
 
+// ── Cross-user shared knowledge base ─────────────────────────────────────────
+// Facts learned from ANY user are cached and shared with ALL users.
+// TTLs → price: 12 h · volatile (CEOs, leaders): 7 d · general: 3 d · stable (founders, capitals): 30 d
+type KbCategory = "stable" | "volatile" | "price" | "general";
+
+function classifyKbQuery(query: string): KbCategory {
+  const q = query.toLowerCase();
+  if (/\b(price|cost|\$|stock\s+price|market\s+cap|exchange\s+rate|fee|usd|eur|gbp|crypto)\b/.test(q)) return "price";
+  if (/\b(ceo|chief\s+executive|president|prime\s+minister|chancellor|who\s+leads|who\s+runs|current\s+leader|current\s+director|chairman)\b/.test(q)) return "volatile";
+  if (/\b(founder|founded|established|created|born|died|history|capital\s+of|who\s+invented|who\s+discovered|origin|when\s+was)\b/.test(q)) return "stable";
+  return "general";
+}
+
+function kbTtlMs(cat: KbCategory): number {
+  const ttls: Record<KbCategory, number> = {
+    price:    12 * 3_600_000,
+    volatile:  7 * 86_400_000,
+    general:   3 * 86_400_000,
+    stable:   30 * 86_400_000,
+  };
+  return ttls[cat];
+}
+
+function normalizeKbKey(query: string): string {
+  return query.toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\b(please|could|can|would|kindly|find|search|tell|show|what|who|how|the|a|an|of|in|on|at|to|for|and|or|but|is|are|was|were)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 100);
+}
+
+async function lookupKB(
+  db: ReturnType<typeof createClient>,
+  key: string,
+): Promise<{ searchText: string; sources: Source[] } | null> {
+  if (!key || key.length < 6) return null;
+  try {
+    const { data } = await db
+      .from("engagera_knowledge_base")
+      .select("search_text, sources, expires_at, hit_count")
+      .eq("topic_key", key)
+      .maybeSingle();
+    if (!data) return null;
+    if (data.expires_at && new Date(data.expires_at as string) < new Date()) return null; // expired
+    // Bump hit count async (fire-and-forget)
+    db.from("engagera_knowledge_base")
+      .update({ hit_count: ((data.hit_count as number) ?? 0) + 1 })
+      .eq("topic_key", key)
+      .then(() => {}).catch(() => {});
+    return {
+      searchText: data.search_text as string,
+      sources:    (data.sources ?? []) as Source[],
+    };
+  } catch { return null; }
+}
+
+async function saveToKB(
+  db: ReturnType<typeof createClient>,
+  topicKey: string,
+  question: string,
+  searchText: string,
+  sources: Source[],
+  category: KbCategory,
+): Promise<void> {
+  if (!topicKey || topicKey.length < 6) return;
+  try {
+    const expiresAt = new Date(Date.now() + kbTtlMs(category)).toISOString();
+    await db.from("engagera_knowledge_base").upsert({
+      topic_key:   topicKey,
+      question:    question.slice(0, 400),
+      search_text: searchText.slice(0, 6000),
+      sources:     sources.slice(0, 8),
+      category,
+      expires_at:  expiresAt,
+      updated_at:  new Date().toISOString(),
+    }, { onConflict: "topic_key" });
+  } catch { /* non-fatal */ }
+}
+
 // ── Search SKIP patterns ───────────────────────────────────────────────────────
 // Web search is ONLY triggered for queries that genuinely need live/external data.
 // Everything else is answered from model knowledge + system prompt.
@@ -875,6 +1045,7 @@ function needsWebSearch(messages: ChatMessage[]): string | null {
 
 // ── Agentic chat: URL crawl + pre-search + multi-provider call ───────────────
 async function agenticChat(
+  db: ReturnType<typeof createClient>,
   keys: ProviderKeys,
   chain: ProviderModel[],
   messages: ChatMessage[],
@@ -917,6 +1088,47 @@ async function agenticChat(
         log("warn", "url_crawl.exception", { requestId, error: String(err) });
       }
     }
+  }
+
+  // ── Check shared knowledge base before doing a live web search ──────────────
+  // If ANY prior user already searched for this, reuse the cached search results.
+  // The AI still generates a fresh response from the cached context every time.
+  const kbQueryRaw = buildSearchQuery(lastUserText, "");
+  const kbKey      = normalizeKbKey(kbQueryRaw);
+  const kbHit      = lastUserText.length > 8 ? await lookupKB(db, kbKey) : null;
+
+  if (kbHit) {
+    log("info", "kb.hit", { requestId, kbKey: kbKey.slice(0, 60), sources: kbHit.sources.length });
+    const kbBlock = [
+      "",
+      "---",
+      `🧠 **Verified knowledge** (researched & cached by Engagera — ${new Date().toUTCString()}):`,
+      "",
+      kbHit.searchText,
+      "",
+      "---",
+      "",
+      "INSTRUCTIONS: Use the verified knowledge above to answer the user's question accurately. " +
+      "Cite sources as [Title](URL). If it doesn't fully cover the question, supplement from general knowledge and clearly flag that.",
+    ].join("\n");
+    const kbConvo = [...baseConvo];
+    const sysIdx  = kbConvo.findIndex((m) => m.role === "system");
+    if (sysIdx >= 0 && typeof kbConvo[sysIdx].content === "string") {
+      kbConvo[sysIdx] = { ...kbConvo[sysIdx], content: (kbConvo[sysIdx].content as string) + kbBlock };
+    } else {
+      kbConvo.unshift({ role: "system", content: kbBlock });
+    }
+    const kbResult = await callWithFallback(chain, keys, kbConvo, 4096, requestId);
+    if (kbResult.ok) {
+      return {
+        reply: kbResult.content, inputTokens: kbResult.inputTokens, outputTokens: kbResult.outputTokens,
+        provider: kbResult.provider, providerModel: kbResult.model,
+        ...(kbHit.sources.length > 0 && { searchInfo: { query: kbQueryRaw, sources: kbHit.sources } }),
+        ...(crawledUrls.length > 0   && { crawledUrls }),
+      };
+    }
+    log("warn", "kb.ai_call_failed_fallback_search", { requestId });
+    // AI call failed with KB context — fall through to live search below
   }
 
   // Step 1  -  Real-world grounding: search + deep-crawl top results
@@ -964,7 +1176,7 @@ async function agenticChat(
           if (keywords.some((kw) => queryLower.includes(kw))) {
             log("info", "domain_crawl_fallback.start", { requestId, url });
             try {
-              const content = await fetchWebpage(url);
+              const content = await fetchWebpageDirect(url, requestId);
               if (content.length > 200 && !content.startsWith("Could not") && !content.startsWith("Failed")) {
                 searchResult = {
                   text: `Direct website crawl of ${url} (retrieved just now):\n\n${content.slice(0, 2500)}`,
@@ -1028,6 +1240,12 @@ async function agenticChat(
         const result = await callWithFallback(PREMIUM_CHAIN, keys, convo, 4096, requestId);
         if (result.ok) {
           log("info", "search_chat.success", { requestId, provider: result.provider, deepCrawled: deepParts.length });
+          // Save to cross-user knowledge base (fire-and-forget — non-blocking)
+          if (kbKey.length >= 6) {
+            const kbCat = classifyKbQuery(kbQueryRaw);
+            saveToKB(db, kbKey, userText, searchResult.text.slice(0, 5000), searchResult.sources, kbCat)
+              .catch(() => {});
+          }
           return {
             reply: result.content, inputTokens: result.inputTokens, outputTokens: result.outputTokens,
             provider: result.provider, providerModel: result.model,
@@ -1282,7 +1500,7 @@ Deno.serve(async (req: Request) => {
           })),
       ];
 
-      const chatResult = await agenticChat(keys, chain, chatMsgs, requestId, braveKey);
+      const chatResult = await agenticChat(db, keys, chain, chatMsgs, requestId, braveKey);
       reply        = chatResult.reply;
       inputTokens  = chatResult.inputTokens;
       outputTokens = chatResult.outputTokens;
