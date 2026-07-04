@@ -49,14 +49,6 @@ export default defineConfig({
     fs: {
       strict: true,
     },
-    proxy: {
-      // In development, proxy /api/* to the Express API server.
-      // In production, Replit's path router sends /api/* directly to the API artifact.
-      "/api": {
-        target: "http://localhost:8080",
-        changeOrigin: true,
-      },
-    },
   },
   preview: {
     port,
