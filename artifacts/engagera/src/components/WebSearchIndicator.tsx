@@ -141,8 +141,8 @@ export function WebSearchIndicator({ searchInfo }: WebSearchIndicatorProps) {
             ))}
           </div>
         ) : (
-          <div className="h-5 w-5 rounded-full bg-blue-500/20 flex items-center justify-center">
-            <Globe className="h-3 w-3 text-blue-400" />
+          <div className="h-5 w-5 rounded-full bg-white/20 flex items-center justify-center">
+            <Globe className="h-3 w-3 text-white" />
           </div>
         )}
 

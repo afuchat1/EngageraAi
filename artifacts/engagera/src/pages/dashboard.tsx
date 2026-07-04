@@ -1,358 +1,188 @@
 import React, { useState } from "react";
-import { AppLayout } from "@/components/layout/AppLayout";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Activity, Key, Plus, Trash2, ShieldCheck, Cpu, Zap, Copy, Check, ArrowUpRight } from "lucide-react";
-import { format } from "date-fns";
-import { useQueryClient } from "@tanstack/react-query";
-import {
-  useGetDashboardStats,
-  useListApiKeys,
-  useCreateApiKey,
-  useRevokeApiKey,
-  getListApiKeysQueryKey,
-  getGetDashboardStatsQueryKey
+import { useLocation } from "wouter";
+import AppLayout from "@/components/layout/AppLayout";
+import { 
+  useListApiKeys, 
+  useCreateApiKey, 
+  useRevokeApiKey, 
+  useGetDashboardStats 
 } from "@workspace/api-client-react";
-import { useAuth } from "@/hooks/useAuth";
-import { useToast } from "@/hooks/use-toast";
-import { Link } from "wouter";
-
-function saveReturnTo(path: string) {
-  sessionStorage.setItem("engagera_return_to", path);
-}
+import { Copy, Plus, Trash2, Key, Check } from "lucide-react";
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const [newKeyName, setNewKeyName] = useState("");
+  const [showCreate, setShowCreate] = useState(false);
+  const [createdSecret, setCreatedSecret] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
   const { data: stats, isLoading: statsLoading } = useGetDashboardStats();
-  const { data: apiKeys, isLoading: keysLoading } = useListApiKeys();
+  const { data: apiKeys = [], isLoading: keysLoading, refetch: refetchKeys } = useListApiKeys();
   const createKey = useCreateApiKey();
   const revokeKey = useRevokeApiKey();
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
 
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [newKeyName, setNewKeyName] = useState("");
-  const [createdKey, setCreatedKey] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [isRevokeOpen, setIsRevokeOpen] = useState(false);
-  const [keyToRevoke, setKeyToRevoke] = useState<number | null>(null);
-
-  const handleCreateKey = (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newKeyName.trim()) return;
+
     createKey.mutate(
       { data: { name: newKeyName } },
       {
-        onSuccess: (data: { key: string }) => {
-          setCreatedKey(data.key);
-          queryClient.invalidateQueries({ queryKey: getListApiKeysQueryKey() });
-          queryClient.invalidateQueries({ queryKey: getGetDashboardStatsQueryKey() });
+        onSuccess: (res) => {
+          setCreatedSecret(res.key);
           setNewKeyName("");
-        },
-        onError: (err: Error) => {
-          toast({ title: "Failed to create key", description: err.message, variant: "destructive" });
+          setShowCreate(false);
+          refetchKeys();
         }
       }
     );
   };
 
-  const handleRevoke = () => {
-    if (!keyToRevoke) return;
-    revokeKey.mutate(
-      { id: keyToRevoke },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getListApiKeysQueryKey() });
-          queryClient.invalidateQueries({ queryKey: getGetDashboardStatsQueryKey() });
-          setIsRevokeOpen(false);
-          setKeyToRevoke(null);
-          toast({ title: "Key revoked" });
-        },
-        onError: (err: Error) => {
-          toast({ title: "Failed to revoke key", description: err.message, variant: "destructive" });
-        }
-      }
-    );
-  };
-
-  const handleCopy = () => {
-    if (createdKey) {
-      navigator.clipboard.writeText(createdKey);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+  const handleRevoke = (id: number) => {
+    if (confirm("Are you sure you want to revoke this API key? This action cannot be undone.")) {
+      revokeKey.mutate({ id }, {
+        onSuccess: () => refetchKeys()
+      });
     }
   };
 
-  const closeCreateDialog = () => {
-    setIsCreateOpen(false);
-    setCreatedKey(null);
-    setNewKeyName("");
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
-  const statCards = [
-    {
-      label: "Active API Keys",
-      value: statsLoading ? "—" : String(stats?.activeKeys ?? 0),
-      icon: Key,
-    },
-    {
-      label: "Total Requests",
-      value: statsLoading ? "—" : (stats?.totalRequests ?? 0).toLocaleString(),
-      icon: Activity,
-    },
-    {
-      label: "Tokens This Month",
-      value: statsLoading ? "—" : (stats?.totalTokensThisMonth ?? 0).toLocaleString(),
-      icon: Zap,
-    },
-    {
-      label: "Top Model",
-      value: statsLoading ? "—" : (stats?.topModel || "None"),
-      icon: Cpu,
-    },
-  ];
-
   return (
-    <AppLayout showSidebar>
-      <div className="p-6 md:p-8 max-w-6xl mx-auto space-y-8">
+    <AppLayout title="Dashboard">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <div className="p-6 border border-white/15">
+          <div className="text-white/60 text-xs uppercase tracking-wider mb-2 font-mono">Total Requests</div>
+          <div className="text-3xl font-light">
+            {statsLoading ? "..." : stats?.totalRequests.toLocaleString() || "0"}
+          </div>
+        </div>
+        <div className="p-6 border border-white/15">
+          <div className="text-white/60 text-xs uppercase tracking-wider mb-2 font-mono">Tokens (Month)</div>
+          <div className="text-3xl font-light">
+            {statsLoading ? "..." : stats?.totalTokensThisMonth.toLocaleString() || "0"}
+          </div>
+        </div>
+        <div className="p-6 border border-white/15">
+          <div className="text-white/60 text-xs uppercase tracking-wider mb-2 font-mono">Active Keys</div>
+          <div className="text-3xl font-light">
+            {statsLoading ? "..." : stats?.activeKeys || "0"}
+          </div>
+        </div>
+      </div>
 
-        {/* Guest banner */}
-        {!user && (
-          <div className="flex items-center justify-between gap-4 px-5 py-3.5 rounded-lg border border-amber-500/20 bg-amber-500/5">
-            <div>
-              <p className="text-sm font-medium text-amber-400">Sign in to access your dashboard</p>
-              <p className="text-xs text-muted-foreground mt-0.5">View your API keys, usage stats, and activity.</p>
-            </div>
-            <div className="flex gap-2 shrink-0">
-              <Link href="/sign-in">
-                <Button variant="outline" size="sm" onClick={() => saveReturnTo("/dashboard")}>Sign in</Button>
-              </Link>
-              <Link href="/sign-up">
-                <Button size="sm" onClick={() => saveReturnTo("/dashboard")}>Create account</Button>
-              </Link>
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-medium">API Keys</h2>
+          <button 
+            onClick={() => setShowCreate(!showCreate)}
+            className="flex items-center gap-2 px-3 py-1.5 border border-white/20 text-sm hover:bg-white/10 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Create Key
+          </button>
+        </div>
+
+        {showCreate && (
+          <div className="p-4 border border-white/15 mb-4 bg-white/5">
+            <form onSubmit={handleCreate} className="flex gap-4">
+              <input
+                type="text"
+                placeholder="Key Name (e.g. Production)"
+                value={newKeyName}
+                onChange={(e) => setNewKeyName(e.target.value)}
+                className="flex-1 px-3 py-2 bg-black border border-white/20 focus:border-white outline-none text-sm"
+                required
+              />
+              <button 
+                type="submit" 
+                disabled={createKey.isPending}
+                className="px-4 py-2 bg-white text-black text-sm font-medium hover:bg-white/90 disabled:opacity-50"
+              >
+                {createKey.isPending ? "Generating..." : "Generate"}
+              </button>
+            </form>
+          </div>
+        )}
+
+        {createdSecret && (
+          <div className="p-6 border border-white mb-6">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="font-medium mb-1">Save your new API key</h3>
+                <p className="text-white/60 text-sm mb-4">Please copy this key and store it securely. You will not be able to see it again.</p>
+                <div className="flex items-center gap-2">
+                  <code className="px-3 py-2 bg-white/10 border border-white/20 text-sm font-mono break-all max-w-full">
+                    {createdSecret}
+                  </code>
+                  <button 
+                    onClick={() => copyToClipboard(createdSecret)}
+                    className="p-2 border border-white/20 hover:bg-white/10 transition-colors"
+                    title="Copy to clipboard"
+                  >
+                    {copied ? <Check className="w-4 h-4 text-white" /> : <Copy className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+              <button 
+                onClick={() => setCreatedSecret(null)}
+                className="text-white/40 hover:text-white text-sm underline"
+              >
+                Done
+              </button>
             </div>
           </div>
         )}
 
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              {user?.email && <span className="font-mono text-xs">{user.email}</span>}
-            </p>
-          </div>
-          {user ? (
-            <Button onClick={() => setIsCreateOpen(true)} size="sm" className="gap-2 self-start sm:self-auto">
-              <Plus className="h-4 w-4" />
-              New API Key
-            </Button>
-          ) : (
-            <Link href="/sign-up">
-              <Button size="sm" className="gap-2 self-start sm:self-auto" onClick={() => saveReturnTo("/dashboard")}>
-                <Plus className="h-4 w-4" />
-                New API Key
-              </Button>
-            </Link>
-          )}
-        </div>
-
-        {/* Stat cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {statCards.map(({ label, value, icon: Icon }) => (
-            <Card key={label} className="bg-card border-border">
-              <CardHeader className="flex flex-row items-center justify-between pb-2 pt-4 px-4">
-                <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{label}</CardTitle>
-                <Icon className="h-3.5 w-3.5 text-muted-foreground/50" />
-              </CardHeader>
-              <CardContent className="px-4 pb-4">
-                <div className="text-2xl font-bold tracking-tight">{value}</div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        {/* Main content */}
-        <div className="grid gap-6 lg:grid-cols-3">
-          {/* API Keys — 2/3 width */}
-          <Card className="lg:col-span-2 bg-card border-border">
-            <CardHeader className="flex flex-row items-start justify-between px-6 pt-6 pb-4">
-              <div>
-                <CardTitle className="text-base font-semibold">API Keys</CardTitle>
-                <CardDescription className="text-xs mt-1">Keys are stored hashed. Only shown once on creation.</CardDescription>
-              </div>
-            </CardHeader>
-            <CardContent className="px-6 pb-6">
+        <div className="border border-white/15 overflow-x-auto">
+          <table className="w-full text-sm text-left">
+            <thead className="text-xs text-white/60 uppercase font-mono border-b border-white/15 bg-white/5">
+              <tr>
+                <th className="px-4 py-3 font-normal">Name</th>
+                <th className="px-4 py-3 font-normal">Prefix</th>
+                <th className="px-4 py-3 font-normal">Created</th>
+                <th className="px-4 py-3 font-normal">Last Used</th>
+                <th className="px-4 py-3 font-normal text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
               {keysLoading ? (
-                <div className="py-10 text-center text-sm text-muted-foreground">Loading…</div>
-              ) : Array.isArray(apiKeys) && apiKeys.length > 0 ? (
-                <div className="rounded-lg border border-border overflow-hidden">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="border-border hover:bg-transparent">
-                        <TableHead className="text-xs font-medium text-muted-foreground">Name</TableHead>
-                        <TableHead className="text-xs font-medium text-muted-foreground">Key prefix</TableHead>
-                        <TableHead className="text-xs font-medium text-muted-foreground hidden sm:table-cell">Created</TableHead>
-                        <TableHead className="text-xs font-medium text-muted-foreground hidden md:table-cell">Last used</TableHead>
-                        <TableHead className="w-10" />
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {apiKeys.map((key) => (
-                        <TableRow key={key.id} className="border-border">
-                          <TableCell className="font-medium text-sm">{key.name}</TableCell>
-                          <TableCell>
-                            <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">{key.prefix}•••</code>
-                          </TableCell>
-                          <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">
-                            {format(new Date(key.createdAt), "MMM d, yyyy")}
-                          </TableCell>
-                          <TableCell className="text-xs text-muted-foreground hidden md:table-cell">
-                            {key.lastUsedAt ? format(new Date(key.lastUsedAt), "MMM d") : "Never"}
-                          </TableCell>
-                          <TableCell>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                              onClick={() => { setKeyToRevoke(key.id); setIsRevokeOpen(true); }}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-white/40">Loading keys...</td>
+                </tr>
+              ) : apiKeys.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-white/40">No API keys found.</td>
+                </tr>
               ) : (
-                <div className="py-14 text-center rounded-lg border border-dashed border-border">
-                  <Key className="h-8 w-8 mx-auto text-muted-foreground/30 mb-3" />
-                  <p className="text-sm font-medium mb-1">No API keys yet</p>
-                  <p className="text-xs text-muted-foreground mb-4">Create your first key to start using the API</p>
-                  <Button size="sm" onClick={() => setIsCreateOpen(true)} className="gap-1.5">
-                    <Plus className="h-3.5 w-3.5" />
-                    Create API Key
-                  </Button>
-                </div>
+                apiKeys.map((key) => (
+                  <tr key={key.id} className="border-b border-white/15 last:border-0 hover:bg-white/[0.02]">
+                    <td className="px-4 py-3 font-medium">{key.name}</td>
+                    <td className="px-4 py-3 font-mono text-white/60">{key.prefix}•••</td>
+                    <td className="px-4 py-3 text-white/60">{new Date(key.createdAt).toLocaleDateString()}</td>
+                    <td className="px-4 py-3 text-white/60">
+                      {key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleDateString() : "Never"}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button 
+                        onClick={() => handleRevoke(key.id)}
+                        disabled={revokeKey.isPending}
+                        className="text-white/40 hover:text-white transition-colors p-1"
+                        title="Revoke Key"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))
               )}
-            </CardContent>
-          </Card>
-
-          {/* Recent activity — 1/3 width */}
-          <Card className="bg-card border-border">
-            <CardHeader className="px-6 pt-6 pb-4">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base font-semibold">Recent Activity</CardTitle>
-                <Link href="/usage">
-                  <button className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors">
-                    View all <ArrowUpRight className="h-3 w-3" />
-                  </button>
-                </Link>
-              </div>
-            </CardHeader>
-            <CardContent className="px-6 pb-6">
-              {statsLoading ? (
-                <div className="py-8 text-center text-sm text-muted-foreground">Loading…</div>
-              ) : stats?.recentActivity && stats.recentActivity.length > 0 ? (
-                <div className="space-y-3">
-                  {stats.recentActivity.map((activity: { model: string; createdAt: string; tokens: number }, i: number) => (
-                    <div key={i} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium truncate">{activity.model}</div>
-                        <div className="text-xs text-muted-foreground">{format(new Date(activity.createdAt), "MMM d, HH:mm")}</div>
-                      </div>
-                      <code className="text-xs font-mono text-muted-foreground ml-3 shrink-0">{activity.tokens.toLocaleString()}</code>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="py-10 text-center text-sm text-muted-foreground">No activity yet</div>
-              )}
-            </CardContent>
-          </Card>
+            </tbody>
+          </table>
         </div>
       </div>
-
-      {/* Create Key Dialog */}
-      <Dialog open={isCreateOpen} onOpenChange={closeCreateDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="font-semibold">Create API Key</DialogTitle>
-            <DialogDescription className="text-sm">
-              Name your key for easy identification. The secret will only be shown once.
-            </DialogDescription>
-          </DialogHeader>
-
-          {createdKey ? (
-            <div className="space-y-4">
-              <Alert className="border-border bg-card">
-                <ShieldCheck className="h-4 w-4" />
-                <AlertTitle className="font-semibold text-sm">Copy your API key now</AlertTitle>
-                <AlertDescription className="text-xs text-muted-foreground mt-1">
-                  This key won't be shown again. Store it somewhere safe.
-                </AlertDescription>
-              </Alert>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 bg-muted px-3 py-2.5 rounded-lg text-xs font-mono break-all border border-border">
-                  {createdKey}
-                </code>
-                <Button size="icon" variant="outline" onClick={handleCopy} className="shrink-0">
-                  {copied ? <Check className="h-4 w-4 text-foreground" /> : <Copy className="h-4 w-4" />}
-                </Button>
-              </div>
-              <DialogFooter>
-                <Button onClick={closeCreateDialog} className="w-full font-semibold">I've saved my key</Button>
-              </DialogFooter>
-            </div>
-          ) : (
-            <form onSubmit={handleCreateKey}>
-              <div className="space-y-4 py-2">
-                <div className="space-y-2">
-                  <Label htmlFor="name" className="text-sm font-medium">Key name</Label>
-                  <Input
-                    id="name"
-                    placeholder="e.g. Production, My App, Testing"
-                    value={newKeyName}
-                    onChange={(e) => setNewKeyName(e.target.value)}
-                    required
-                    className="h-10"
-                  />
-                </div>
-              </div>
-              <DialogFooter className="mt-4">
-                <Button type="button" variant="outline" onClick={closeCreateDialog}>Cancel</Button>
-                <Button type="submit" disabled={createKey.isPending || !newKeyName.trim()} className="font-semibold">
-                  {createKey.isPending ? "Creating…" : "Create key"}
-                </Button>
-              </DialogFooter>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Revoke Confirmation */}
-      <Dialog open={isRevokeOpen} onOpenChange={setIsRevokeOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="font-semibold">Revoke API Key</DialogTitle>
-            <DialogDescription className="text-sm">
-              This action is irreversible. Any app using this key will immediately lose access.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsRevokeOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleRevoke} disabled={revokeKey.isPending}>
-              {revokeKey.isPending ? "Revoking…" : "Revoke key"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </AppLayout>
   );
 }

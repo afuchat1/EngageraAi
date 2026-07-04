@@ -19,12 +19,12 @@ export function WebCrawlIndicator({ urls }: WebCrawlIndicatorProps) {
           href={url}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-white/[0.08] bg-violet-950/30 hover:bg-violet-950/50 transition-colors w-fit max-w-xs"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-none border border-white/20 bg-white/5 hover:bg-white/10 transition-colors w-fit max-w-xs"
         >
-          <Link className="h-3 w-3 text-violet-400 shrink-0" />
-          <span className="text-[11px] text-violet-300/80 font-medium truncate">
+          <Link className="h-3 w-3 text-white shrink-0" />
+          <span className="text-[11px] text-white/60 font-medium truncate">
             Read:&nbsp;
-            <span className="text-violet-200/90 font-semibold">{domain(url)}</span>
+            <span className="text-white font-semibold">{domain(url)}</span>
           </span>
         </a>
       ))}

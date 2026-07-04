@@ -1,10 +1,11 @@
 import React, { useEffect } from "react";
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { setAuthTokenGetter, setFallbackBearerToken, setUrlMapper } from "@workspace/api-client-react";
+import { setAuthTokenGetter, setFallbackBearerToken, setUrlMapper, setGuestSessionId } from "@workspace/api-client-react";
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/supabase";
+import { useAuth } from "@/hooks/useAuth";
 
 import Landing from "./pages/landing";
 import SignIn from "./pages/sign-in";
@@ -39,18 +40,43 @@ setUrlMapper((path) => {
   return path;
 });
 
+const GUEST_SESSION_KEY = "engagera_guest_session_id";
+function getOrCreateGuestSessionId(): string {
+  let id = localStorage.getItem(GUEST_SESSION_KEY);
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem(GUEST_SESSION_KEY, id);
+  }
+  return id;
+}
+
+function ProtectedRoute({ component: Component }: { component: React.ComponentType<any> }) {
+  const { user, loading } = useAuth();
+  const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (!loading && !user) {
+      setLocation("/sign-in");
+    }
+  }, [user, loading, setLocation]);
+
+  if (loading || !user) return null;
+
+  return <Component />;
+}
+
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Landing} />
+      <Route path="/docs" component={Docs} />
       <Route path="/sign-in" component={SignIn} />
       <Route path="/sign-up" component={SignUp} />
       <Route path="/forgot-password" component={ForgotPassword} />
       <Route path="/reset-password" component={ResetPassword} />
-      <Route path="/dashboard" component={Dashboard} />
-      <Route path="/playground" component={Playground} />
-      <Route path="/usage" component={Usage} />
-      <Route path="/docs" component={Docs} />
+      <Route path="/dashboard"><ProtectedRoute component={Dashboard} /></Route>
+      <Route path="/playground"><ProtectedRoute component={Playground} /></Route>
+      <Route path="/usage"><ProtectedRoute component={Usage} /></Route>
       <Route component={NotFound} />
     </Switch>
   );
@@ -59,6 +85,7 @@ function Router() {
 function App() {
   useEffect(() => {
     document.documentElement.classList.add("dark");
+    setGuestSessionId(getOrCreateGuestSessionId());
   }, []);
 
   return (

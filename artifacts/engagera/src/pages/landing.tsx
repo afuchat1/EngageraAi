@@ -1,1087 +1,342 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Link } from "wouter";
-import {
-  useListModels,
-  useListConversations,
-  useDeleteConversation,
+import React, { useState, useEffect, useRef } from "react";
+import { useLocation } from "wouter";
+import { Menu, Plus, MessageSquare, Send, Settings2, Trash2, Cpu, FileText } from "lucide-react";
+import { 
+  useListModels, 
+  useListConversations, 
   useGetConversationMessages,
-  setGuestSessionId,
+  getGetConversationMessagesQueryKey,
+  useDeleteConversation
 } from "@workspace/api-client-react";
+import { useEdgeChatCompletion, ChatMessage } from "@/hooks/useEdgeChatCompletion";
 import { useAuth } from "@/hooks/useAuth";
-import { useUserPreferences } from "@/hooks/useUserPreferences";
-import { useEdgeChatCompletion, ContentPart, type SearchInfo } from "@/hooks/useEdgeChatCompletion";
-import { usePhoneVoice, type PhoneState } from "@/hooks/usePhoneVoice";
-import { cn } from "@/lib/utils";
-import { detectModel } from "@/lib/autoModel";
 import { MessageContent } from "@/components/MessageContent";
-import { WebSearchIndicator } from "@/components/WebSearchIndicator";
-import { WebCrawlIndicator } from "@/components/WebCrawlIndicator";
-import {
-  LayoutDashboard,
-  Activity,
-  FileText,
-  Send,
-  Plus,
-  LogIn,
-  Mic,
-  PhoneOff,
-  SquarePen,
-  Trash2,
-  Clock,
-  AlignJustify,
-  Paperclip,
-  X,
-  ImageIcon,
-  Copy,
-  CornerUpLeft,
-  Check,
-} from "lucide-react";
-import { UpgradeModal } from "@/components/UpgradeModal";
-import { logoSrc } from "@/lib/assets";
-
-type MessageContent = string | ContentPart[];
-type Message = {
-  role: "user" | "assistant";
-  content: MessageContent;
-  searchInfo?: SearchInfo;
-  crawledUrls?: string[];
-};
-
-interface Attachment {
-  id: string;
-  name: string;
-  kind: "image" | "text";
-  preview?: string;
-  content: string;
-  mimeType: string;
-}
-
-function getTextContent(content: MessageContent): string {
-  if (typeof content === "string") return content;
-  return content.filter((p): p is { type: "text"; text: string } => p.type === "text").map((p) => p.text).join(" ");
-}
-
-const GUEST_DAILY_LIMIT = 5;
-const GUEST_SESSION_KEY = "engagera_guest_session_id";
-
-function getOrCreateGuestSessionId(): string {
-  let id = localStorage.getItem(GUEST_SESSION_KEY);
-  if (!id) {
-    id = crypto.randomUUID();
-    localStorage.setItem(GUEST_SESSION_KEY, id);
-  }
-  return id;
-}
-
-function loadGuestMessages(sessionId: string): Message[] {
-  try {
-    const raw = localStorage.getItem(`engagera_chat_${sessionId}`);
-    return raw ? (JSON.parse(raw) as Message[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveGuestMessages(sessionId: string, msgs: Message[]): void {
-  try {
-    localStorage.setItem(`engagera_chat_${sessionId}`, JSON.stringify(msgs));
-  } catch { /* storage full */ }
-}
-
-function loadGuestMeta(sessionId: string): { count: number; resetAt: string | null } {
-  try {
-    const count = parseInt(localStorage.getItem(`engagera_gcount_${sessionId}`) ?? "0", 10);
-    const resetAt = localStorage.getItem(`engagera_greset_${sessionId}`);
-    const stillValid = resetAt && new Date(resetAt) > new Date();
-    return { count: stillValid ? count : 0, resetAt: stillValid ? resetAt : null };
-  } catch {
-    return { count: 0, resetAt: null };
-  }
-}
-
-function formatCountdown(resetAt: string): string {
-  const diff = new Date(resetAt).getTime() - Date.now();
-  if (diff <= 0) return "now";
-  const h = Math.floor(diff / 3_600_000);
-  const m = Math.floor((diff % 3_600_000) / 60_000);
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
-}
-
-const SUGGESTED_PROMPTS = [
-  { label: "Explain quantum computing", sub: "in simple terms" },
-  { label: "Write a Python function", sub: "to parse JSON from an API" },
-  { label: "Debug my code", sub: "and explain the issue" },
-  { label: "Draft a project proposal", sub: "for a new feature" },
-];
-
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { detectModel } from "@/lib/autoModel";
+import PublicLayout from "@/components/layout/PublicLayout";
 
 export default function Landing() {
-  const { user, loading: authLoading } = useAuth();
-  const { data: models } = useListModels();
-  const chatMutation = useEdgeChatCompletion();
-  const deleteConvMutation = useDeleteConversation();
-  const { recordMessage, getContextHint } = useUserPreferences();
-
-  const [guestSessionId] = useState<string>(() => getOrCreateGuestSessionId());
-  const [messages, setMessages] = useState<Message[]>([]);
+  const { user } = useAuth();
+  const [, setLocation] = useLocation();
+  const [conversationId, setConversationId] = useState<number | undefined>();
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
-  const [selectedModel, setSelectedModel] = useState("engagera-2.0");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
-  const [loadingConvId, setLoadingConvId] = useState<number | null>(null);
-  const [guestMessageCount, setGuestMessageCount] = useState(0);
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [voiceOpen, setVoiceOpen] = useState(false);
-  const [isImageGen, setIsImageGen] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [windowResetAt, setWindowResetAt] = useState<string | null>(null);
-  const [countdown, setCountdown] = useState("");
-  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
-  const [quotedMessage, setQuotedMessage] = useState<Message | null>(null);
-  const [hoveredMsgIdx, setHoveredMsgIdx] = useState<number | null>(null);
-  const [copiedMsgIdx, setCopiedMsgIdx] = useState<number | null>(null);
+  const [selectedModel, setSelectedModel] = useState<string>("engagera-pro");
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [guestLimitReached, setGuestLimitReached] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const chatInputRef = useRef<HTMLTextAreaElement>(null);
 
-  const isGuest = !user && !authLoading;
-  const isLimited = isGuest && !!windowResetAt;
+  const { data: models = [] } = useListModels();
+  const { data: conversations = [], refetch: refetchConversations } = useListConversations();
+  const { data: historyMessages } = useGetConversationMessages(conversationId!, {
+    query: { enabled: !!conversationId, queryKey: getGetConversationMessagesQueryKey(conversationId!) }
+  });
+  const deleteConversation = useDeleteConversation();
+  const chatCompletion = useEdgeChatCompletion();
 
-  // ── Register guest session ID with the fetch client ───────────────────────
   useEffect(() => {
-    if (!user && !authLoading) setGuestSessionId(guestSessionId);
-    else setGuestSessionId(null);
-  }, [user, authLoading, guestSessionId]);
-
-  // ── Load guest messages + meta from localStorage on mount ─────────────────
-  useEffect(() => {
-    if (!user && !authLoading) {
-      const stored = loadGuestMessages(guestSessionId);
-      if (stored.length > 0) setMessages(stored);
-
-      const meta = loadGuestMeta(guestSessionId);
-      setGuestMessageCount(meta.count);
-      if (meta.resetAt) setWindowResetAt(meta.resetAt);
+    if (historyMessages && historyMessages.length > 0) {
+      setMessages(historyMessages.map(m => ({ role: m.role as any, content: m.content })));
+    } else if (!conversationId) {
+      setMessages([]);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading]);
+  }, [historyMessages, conversationId]);
 
-  // ── Save guest messages to localStorage whenever they change ──────────────
-  useEffect(() => {
-    if (isGuest && messages.length > 0) {
-      saveGuestMessages(guestSessionId, messages);
-    }
-  }, [messages, isGuest, guestSessionId]);
-
-  // ── Persist guest meta (count + resetAt) to localStorage ─────────────────
-  useEffect(() => {
-    if (!isGuest) return;
-    localStorage.setItem(`engagera_gcount_${guestSessionId}`, String(guestMessageCount));
-  }, [guestMessageCount, isGuest, guestSessionId]);
-
-  useEffect(() => {
-    if (!isGuest) return;
-    if (windowResetAt) localStorage.setItem(`engagera_greset_${guestSessionId}`, windowResetAt);
-    else localStorage.removeItem(`engagera_greset_${guestSessionId}`);
-  }, [windowResetAt, isGuest, guestSessionId]);
-
-  // ── 24hr countdown ticker ─────────────────────────────────────────────────
-  useEffect(() => {
-    if (!windowResetAt) { setCountdown(""); return; }
-
-    const tick = () => {
-      if (new Date(windowResetAt) <= new Date()) {
-        setWindowResetAt(null);
-        setGuestMessageCount(0);
-        setCountdown("");
-      } else {
-        setCountdown(formatCountdown(windowResetAt));
-      }
-    };
-
-    tick();
-    const id = setInterval(tick, 30_000);
-    return () => clearInterval(id);
-  }, [windowResetAt]);
-
-  // ── Auto-scroll ───────────────────────────────────────────────────────────
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, chatMutation.isPending]);
+  }, [messages, chatCompletion.isPending]);
 
-  // ── Default model guard ───────────────────────────────────────────────────
-  useEffect(() => {
-    if (Array.isArray(models) && models.length > 0 && !models.find((m) => m.id === selectedModel)) {
-      setSelectedModel(models[0].id);
-    }
-  }, [models]);
+  const availableModels = models.length > 0 ? models : [{ id: "engagera-pro", name: "Engagera Pro" }];
 
-  const { data: conversations, refetch: refetchConversations } = useListConversations();
-  const { data: loadedMessages } = useGetConversationMessages(loadingConvId ?? 0);
-
-  useEffect(() => {
-    if (loadingConvId !== null && Array.isArray(loadedMessages)) {
-      setMessages(loadedMessages.map((m: { role: string; content: string }) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      })));
-      setActiveConversationId(loadingConvId);
-      setLoadingConvId(null);
-    }
-  }, [loadedMessages, loadingConvId]);
-
-  const handleSelectConversation = useCallback((id: number) => {
-    setLoadingConvId(id);
-    setMessages([]);
-    setSidebarOpen(false);
-  }, []);
-
-  const handleDeleteConversation = useCallback(async (e: React.MouseEvent, id: number) => {
-    e.stopPropagation();
-    deleteConvMutation.mutate(
-      { id },
-      { onSuccess: () => { refetchConversations(); if (activeConversationId === id) handleNewChat(); } }
-    );
-  }, [activeConversationId]);
-
-  const handleNewChat = () => {
-    setMessages([]);
+  const handleSend = async () => {
+    if (!input.trim() || chatCompletion.isPending || guestLimitReached) return;
+    
+    const userMsg: ChatMessage = { role: "user", content: input.trim() };
+    const newMessages = [...messages, userMsg];
+    setMessages(newMessages);
     setInput("");
-    setAttachments([]);
-    setActiveConversationId(null);
-    if (isGuest) saveGuestMessages(guestSessionId, []);
-    textareaRef.current?.focus();
-  };
+    
+    // Auto-detect model if we're starting a new conversation and haven't explicitly chosen one
+    // Actually the brief says: Model selector in chat: dropdown using useListModels() data.
+    // Let's just use the selected model from the dropdown.
 
-  // ── Phone voice hook ─────────────────────────────────────────────────────
-  const phoneVoice = usePhoneVoice({
-    onSend: (text) => {
-      handleSendWithContent(text, []);
-    },
-  });
-
-  const compressImage = (dataUrl: string): Promise<string> =>
-    new Promise((resolve) => {
-      const MAX_PX = 800;
-      const QUALITY = 0.82;
-      const img = new Image();
-      img.onload = () => {
-        let { width, height } = img;
-        if (width > MAX_PX || height > MAX_PX) {
-          const ratio = Math.min(MAX_PX / width, MAX_PX / height);
-          width = Math.round(width * ratio);
-          height = Math.round(height * ratio);
-        }
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        canvas.getContext("2d")?.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL("image/jpeg", QUALITY));
-      };
-      img.onerror = () => resolve(dataUrl);
-      img.src = dataUrl;
-    });
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    files.forEach((file) => {
-      const reader = new FileReader();
-      const isImage = file.type.startsWith("image/");
-      if (isImage) {
-        reader.onload = async () => {
-          const compressed = await compressImage(reader.result as string);
-          setAttachments((prev) => [
-            ...prev,
-            { id: crypto.randomUUID(), name: file.name, kind: "image", content: compressed, preview: compressed, mimeType: "image/jpeg" },
-          ]);
-          setSelectedModel("engagera-2.1");
-        };
-        reader.readAsDataURL(file);
-      } else {
-        reader.onload = () => {
-          setAttachments((prev) => [
-            ...prev,
-            { id: crypto.randomUUID(), name: file.name, kind: "text", content: reader.result as string, mimeType: file.type },
-          ]);
-        };
-        reader.readAsText(file);
-      }
-    });
-    e.target.value = "";
-  };
-
-  const buildContent = (text: string, atts: Attachment[]): MessageContent => {
-    const textFiles = atts.filter((a) => a.kind === "text");
-    const images = atts.filter((a) => a.kind === "image");
-    let finalText = text;
-    if (textFiles.length > 0) {
-      finalText = textFiles.map((f) => `File: ${f.name}\n\`\`\`\n${f.content}\n\`\`\``).join("\n\n") + (text ? "\n\n" + text : "");
-    }
-    if (images.length === 0) return finalText;
-    const parts: ContentPart[] = [];
-    if (finalText) parts.push({ type: "text", text: finalText });
-    images.forEach((img) => parts.push({ type: "image_url", image_url: { url: img.content } }));
-    return parts;
-  };
-
-  const handleSendWithContent = (text: string, atts: Attachment[]) => {
-    const rawText = text.trim();
-    if ((!rawText && atts.length === 0) || chatMutation.isPending || isLimited) return;
-    if (isGuest && guestMessageCount >= GUEST_DAILY_LIMIT && !windowResetAt) return;
-
-    const autoModel = detectModel(rawText, atts);
-    setSelectedModel(autoModel);
-    const imageRequest = autoModel === "engagera-image";
-    setIsImageGen(imageRequest);
-
-    // If quoting a message, prepend a reply context prefix
-    let finalText = rawText;
-    if (quotedMessage) {
-      const quotedText = typeof quotedMessage.content === "string"
-        ? quotedMessage.content
-        : getTextContent(quotedMessage.content);
-      const truncated = quotedText.length > 120 ? quotedText.slice(0, 120) + "…" : quotedText;
-      finalText = `[Replying to: "${truncated}"]\n\n${rawText}`;
-    }
-    setQuotedMessage(null);
-
-    const msgContent = buildContent(finalText, atts);
-    const userMsg: Message = { role: "user", content: msgContent };
-    const updated = [...messages, userMsg];
-    setMessages(updated);
-    setInput("");
-    setAttachments([]);
-    if (textareaRef.current) textareaRef.current.style.height = "auto";
-    recordMessage(rawText || "image", autoModel);
-
-    const contextHint = getContextHint();
-    chatMutation.mutate(
-      {
-        messages: updated as any,
-        model: autoModel,
-        ...(activeConversationId ? { conversationId: activeConversationId } : {}),
-        ...(contextHint ? { contextHint } : {}),
-      },
+    chatCompletion.mutate(
+      { messages: newMessages, model: selectedModel, conversationId },
       {
         onSuccess: (res) => {
-          setIsImageGen(false);
-          const assistantMsg: Message = {
-            role: "assistant",
-            content: res.message.content,
-            ...(res.searchInfo ? { searchInfo: res.searchInfo } : {}),
-            ...(res.crawledUrls?.length ? { crawledUrls: res.crawledUrls } : {}),
-          };
-          const withReply: Message[] = [...updated, assistantMsg];
-          setMessages(withReply);
-          if (res.conversationId) setActiveConversationId(res.conversationId);
-          if (res.guestMessageCount !== undefined) setGuestMessageCount(res.guestMessageCount);
-          if (voiceOpen) phoneVoice.speakResponse(res.message.content);
-          refetchConversations();
-        },
-        onError: (err: unknown) => {
-          setIsImageGen(false);
-          const e = err as { status?: number; data?: { error?: string; windowResetAt?: string; guestMessageCount?: number } };
-          if (e?.status === 429) {
-            if (e?.data?.windowResetAt) setWindowResetAt(e.data.windowResetAt);
-            if (e?.data?.guestMessageCount !== undefined) setGuestMessageCount(e.data.guestMessageCount);
-            setMessages(messages);
-            setUpgradeModalOpen(true);
-          } else {
-            setMessages([...updated, { role: "assistant", content: "Sorry, something went wrong. Please try again." }]);
+          setMessages([...newMessages, { role: "assistant", content: res.message.content }]);
+          if (!conversationId && res.conversationId) {
+            setConversationId(res.conversationId);
+            if (user) refetchConversations();
           }
         },
+        onError: (err: any) => {
+          if (err.status === 403 || err?.data?.guestMessageLimit) {
+            setGuestLimitReached(true);
+          } else {
+            // Remove user message if failed
+            setMessages(messages);
+            alert("Failed to send message: " + (err.message || "Unknown error"));
+          }
+        }
       }
     );
   };
 
-  const handleSend = (text?: string) => handleSendWithContent(text ?? input, attachments);
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
   };
 
-  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInput(e.target.value);
-    e.target.style.height = "auto";
-    e.target.style.height = Math.min(e.target.scrollHeight, 140) + "px";
+  const handleNewChat = () => {
+    setConversationId(undefined);
+    setMessages([]);
+    setGuestLimitReached(false);
+    if (isMobileSidebarOpen) setIsMobileSidebarOpen(false);
   };
 
-  const guestRemaining = Math.max(0, GUEST_DAILY_LIMIT - guestMessageCount);
-
-  return (
-    <div className="flex bg-[#0a0a0a] text-foreground overflow-hidden" style={{ height: "100dvh" }}>
-
-      {/* ── Mobile sidebar backdrop ──────────────────────────────────────────── */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-30 bg-black/60 md:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      {/* ── Sidebar ─────────────────────────────────────────────────────────── */}
-      {/* Mobile: fixed overlay (doesn't push main content).
-          Desktop: inline flex sibling that pushes content right. */}
-      <aside className={cn(
-        "flex flex-col border-r border-[#1a1a1a] bg-[#0d0d0d] overflow-hidden transition-all duration-200 shrink-0",
-        // Mobile: fixed full-height drawer on the left, sits above content
-        "max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:h-full",
-        sidebarOpen ? "w-60" : "w-0"
-      )}>
-        {/* Logo */}
-        <div className="flex items-center gap-2.5 px-4 h-12 border-b border-[#1a1a1a] shrink-0">
-          <img src={logoSrc} alt="Engagera" className="h-6 w-6 object-contain" />
-          <span className="font-semibold text-sm tracking-tight">Engagera</span>
-        </div>
-
-        {/* New chat */}
-        <div className="px-3 pt-2 shrink-0">
-          <button
-            onClick={handleNewChat}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-xs font-medium text-muted-foreground hover:bg-[#1a1a1a] hover:text-foreground transition-colors"
-          >
-            <SquarePen className="h-3.5 w-3.5" />
-            New chat
-          </button>
-        </div>
-
-
-        {/* Conversations */}
-        <div className="flex-1 overflow-y-auto px-3 pt-3 pb-2">
-          {!user && !authLoading ? (
-            <p className="text-[11px] text-muted-foreground/40 px-3">Sign in to see history</p>
-          ) : Array.isArray(conversations) && conversations.length > 0 ? (
-            <>
-              <p className="text-[10px] uppercase tracking-widest text-muted-foreground/40 px-3 mb-2">Recent</p>
-              {conversations.map((conv: { id: number; title: string; updated_at?: string }) => (
-                <div
-                  key={conv.id}
-                  onClick={() => handleSelectConversation(conv.id)}
-                  className={cn(
-                    "group flex items-center justify-between gap-1 px-3 py-2 rounded-md cursor-pointer text-xs transition-colors",
-                    activeConversationId === conv.id
-                      ? "bg-[#1a1a1a] text-foreground"
-                      : "text-muted-foreground hover:bg-[#161616] hover:text-foreground"
-                  )}
-                >
-                  <span className="truncate flex-1">{conv.title ?? "Untitled"}</span>
-                  <button
-                    onClick={(e) => handleDeleteConversation(e, conv.id)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground/50 hover:text-foreground"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                </div>
-              ))}
-            </>
-          ) : (
-            <p className="text-[11px] text-muted-foreground/40 px-3">No conversations yet</p>
-          )}
-        </div>
-
-        {/* Guest counter */}
-        {isGuest && (
-          <div className="px-4 py-3 border-t border-[#1a1a1a] shrink-0">
-            {windowResetAt ? (
-              <div className="flex items-center gap-2 text-[11px] text-amber-400/70">
-                <Clock className="h-3 w-3 shrink-0" />
-                <span>Resets in {countdown}</span>
-              </div>
-            ) : (
-              <>
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground/60 mb-1.5">
-                  <span>Free messages</span>
-                  <span>{guestRemaining}/{GUEST_DAILY_LIMIT}</span>
-                </div>
-                <div className="h-0.5 bg-[#1a1a1a] rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-primary/60 rounded-full transition-all"
-                    style={{ width: `${(guestRemaining / GUEST_DAILY_LIMIT) * 100}%` }}
-                  />
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* Nav */}
-        <nav className="px-3 py-2 border-t border-[#1a1a1a] shrink-0">
-          {[
-            { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-            { href: "/usage", label: "Usage", icon: Activity },
-            { href: "/docs", label: "Documentation", icon: FileText },
-          ].map(({ href, label, icon: Icon }) => (
-            <Link key={href} href={href}>
-              <div className="flex items-center gap-2 px-3 py-2 rounded-md text-xs text-muted-foreground hover:bg-[#1a1a1a] hover:text-foreground transition-colors cursor-pointer">
-                <Icon className="h-3.5 w-3.5" />
-                {label}
-              </div>
-            </Link>
-          ))}
-        </nav>
-
-        {/* Auth */}
-        <div className="px-3 pb-3 shrink-0">
-          {authLoading ? null : user ? (
-            <div className="flex items-center gap-2 px-3 py-2">
-              {user.user_metadata?.avatar_url ? (
-                <img
-                  src={user.user_metadata.avatar_url}
-                  alt=""
-                  className="h-5 w-5 rounded-full object-cover shrink-0 border border-border/50"
-                  referrerPolicy="no-referrer"
-                />
-              ) : (
-                <div className="h-5 w-5 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
-                  <span className="text-[10px] font-semibold text-primary">
-                    {user.email?.[0]?.toUpperCase() ?? "U"}
-                  </span>
-                </div>
-              )}
-              <p className="text-[11px] text-muted-foreground flex-1 truncate">
-                {user.user_metadata?.full_name ?? user.user_metadata?.name ?? user.email}
-              </p>
-            </div>
-          ) : (
-            <Link href="/sign-in">
-              <div className="flex items-center gap-2 px-3 py-2 rounded-md text-xs text-muted-foreground hover:bg-[#1a1a1a] hover:text-foreground transition-colors cursor-pointer">
-                <LogIn className="h-3.5 w-3.5" />
-                Sign in
-              </div>
-            </Link>
-          )}
-        </div>
-      </aside>
-
-      {/* ── Main ──────────────────────────────────────────────────────────────── */}
-      {/* On mobile: sidebar is fixed overlay, so this div takes full viewport width.
-          On desktop: flex-1 takes remaining width after the inline sidebar. */}
-      <div className="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden w-full">
-
-        {/* Top bar — always visible, explicit bg so it's never transparent */}
-        <header className="shrink-0 h-12 border-b border-[#1a1a1a] bg-[#0a0a0a] flex items-center px-3 gap-2 z-10">
-          <button
-            onClick={() => setSidebarOpen((v) => !v)}
-            className="h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:bg-[#1a1a1a] hover:text-foreground transition-colors"
-            aria-label="Toggle menu"
-          >
-            <AlignJustify className="h-4 w-4" />
-          </button>
-
-          {/* Logo — always on mobile (sidebar is overlay so it's hidden); desktop: only when sidebar closed */}
-          <div className="flex items-center gap-2 md:hidden">
-            <img src={logoSrc} alt="Engagera" className="h-5 w-5 object-contain" />
-            <span className="font-semibold text-sm tracking-tight">Engagera</span>
-          </div>
-          {!sidebarOpen && (
-            <div className="hidden md:flex items-center gap-2">
-              <img src={logoSrc} alt="Engagera" className="h-5 w-5 object-contain" />
-              <span className="font-semibold text-sm tracking-tight">Engagera</span>
-            </div>
-          )}
-
-          <div className="flex-1" />
-
-          {!user && !authLoading && (
-            <div className="flex items-center gap-1.5">
-              <Link href="/sign-in">
-                <button className="text-xs text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-md hover:bg-[#1a1a1a]">
-                  Sign in
-                </button>
-              </Link>
-              <Link href="/sign-up">
-                <button className="text-xs bg-primary text-primary-foreground px-3 py-1.5 rounded-md font-medium hover:bg-primary/90 transition-colors">
-                  Get API Key
-                </button>
-              </Link>
-            </div>
-          )}
-
-          {user && (
-            <button
-              onClick={handleNewChat}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-md hover:bg-[#1a1a1a]"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              New chat
-            </button>
-          )}
-        </header>
-
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 pb-2">
-          {messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full px-4 py-8">
-              <div className="mb-7 text-center">
-                <div className="h-12 w-12 border border-[#1a1a1a] flex items-center justify-center mx-auto mb-4">
-                  <img src={logoSrc} alt="Engagera" className="h-7 w-7 object-contain" />
-                </div>
-                <h1 className="text-xl font-semibold tracking-tight mb-1">What can I help with?</h1>
-                <p className="text-xs text-muted-foreground">
-                  Powered by <span className="text-foreground/80 font-medium">Engagera AI</span>
-                </p>
-                {isGuest && !windowResetAt && (
-                  <p className="text-[11px] text-muted-foreground/50 mt-2">
-                    {guestRemaining} free message{guestRemaining !== 1 ? "s" : ""} remaining ·{" "}
-                    <Link href="/sign-up">
-                      <span className="text-primary cursor-pointer hover:underline">Sign up for unlimited</span>
-                    </Link>
-                  </p>
-                )}
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 w-full max-w-xl">
-                {SUGGESTED_PROMPTS.map((p) => (
-                  <button
-                    key={p.label}
-                    onClick={() => handleSend(p.label + " " + p.sub)}
-                    disabled={isLimited}
-                    className="text-left p-3 border border-[#1a1a1a] bg-[#0d0d0d] hover:bg-[#111] hover:border-[#222] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <p className="text-xs font-medium text-foreground/80">{p.label}</p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">{p.sub}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="max-w-2xl mx-auto px-4 py-8 space-y-1">
-              {messages.map((msg, i) => {
-                const isUser = msg.role === "user";
-                const isHovered = hoveredMsgIdx === i;
-                const isCopied = copiedMsgIdx === i;
-                const textContent = typeof msg.content === "string"
-                  ? msg.content
-                  : getTextContent(msg.content);
-
-                const handleCopy = () => {
-                  navigator.clipboard.writeText(textContent).then(() => {
-                    setCopiedMsgIdx(i);
-                    setTimeout(() => setCopiedMsgIdx(null), 1800);
-                  });
-                };
-
-                const handleQuote = () => {
-                  setQuotedMessage(msg);
-                  textareaRef.current?.focus();
-                };
-
-                return (
-                  <div
-                    key={i}
-                    className={cn(
-                      "group flex gap-3 py-1 px-1 rounded-xl transition-colors",
-                      isUser ? "justify-end" : "justify-start",
-                      isHovered && "bg-white/[0.02]"
-                    )}
-                    onMouseEnter={() => setHoveredMsgIdx(i)}
-                    onMouseLeave={() => setHoveredMsgIdx(null)}
-                    style={{ animation: "msgFadeIn 0.22s ease both" }}
-                  >
-                    {!isUser && (
-                      <div className="h-7 w-7 flex items-center justify-center shrink-0 mt-0.5">
-                        <img src={logoSrc} alt="" className="h-4 w-4 object-contain opacity-70" />
-                      </div>
-                    )}
-
-                    <div className={cn("flex flex-col gap-1 min-w-0 overflow-hidden", isUser ? "items-end" : "items-start", "max-w-[80%]")}>
-                      <div className={cn(
-                        "px-4 py-2.5 text-sm leading-relaxed overflow-hidden min-w-0",
-                        isUser
-                          ? "bg-[#1a1a1a] text-foreground rounded-2xl rounded-tr-sm"
-                          : "text-foreground/90 rounded-2xl rounded-tl-sm"
-                      )}>
-                        {isUser ? (
-                          <div>
-                            {Array.isArray(msg.content) ? (
-                              <>
-                                {msg.content.map((part, pi) =>
-                                  part.type === "text" ? (
-                                    <div key={pi} className="whitespace-pre-wrap break-words">{part.text}</div>
-                                  ) : part.type === "image_url" ? (
-                                    <img key={pi} src={part.image_url.url} alt="attachment" className="mt-2 max-w-[200px] rounded-lg" />
-                                  ) : null
-                                )}
-                              </>
-                            ) : (
-                              <div className="whitespace-pre-wrap break-words">{msg.content as string}</div>
-                            )}
-                          </div>
-                        ) : (
-                          <div>
-                            {msg.crawledUrls && msg.crawledUrls.length > 0 && (
-                              <WebCrawlIndicator urls={msg.crawledUrls} />
-                            )}
-                            {msg.searchInfo && (
-                              <WebSearchIndicator searchInfo={msg.searchInfo} />
-                            )}
-                            <MessageContent content={textContent} />
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Action toolbar — visible on hover */}
-                      <div className={cn(
-                        "flex items-center gap-0.5 transition-all duration-150",
-                        isUser ? "flex-row-reverse" : "flex-row",
-                        isHovered ? "opacity-100 translate-y-0" : "opacity-0 pointer-events-none translate-y-1"
-                      )}>
-                        <button
-                          onClick={handleCopy}
-                          title="Copy"
-                          className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/60 hover:text-foreground hover:bg-white/5 transition-colors"
-                        >
-                          {isCopied ? <Check className="h-3 w-3 text-green-400" /> : <Copy className="h-3 w-3" />}
-                          <span>{isCopied ? "Copied" : "Copy"}</span>
-                        </button>
-                        <button
-                          onClick={handleQuote}
-                          title="Reply"
-                          className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/60 hover:text-foreground hover:bg-white/5 transition-colors"
-                        >
-                          <CornerUpLeft className="h-3 w-3" />
-                          <span>Reply</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {isUser && <div className="w-7 shrink-0" />}
-                  </div>
-                );
-              })}
-
-              {chatMutation.isPending && (
-                <div className="flex gap-3 justify-start">
-                  <div className="h-7 w-7 flex items-center justify-center shrink-0 mt-0.5">
-                    <img src={logoSrc} alt="" className="h-4 w-4 object-contain opacity-70" />
-                  </div>
-                  {isImageGen ? (
-                    /* ── Image generation loading state ─────────────────────── */
-                    <div className="flex items-start gap-3 px-1 py-2">
-                      {/* Animated canvas preview */}
-                      <div className="relative h-16 w-16 rounded-lg border border-primary/20 bg-[#0d0d0d] shrink-0 overflow-hidden">
-                        <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-primary/5 animate-pulse" />
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <ImageIcon className="h-6 w-6 text-primary/40" />
-                        </div>
-                        {/* Scanning line */}
-                        <div
-                          className="absolute left-0 right-0 h-0.5 bg-primary/30"
-                          style={{ animation: "scanLine 2s ease-in-out infinite" }}
-                        />
-                      </div>
-                      <div className="pt-1">
-                        <p className="text-sm font-medium text-foreground/80">Generating image…</p>
-                        <p className="text-[11px] text-muted-foreground/50 mt-0.5">Creating with DALL·E 3 · ~10–15s</p>
-                        <div className="flex gap-1 mt-2">
-                          <span className="h-1 w-1 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                          <span className="h-1 w-1 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                          <span className="h-1 w-1 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    /* ── Normal chat loading state ──────────────────────────── */
-                    <div className="flex items-center gap-1.5 px-4 py-3">
-                      <span className="h-1.5 w-1.5 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                      <span className="h-1.5 w-1.5 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: "120ms" }} />
-                      <span className="h-1.5 w-1.5 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: "240ms" }} />
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div ref={messagesEndRef} />
-            </div>
-          )}
-        </div>
-
-        {/* ── Bottom: voice strip (during call) or text input ─────────────────── */}
-        {voiceOpen ? (
-          <VoiceCallStrip
-            state={phoneVoice.state}
-            callDuration={phoneVoice.callDuration}
-            transcript={phoneVoice.transcript}
-            whisperReady={phoneVoice.whisperReady}
-            aiPending={chatMutation.isPending}
-            onEnd={() => { phoneVoice.endCall(); setVoiceOpen(false); }}
-          />
-        ) : (
-          <div className="shrink-0 px-4 pb-4 pt-2 max-w-2xl mx-auto w-full">
-
-            {/* 24hr limit notice */}
-            {isGuest && windowResetAt && (
-              <button
-                onClick={() => setUpgradeModalOpen(true)}
-                className="flex items-center justify-between mb-3 px-4 py-2.5 border border-amber-500/20 bg-amber-500/5 rounded-xl text-xs w-full text-left hover:bg-amber-500/10 transition-colors"
-              >
-                <div className="flex items-center gap-2 text-amber-400/80">
-                  <Clock className="h-3.5 w-3.5 shrink-0" />
-                  <span>Free limit reached · Resets in <span className="font-semibold">{countdown}</span></span>
-                </div>
-                <span className="text-primary font-semibold shrink-0">Unlock unlimited →</span>
-              </button>
-            )}
-
-            {/* Attachment preview strip */}
-            {attachments.length > 0 && (
-              <div className="flex flex-wrap gap-2 mb-2 px-1">
-                {attachments.map((att) => (
-                  <div key={att.id} className="relative group flex items-center gap-1.5 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-2 py-1.5 text-xs text-muted-foreground">
-                    {att.kind === "image" && att.preview ? (
-                      <img src={att.preview} alt="" className="h-6 w-6 rounded object-cover shrink-0" />
-                    ) : (
-                      <Paperclip className="h-3 w-3 shrink-0" />
-                    )}
-                    <span className="max-w-[100px] truncate">{att.name}</span>
-                    <button
-                      onClick={() => setAttachments((prev) => prev.filter((a) => a.id !== att.id))}
-                      className="ml-0.5 text-muted-foreground/40 hover:text-foreground transition-colors"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Hidden file input */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*,.txt,.md,.csv,.json,.js,.ts,.py,.html,.css,.xml,.yaml,.yml"
-              multiple
-              className="hidden"
-              onChange={handleFileChange}
-            />
-
-            {/* Quote / reply preview strip */}
-            {quotedMessage && (
-              <div className="flex items-start gap-2 px-4 py-2 mb-1 rounded-xl bg-[#111] border border-[#222] animate-in fade-in slide-in-from-bottom-1 duration-150">
-                <div className="w-0.5 self-stretch bg-primary/60 rounded-full shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-[11px] text-primary/70 font-medium mb-0.5">
-                    {quotedMessage.role === "user" ? "You" : "Engagera"}
-                  </p>
-                  <p className="text-[12px] text-muted-foreground/70 truncate">
-                    {(typeof quotedMessage.content === "string"
-                      ? quotedMessage.content
-                      : getTextContent(quotedMessage.content)
-                    ).slice(0, 100)}
-                    {(typeof quotedMessage.content === "string" ? quotedMessage.content : getTextContent(quotedMessage.content)).length > 100 ? "…" : ""}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setQuotedMessage(null)}
-                  className="text-muted-foreground/40 hover:text-muted-foreground transition-colors p-0.5 shrink-0 mt-0.5"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            )}
-
-            {/* Pill input */}
-            <div className={cn(
-              "flex items-end rounded-full border transition-colors",
-              isLimited
-                ? "border-[#1a1a1a] opacity-50 pointer-events-none"
-                : "border-[#222] focus-within:border-[#333] bg-[#111]"
-            )}>
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={handleTextareaChange}
-                onKeyDown={handleKeyDown}
-                placeholder={
-                  isLimited
-                    ? `Available in ${countdown}`
-                    : isGuest && guestMessageCount >= GUEST_DAILY_LIMIT
-                    ? "Sign up to continue..."
-                    : attachments.length > 0
-                    ? "Add a message (optional)…"
-                    : "Message Engagera..."
-                }
-                disabled={chatMutation.isPending || isLimited}
-                rows={1}
-                className="flex-1 bg-transparent text-sm pl-4 pr-3 py-3 placeholder:text-muted-foreground/40 focus:outline-none resize-none max-h-[120px] min-h-0"
-              />
-
-              <div className="pr-2 pb-2 pl-1 flex items-end gap-1">
-                {/* File upload */}
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={chatMutation.isPending || isLimited}
-                  title="Attach file"
-                  className="h-8 w-8 flex items-center justify-center rounded-full text-muted-foreground/40 hover:text-muted-foreground disabled:opacity-20 transition-colors"
-                >
-                  <Paperclip className="h-3.5 w-3.5" />
-                </button>
-
-                {/* Voice call button */}
-                {phoneVoice.supported && (
-                  <button
-                    onClick={() => { setVoiceOpen(true); phoneVoice.beginCall(); }}
-                    disabled={chatMutation.isPending || isLimited}
-                    title="Start voice call"
-                    className={cn(
-                      "h-8 w-8 flex items-center justify-center rounded-full transition-all",
-                      "text-muted-foreground/40 hover:text-primary",
-                      (chatMutation.isPending || isLimited) && "opacity-20"
-                    )}
-                  >
-                    <Mic className="h-3.5 w-3.5" />
-                  </button>
-                )}
-
-                {/* Send */}
-                <button
-                  onClick={() => handleSend()}
-                  disabled={(!input.trim() && attachments.length === 0) || chatMutation.isPending || isLimited}
-                  className="h-8 w-8 flex items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-30 disabled:cursor-not-allowed hover:bg-primary/90 transition-all"
-                >
-                  {chatMutation.isPending ? (
-                    <span className="h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <Send className="h-3.5 w-3.5" />
-                  )}
-                </button>
-              </div>
-            </div>
-
-            <p className="text-center text-[11px] text-muted-foreground/30 mt-2">
-              Engagera can make mistakes. Verify important information.
-            </p>
-          </div>
-        )}
-
-      {/* Upgrade modal — shown when free limit is hit */}
-      <UpgradeModal
-        open={upgradeModalOpen}
-        onClose={() => setUpgradeModalOpen(false)}
-        countdown={countdown || undefined}
-        reason="limit"
-      />
-
-      </div>
-    </div>
-  );
-}
-
-/* ── Voice Call Strip — inline, replaces the text input during a call ─────── */
-interface VoiceCallStripProps {
-  state: PhoneState;
-  transcript: string;
-  callDuration: number;
-  whisperReady: boolean;
-  aiPending: boolean;
-  onEnd: () => void;
-}
-
-function fmt(s: number) {
-  return `${Math.floor(s / 60).toString().padStart(2, "0")}:${(s % 60).toString().padStart(2, "0")}`;
-}
-
-function VoiceCallStrip({
-  state,
-  transcript,
-  callDuration,
-  whisperReady,
-  aiPending,
-  onEnd,
-}: VoiceCallStripProps) {
-  const effectiveState: PhoneState = aiPending ? "thinking" : state;
-
-  const stateLabel: Record<PhoneState, string> = {
-    idle:       "Connecting…",
-    connecting: "Connecting…",
-    listening:  "Listening…",
-    processing: "Transcribing…",
-    thinking:   "Thinking…",
-    speaking:   "Speaking…",
+  const loadConversation = (id: number) => {
+    setConversationId(id);
+    if (isMobileSidebarOpen) setIsMobileSidebarOpen(false);
   };
 
-  const dotColor =
-    effectiveState === "listening"  ? "bg-green-400 animate-pulse" :
-    effectiveState === "speaking"   ? "bg-emerald-400 animate-pulse" :
-    effectiveState === "thinking" || effectiveState === "processing"
-                                    ? "bg-yellow-400 animate-pulse" :
-    "bg-zinc-600";
+  const handleDeleteConversation = (id: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    deleteConversation.mutate({ id }, {
+      onSuccess: () => {
+        refetchConversations();
+        if (conversationId === id) {
+          handleNewChat();
+        }
+      }
+    });
+  };
 
-  return (
-    <div className="shrink-0 px-4 pb-4 pt-2 max-w-2xl mx-auto w-full">
-      <div className="flex items-center gap-3 px-4 py-3 rounded-full bg-[#111] border border-[#222]">
-
-        {/* State dot */}
-        <span className={cn("h-2 w-2 rounded-full shrink-0", dotColor)} />
-
-        {/* Middle: waveform animation OR transcript OR state label */}
-        <div className="flex-1 min-w-0 flex items-center">
-          {transcript ? (
-            <p className="text-xs text-muted-foreground/70 truncate italic">"{transcript}"</p>
-          ) : effectiveState === "listening" ? (
-            <div className="flex items-end gap-[2px] h-4">
-              {[3, 5, 4, 6, 3, 5, 4, 6, 3, 5].map((h, i) => (
-                <span
-                  key={i}
-                  className="w-[2px] rounded-full bg-green-400/60 animate-bounce"
-                  style={{ height: `${h * 2}px`, animationDelay: `${i * 0.07}s`, animationDuration: "0.7s" }}
-                />
-              ))}
-            </div>
-          ) : effectiveState === "speaking" ? (
-            <div className="flex items-end gap-[2px] h-4">
-              {[4, 7, 5, 8, 6, 4, 7, 5, 8, 6].map((h, i) => (
-                <span
-                  key={i}
-                  className="w-[2px] rounded-full bg-emerald-400/60 animate-bounce"
-                  style={{ height: `${h * 2}px`, animationDelay: `${i * 0.05}s`, animationDuration: "0.5s" }}
-                />
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-muted-foreground/40">
-              {!whisperReady ? "Warming up…" : stateLabel[effectiveState]}
-            </p>
-          )}
-        </div>
-
-        {/* Timer */}
-        <span className="text-xs text-muted-foreground/30 shrink-0 font-mono tabular-nums">
-          {fmt(callDuration)}
-        </span>
-
-        {/* Mic indicator */}
-        <Mic className={cn(
-          "h-3.5 w-3.5 shrink-0 transition-colors",
-          effectiveState === "listening" ? "text-green-400" : "text-muted-foreground/20"
-        )} />
-
-        {/* Hang up */}
+  const SidebarContent = () => (
+    <div className="flex flex-col h-full bg-black border-r border-white/15 w-full">
+      <div className="p-4 border-b border-white/15">
         <button
-          onClick={onEnd}
-          title="End voice call"
-          className="h-8 w-8 rounded-full bg-red-500 hover:bg-red-600 active:bg-red-700 flex items-center justify-center transition-colors shrink-0"
+          onClick={handleNewChat}
+          className="w-full flex items-center gap-2 px-4 py-2 border border-white/20 hover:bg-white/10 transition-colors text-sm font-medium"
         >
-          <PhoneOff className="h-3.5 w-3.5 text-white" />
+          <Plus className="w-4 h-4" />
+          New Chat
         </button>
       </div>
-
-      <p className="text-center text-[11px] text-muted-foreground/30 mt-2">
-        Engagera can make mistakes. Verify important information.
-      </p>
+      <div className="flex-1 overflow-y-auto scrollbar-thin p-2 space-y-1">
+        {conversations.length === 0 ? (
+          <div className="p-4 text-center text-white/40 text-sm">No conversations yet.</div>
+        ) : (
+          conversations.map((conv) => (
+            <div
+              key={conv.id}
+              onClick={() => loadConversation(conv.id)}
+              className={`flex items-center justify-between p-3 cursor-pointer text-sm transition-colors ${
+                conversationId === conv.id ? "bg-white/10" : "hover:bg-white/5"
+              }`}
+            >
+              <div className="flex items-center gap-3 overflow-hidden">
+                <MessageSquare className="w-4 h-4 shrink-0 text-white/60" />
+                <span className="truncate">{conv.title || "New Conversation"}</span>
+              </div>
+              <button
+                onClick={(e) => handleDeleteConversation(conv.id, e)}
+                className="text-white/40 hover:text-white shrink-0 ml-2"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+      <div className="p-4 border-t border-white/15">
+        <Select value={selectedModel} onValueChange={setSelectedModel}>
+          <SelectTrigger className="w-full bg-transparent border-white/20 rounded-none h-10">
+            <div className="flex items-center gap-2">
+              <Cpu className="w-4 h-4 text-white/60" />
+              <SelectValue placeholder="Select Model" />
+            </div>
+          </SelectTrigger>
+          <SelectContent className="bg-black border-white/20 rounded-none">
+            {availableModels.map((m: any) => (
+              <SelectItem key={m.id} value={m.id} className="rounded-none hover:bg-white/10 focus:bg-white/10">
+                {m.name || m.id}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
     </div>
   );
-}
 
+  return (
+    <PublicLayout>
+      <div className="flex h-full w-full overflow-hidden">
+        {/* Desktop Sidebar (Only if user is auth'd) */}
+        {user && (
+          <div className="hidden md:block w-64 shrink-0 h-full">
+            <SidebarContent />
+          </div>
+        )}
+
+        {/* Chat Area */}
+        <div className="flex-1 flex flex-col h-full min-w-0 bg-black relative">
+          {/* Mobile Header (For Sidebar Toggle if auth'd) */}
+          {user && (
+            <div className="md:hidden flex items-center p-3 border-b border-white/15 shrink-0 bg-black">
+              <Sheet open={isMobileSidebarOpen} onOpenChange={setIsMobileSidebarOpen}>
+                <SheetTrigger asChild>
+                  <button className="p-2 border border-white/20 hover:bg-white/10">
+                    <Menu className="w-4 h-4" />
+                  </button>
+                </SheetTrigger>
+                <SheetContent side="left" className="p-0 bg-black border-r border-white/15 w-72 rounded-none sm:max-w-none">
+                  <SidebarContent />
+                </SheetContent>
+              </Sheet>
+              <div className="ml-4 font-mono text-sm tracking-tight font-bold">
+                ENGAGERA_CHAT
+              </div>
+            </div>
+          )}
+
+          {/* Model Selector for Guests (Desktop & Mobile) */}
+          {!user && (
+            <div className="absolute top-4 right-4 z-10 w-48">
+               <Select value={selectedModel} onValueChange={setSelectedModel}>
+                <SelectTrigger className="w-full bg-black border-white/20 rounded-none h-10 text-xs">
+                  <div className="flex items-center gap-2">
+                    <Cpu className="w-3.5 h-3.5 text-white/60" />
+                    <SelectValue placeholder="Select Model" />
+                  </div>
+                </SelectTrigger>
+                <SelectContent className="bg-black border-white/20 rounded-none text-xs">
+                  {availableModels.map((m: any) => (
+                    <SelectItem key={m.id} value={m.id} className="rounded-none hover:bg-white/10 focus:bg-white/10">
+                      {m.name || m.id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto p-4 md:p-8 scrollbar-thin">
+            {messages.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-center max-w-md mx-auto">
+                <div className="w-16 h-16 border border-white/20 flex items-center justify-center mb-6">
+                  <MessageSquare className="w-8 h-8 text-white/60" />
+                </div>
+                <h2 className="text-2xl font-light mb-2 tracking-tight">How can I help you today?</h2>
+                <p className="text-white/60 text-sm leading-relaxed mb-8">
+                  Engagera provides unified access to top-tier AI models. Type a message below to start a conversation.
+                </p>
+                {!user && (
+                  <div className="text-xs text-white/40 font-mono uppercase tracking-widest px-4 py-2 border border-white/10 bg-white/5">
+                    Guest Mode: 5 free messages available
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="max-w-3xl mx-auto space-y-6">
+                {messages.map((msg, idx) => (
+                  <div key={idx} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                    <div 
+                      className={`max-w-[85%] break-words whitespace-pre-wrap ${
+                        msg.role === "user" 
+                          ? "bg-white text-black px-4 py-3 rounded-none" 
+                          : "text-white"
+                      }`}
+                    >
+                      {msg.role === "assistant" ? (
+                        <MessageContent content={msg.content as string} />
+                      ) : (
+                        <div className="text-[0.875rem] leading-relaxed">{msg.content as string}</div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {chatCompletion.isPending && (
+                  <div className="flex justify-start">
+                    <div className="text-white/40 text-sm flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 bg-white/40 animate-pulse" style={{ animationDelay: "0ms" }}></span>
+                      <span className="w-1.5 h-1.5 bg-white/40 animate-pulse" style={{ animationDelay: "150ms" }}></span>
+                      <span className="w-1.5 h-1.5 bg-white/40 animate-pulse" style={{ animationDelay: "300ms" }}></span>
+                    </div>
+                  </div>
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+            )}
+          </div>
+
+          {/* Guest Limit Overlay */}
+          {guestLimitReached && !user && (
+            <div className="absolute inset-x-0 bottom-full mb-4 mx-4 md:mx-auto max-w-xl bg-black border border-white p-6 shadow-2xl z-20">
+              <h3 className="text-xl font-medium mb-2">Guest Limit Reached</h3>
+              <p className="text-white/60 text-sm mb-6">
+                You've used all 5 free messages. Sign up to continue chatting, access the API, and explore more models.
+              </p>
+              <div className="flex gap-4">
+                <button 
+                  onClick={() => setLocation("/sign-up")}
+                  className="flex-1 py-2 bg-white text-black font-medium hover:bg-white/90 text-sm"
+                >
+                  Sign Up Free
+                </button>
+                <button 
+                  onClick={() => setLocation("/sign-in")}
+                  className="flex-1 py-2 border border-white/20 hover:bg-white/10 text-sm"
+                >
+                  Sign In
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Input Footer */}
+          <div className="shrink-0 p-4 bg-black border-t border-white/15">
+            <div className="max-w-3xl mx-auto relative flex items-end">
+              <textarea
+                ref={chatInputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={guestLimitReached ? "Sign up to continue..." : "Message Engagera..."}
+                disabled={guestLimitReached || chatCompletion.isPending}
+                className="w-full bg-transparent border border-white/30 focus:border-white outline-none resize-none py-3 pl-4 pr-12 text-sm max-h-48 scrollbar-thin min-h-[50px] transition-colors disabled:opacity-50"
+                rows={1}
+                style={{
+                  height: "auto",
+                }}
+                onInput={(e) => {
+                  const target = e.target as HTMLTextAreaElement;
+                  target.style.height = 'auto';
+                  target.style.height = `${Math.min(target.scrollHeight, 200)}px`;
+                }}
+              />
+              <button
+                onClick={handleSend}
+                disabled={!input.trim() || chatCompletion.isPending || guestLimitReached}
+                className="absolute right-2 bottom-2 p-1.5 text-white/60 hover:text-white disabled:opacity-30 transition-colors"
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="max-w-3xl mx-auto text-center mt-3">
+              <p className="text-[10px] text-white/30 font-mono uppercase tracking-wider">
+                Engagera AI can make mistakes. Verify important information.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </PublicLayout>
+  );
+}

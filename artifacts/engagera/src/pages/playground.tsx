@@ -1,550 +1,185 @@
-import React, { useState, useRef, useEffect } from "react";
-import { AppLayout } from "@/components/layout/AppLayout";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { useEdgeChatCompletion, type SearchInfo } from "@/hooks/useEdgeChatCompletion";
-import { useDevChat, type DevChatMessage } from "@/hooks/useDevChat";
+import React, { useState } from "react";
+import AppLayout from "@/components/layout/AppLayout";
+import { useListModels } from "@workspace/api-client-react";
+import { useEdgeChatCompletion, ChatMessage } from "@/hooks/useEdgeChatCompletion";
 import { MessageContent } from "@/components/MessageContent";
-import { WebSearchIndicator } from "@/components/WebSearchIndicator";
-import { WebCrawlIndicator } from "@/components/WebCrawlIndicator";
-import { detectModel } from "@/lib/autoModel";
-import { Send, RotateCcw, Code2, Zap, Monitor, RefreshCw, ExternalLink, X } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { logoSrc } from "@/lib/assets";
-
-interface Message {
-  role: "user" | "assistant";
-  content: string;
-  searchInfo?: SearchInfo;
-  crawledUrls?: string[];
-}
-
-function extractPreviewHtml(content: string): string | null {
-  const htmlMatch = content.match(/```(?:html|HTML)\n([\s\S]*?)```/);
-  if (!htmlMatch) return null;
-
-  const htmlContent = htmlMatch[1].trim();
-
-  if (
-    htmlContent.toLowerCase().includes("<!doctype") ||
-    htmlContent.toLowerCase().includes("<html")
-  ) {
-    return htmlContent;
-  }
-
-  const cssMatch = content.match(/```(?:css|CSS)\n([\s\S]*?)```/);
-  const jsMatch = content.match(
-    /```(?:javascript|js|JavaScript|JS|typescript|ts)\n([\s\S]*?)```/
-  );
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    * { box-sizing: border-box; }
-    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-    ${cssMatch ? cssMatch[1] : ""}
-  </style>
-</head>
-<body>
-  ${htmlContent}
-  ${jsMatch ? `<script>${jsMatch[1]}<\/script>` : ""}
-</body>
-</html>`;
-}
+import { Play, Settings2, Send, Save, Trash2, SlidersHorizontal } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function Playground() {
-  const chatMutation = useEdgeChatCompletion();
-  const devChatMutation = useDevChat();
-
-  const [devMode, setDevMode] = useState(false);
-  const [activeModel, setActiveModel] = useState<string>("engagera-2.0");
+  const { data: models = [] } = useListModels();
+  const [selectedModel, setSelectedModel] = useState<string>("engagera-pro");
+  const [systemPrompt, setSystemPrompt] = useState("You are a helpful and concise AI assistant.");
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [lastUsage, setLastUsage] = useState<{
-    inputTokens: number;
-    outputTokens: number;
-    totalTokens: number;
-  } | null>(null);
-  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
-  const [iframeKey, setIframeKey] = useState(0);
+  const [temperature, setTemperature] = useState(0.7);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const chatCompletion = useEdgeChatCompletion();
 
-  const isPending = devMode ? devChatMutation.isPending : chatMutation.isPending;
+  const handleSend = () => {
+    if (!input.trim() || chatCompletion.isPending) return;
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isPending]);
+    const userMsg: ChatMessage = { role: "user", content: input.trim() };
+    const conversation = messages.length === 0 && systemPrompt.trim()
+      ? [{ role: "system" as const, content: systemPrompt }, userMsg]
+      : [...messages, userMsg];
 
-  useEffect(() => {
-    if (!devMode) {
-      setPreviewHtml(null);
-      return;
-    }
-    const last = [...messages].reverse().find((m) => m.role === "assistant");
-    if (last) {
-      const extracted = extractPreviewHtml(last.content);
-      if (extracted) {
-        setPreviewHtml(extracted);
-        setIframeKey((k) => k + 1);
+    setMessages(conversation);
+    setInput("");
+
+    chatCompletion.mutate(
+      { messages: conversation, model: selectedModel },
+      {
+        onSuccess: (res) => {
+          setMessages([...conversation, { role: "assistant", content: res.message.content }]);
+        },
+        onError: (err) => {
+          alert("Error: " + err.message);
+          setMessages([...conversation]); // keep user msg
+        }
       }
-    }
-  }, [messages, devMode]);
-
-  const handleModeSwitch = (toDevMode: boolean) => {
-    setDevMode(toDevMode);
-    setMessages([]);
-    setLastUsage(null);
-    setInput("");
-    setPreviewHtml(null);
-    if (textareaRef.current) textareaRef.current.style.height = "auto";
+    );
   };
 
-  const handleSend = (e?: React.FormEvent) => {
-    e?.preventDefault();
-    if (!input.trim() || isPending) return;
-
-    const userMessage: Message = { role: "user", content: input.trim() };
-    const updatedMessages = [...messages, userMessage];
-    setMessages(updatedMessages);
-    setInput("");
-    setLastUsage(null);
-    if (textareaRef.current) textareaRef.current.style.height = "auto";
-
-    if (devMode) {
-      const devMessages: DevChatMessage[] = updatedMessages.map((m) => ({
-        role: m.role,
-        content: m.content,
-      }));
-
-      devChatMutation.mutate(
-        { messages: devMessages },
-        {
-          onSuccess: (response) => {
-            setMessages([
-              ...updatedMessages,
-              { role: "assistant", content: response.message.content },
-            ]);
-            setLastUsage(response.usage);
-          },
-          onError: (err: unknown) => {
-            const e = err as { data?: { error?: string }; message?: string };
-            const msg =
-              e?.data?.error ?? e?.message ?? "Something went wrong. Please try again.";
-            setMessages([
-              ...updatedMessages,
-              { role: "assistant", content: `⚠️ ${msg}` },
-            ]);
-          },
-        },
-      );
-    } else {
-      const autoModel = detectModel(input.trim());
-      setActiveModel(autoModel);
-
-      chatMutation.mutate(
-        { messages: updatedMessages, model: autoModel },
-        {
-          onSuccess: (response) => {
-            setMessages([
-              ...updatedMessages,
-              {
-                role: "assistant",
-                content: response.message.content,
-                searchInfo: response.searchInfo,
-                crawledUrls: response.crawledUrls,
-              },
-            ]);
-            setLastUsage(response.usage);
-          },
-          onError: (err: unknown) => {
-            const e = err as { data?: { error?: string }; message?: string };
-            const msg =
-              e?.data?.error ?? e?.message ?? "Something went wrong. Please try again.";
-            setMessages([
-              ...updatedMessages,
-              { role: "assistant", content: `⚠️ ${msg}` },
-            ]);
-          },
-        },
-      );
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.ctrlKey && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
   };
 
-  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInput(e.target.value);
-    e.target.style.height = "auto";
-    e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px";
-  };
-
-  const handleReset = () => {
+  const handleClear = () => {
     setMessages([]);
-    setLastUsage(null);
-    setInput("");
-    setPreviewHtml(null);
-  };
-
-  const handleOpenInNewTab = () => {
-    if (!previewHtml) return;
-    const blob = new Blob([previewHtml], { type: "text/html" });
-    const url = URL.createObjectURL(blob);
-    window.open(url, "_blank");
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
   };
 
   return (
-    <AppLayout requireAuth showSidebar>
-      <div className="flex flex-col h-[calc(100vh-3.5rem)]">
-        {/* Toolbar */}
-        <div className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
-          <div>
-            <h1 className="text-sm font-semibold tracking-tight">Playground</h1>
-            <p className="text-xs text-muted-foreground">
-              {devMode ? "Engagera Dev — AI Product Engineering Agent" : "Test models interactively"}
-            </p>
+    <AppLayout title="Playground">
+      <div className="flex flex-col lg:flex-row gap-6 h-[calc(100vh-140px)]">
+        {/* Settings Panel */}
+        <div className="w-full lg:w-80 flex flex-col gap-6 shrink-0 overflow-y-auto scrollbar-thin">
+          <div className="border border-white/15 p-4 bg-white/[0.02]">
+            <h3 className="text-sm font-medium flex items-center gap-2 mb-4">
+              <Settings2 className="w-4 h-4" />
+              Configuration
+            </h3>
+            
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs text-white/60 uppercase font-mono tracking-wider">Model</label>
+                <Select value={selectedModel} onValueChange={setSelectedModel}>
+                  <SelectTrigger className="w-full bg-black border-white/20 rounded-none text-sm">
+                    <SelectValue placeholder="Select a model" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-black border-white/20 rounded-none">
+                    {models.map(m => (
+                      <SelectItem key={m.id} value={m.id} className="rounded-none hover:bg-white/10">
+                        {m.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <label className="text-xs text-white/60 uppercase font-mono tracking-wider">Temperature</label>
+                  <span className="text-xs font-mono">{temperature.toFixed(2)}</span>
+                </div>
+                <input 
+                  type="range" 
+                  min="0" max="2" step="0.1" 
+                  value={temperature}
+                  onChange={(e) => setTemperature(parseFloat(e.target.value))}
+                  className="w-full accent-white"
+                />
+              </div>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {/* Mode toggle */}
-            <div className="flex items-center rounded-lg border border-border bg-muted/40 p-0.5 gap-0.5">
-              <button
-                onClick={() => handleModeSwitch(false)}
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all",
-                  !devMode
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <Zap className="h-3 w-3" />
-                Standard
-              </button>
-              <button
-                onClick={() => handleModeSwitch(true)}
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all",
-                  devMode
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <Code2 className="h-3 w-3" />
-                Dev Mode
-                <span className="ml-0.5 px-1 py-px text-[9px] font-semibold tracking-wide rounded bg-foreground/10 text-foreground/60 uppercase leading-none">Beta</span>
-              </button>
-            </div>
-
-            {messages.length > 0 && (
-              <>
-                {!devMode && (
-                  <span className="text-[11px] text-muted-foreground/50 hidden sm:inline">
-                    Auto:{" "}
-                    <span className="text-muted-foreground font-medium">{activeModel}</span>
-                  </span>
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleReset}
-                  className="gap-1.5 h-8 text-xs text-muted-foreground"
-                >
-                  <RotateCcw className="h-3 w-3" />
-                  Reset
-                </Button>
-              </>
-            )}
+          <div className="border border-white/15 p-4 bg-white/[0.02] flex-1 flex flex-col min-h-[200px]">
+            <h3 className="text-sm font-medium flex items-center gap-2 mb-4 shrink-0">
+              <SlidersHorizontal className="w-4 h-4" />
+              System Prompt
+            </h3>
+            <textarea
+              value={systemPrompt}
+              onChange={(e) => setSystemPrompt(e.target.value)}
+              placeholder="Enter system prompt..."
+              className="w-full flex-1 bg-black border border-white/20 p-3 text-sm focus:border-white outline-none resize-none scrollbar-thin transition-colors"
+            />
           </div>
         </div>
 
-        {/* Dev Mode banner */}
-        {devMode && messages.length === 0 && (
-          <div className="shrink-0 mx-6 mt-4 rounded-lg border border-border bg-card p-4">
-            <div className="flex items-start gap-3">
-              <div className="h-8 w-8 rounded-md bg-foreground/5 flex items-center justify-center shrink-0">
-                <Code2 className="h-4 w-4 text-foreground/70" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold">Engagera Dev</p>
-                <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-                  World-class autonomous AI Product Engineering Agent. Combines software
-                  architecture, full-stack development, database engineering, UI/UX, DevOps,
-                  code review, and project management to ship production-ready software.
-                </p>
-                <div className="flex flex-wrap gap-1.5 mt-2.5">
-                  {[
-                    "Build full apps",
-                    "Review & refactor code",
-                    "Design databases",
-                    "Generate APIs",
-                    "Debug & test",
-                    "Plan architecture",
-                  ].map((tag) => (
-                    <span
-                      key={tag}
-                      className="px-2 py-0.5 text-[11px] rounded-full border border-border bg-muted/40 text-muted-foreground"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
+        {/* Chat Panel */}
+        <div className="flex-1 border border-white/15 flex flex-col min-w-0 bg-black">
+          <div className="flex items-center justify-between p-3 border-b border-white/15 bg-white/[0.02] shrink-0">
+            <span className="text-sm font-medium">Session</span>
+            <button 
+              onClick={handleClear}
+              className="text-white/40 hover:text-white transition-colors"
+              title="Clear Session"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
           </div>
-        )}
 
-        {/* Body: split pane (chat left, preview right) */}
-        <div className="flex flex-1 min-h-0 overflow-hidden">
-
-          {/* LEFT: Chat pane */}
-          <div
-            className={cn(
-              "flex flex-col min-h-0 transition-all duration-200",
-              devMode && previewHtml ? "w-[52%] border-r border-border" : "flex-1",
-            )}
-          >
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto scrollbar-thin">
-              {messages.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-center px-6">
-                  {devMode ? (
-                    <>
-                      <div className="h-12 w-12 rounded-xl bg-foreground/5 flex items-center justify-center mb-5">
-                        <Code2 className="h-6 w-6 text-foreground/40" />
-                      </div>
-                      <p className="text-sm font-medium text-muted-foreground">
-                        Engagera Dev is ready
-                      </p>
-                      <p className="text-xs text-muted-foreground/60 mt-1 max-w-xs">
-                        Describe what you want to build, or paste code to review
-                      </p>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-6 max-w-lg w-full">
-                        {[
-                          {
-                            title: "Build a landing page",
-                            sub: "with hero, features & CTA — live preview",
-                          },
-                          {
-                            title: "Review my code",
-                            sub: "for security, performance & best practices",
-                          },
-                          {
-                            title: "Design a database schema",
-                            sub: "with relationships, indexes & RLS policies",
-                          },
-                          {
-                            title: "Generate a React component",
-                            sub: "responsive, accessible & production-ready",
-                          },
-                        ].map((s) => (
-                          <button
-                            key={s.title}
-                            onClick={() => {
-                              setInput(s.title + " " + s.sub);
-                              textareaRef.current?.focus();
-                            }}
-                            className="text-left px-4 py-3 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors"
-                          >
-                            <p className="text-xs font-medium">{s.title}</p>
-                            <p className="text-[11px] text-muted-foreground mt-0.5">{s.sub}</p>
-                          </button>
-                        ))}
-                      </div>
-                    </>
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
+            {messages.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-white/30 text-sm">
+                No messages in this session.
+              </div>
+            ) : (
+              messages.map((msg, idx) => (
+                <div key={idx} className={`p-4 border ${msg.role === 'system' ? 'border-white/10 bg-white/5' : msg.role === 'user' ? 'border-white/20 ml-8' : 'border-white/10 bg-white/[0.02] mr-8'}`}>
+                  <div className="text-[10px] uppercase font-mono tracking-wider text-white/40 mb-2">
+                    {msg.role}
+                  </div>
+                  {msg.role === "assistant" ? (
+                    <MessageContent content={msg.content as string} />
                   ) : (
-                    <>
-                      <img
-                        src={logoSrc}
-                        alt="Engagera"
-                        className="h-12 w-12 object-contain opacity-20 mb-5"
-                      />
-                      <p className="text-sm font-medium text-muted-foreground">
-                        Start a conversation
-                      </p>
-                      <p className="text-xs text-muted-foreground/60 mt-1">
-                        Type a message — the best model is chosen automatically
-                      </p>
-                    </>
+                    <div className="text-sm whitespace-pre-wrap font-mono">{msg.content as string}</div>
                   )}
                 </div>
-              ) : (
-                <div className="max-w-3xl mx-auto px-4 md:px-6 py-6 space-y-6">
-                  {messages.map((msg, idx) => (
-                    <div
-                      key={idx}
-                      className={cn(
-                        "flex gap-3",
-                        msg.role === "user" ? "justify-end" : "justify-start",
-                      )}
-                    >
-                      {msg.role === "assistant" && (
-                        <div className="h-7 w-7 rounded-md flex items-center justify-center shrink-0 mt-0.5">
-                          {devMode ? (
-                            <Code2 className="h-4 w-4 text-foreground/50" />
-                          ) : (
-                            <img
-                              src={logoSrc}
-                              alt=""
-                              className="h-4 w-4 object-contain opacity-70"
-                            />
-                          )}
-                        </div>
-                      )}
-                      <div
-                        className={cn(
-                          "min-w-0 overflow-hidden",
-                          msg.role === "user" ? "max-w-[78%]" : "max-w-[85%] space-y-0",
-                        )}
-                      >
-                        {msg.role === "assistant" && msg.crawledUrls && msg.crawledUrls.length > 0 && (
-                          <WebCrawlIndicator urls={msg.crawledUrls} />
-                        )}
-                        {msg.role === "assistant" && msg.searchInfo && (
-                          <WebSearchIndicator searchInfo={msg.searchInfo} />
-                        )}
-                        <div
-                          className={cn(
-                            "rounded-xl px-4 py-3 text-sm leading-relaxed overflow-hidden",
-                            msg.role === "user"
-                              ? "bg-foreground text-background rounded-br-sm"
-                              : "bg-card border border-border text-foreground rounded-bl-sm",
-                          )}
-                        >
-                          {msg.role === "user" ? (
-                            <div className="whitespace-pre-wrap break-words font-sans">{msg.content}</div>
-                          ) : (
-                            <MessageContent content={msg.content} />
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-
-                  {isPending && (
-                    <div className="flex gap-3 justify-start">
-                      <div className="h-7 w-7 rounded-md flex items-center justify-center shrink-0 mt-0.5">
-                        {devMode ? (
-                          <Code2 className="h-4 w-4 text-foreground/50" />
-                        ) : (
-                          <img
-                            src={logoSrc}
-                            alt=""
-                            className="h-4 w-4 object-contain opacity-70"
-                          />
-                        )}
-                      </div>
-                      <div className="bg-card border border-border rounded-xl rounded-bl-sm px-4 py-3 flex gap-1.5 items-center">
-                        <span
-                          className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce"
-                          style={{ animationDelay: "0ms" }}
-                        />
-                        <span
-                          className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce"
-                          style={{ animationDelay: "150ms" }}
-                        />
-                        <span
-                          className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce"
-                          style={{ animationDelay: "300ms" }}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  <div ref={messagesEndRef} />
+              ))
+            )}
+            {chatCompletion.isPending && (
+              <div className="p-4 border border-white/10 bg-white/[0.02] mr-8">
+                <div className="text-[10px] uppercase font-mono tracking-wider text-white/40 mb-2">
+                  Assistant
                 </div>
-              )}
-            </div>
-
-            {/* Input */}
-            <div className="shrink-0 border-t border-border px-4 md:px-6 py-4">
-              {lastUsage && (
-                <div className="flex items-center justify-end gap-3 mb-2 text-xs text-muted-foreground/60">
-                  <span>{lastUsage.totalTokens.toLocaleString()} tokens total</span>
-                  <span className="text-border">|</span>
-                  <span>↑ {lastUsage.inputTokens} in</span>
-                  <span>↓ {lastUsage.outputTokens} out</span>
+                <div className="flex gap-2">
+                  <span className="w-1.5 h-1.5 bg-white/40 animate-pulse"></span>
+                  <span className="w-1.5 h-1.5 bg-white/40 animate-pulse" style={{ animationDelay: "150ms" }}></span>
+                  <span className="w-1.5 h-1.5 bg-white/40 animate-pulse" style={{ animationDelay: "300ms" }}></span>
                 </div>
-              )}
-              <div className="max-w-3xl mx-auto relative">
-                <Textarea
-                  ref={textareaRef as React.RefObject<HTMLTextAreaElement>}
-                  placeholder={
-                    devMode
-                      ? "Describe what to build, or paste code to review…"
-                      : "Send a message… (Enter to send, Shift+Enter for newline)"
-                  }
-                  value={input}
-                  onChange={handleTextareaChange}
-                  onKeyDown={handleKeyDown}
-                  disabled={isPending}
-                  rows={1}
-                  className="resize-none pr-12 text-sm min-h-[42px] max-h-40 scrollbar-thin"
-                />
-                <Button
-                  type="button"
-                  size="icon"
-                  onClick={() => handleSend()}
-                  disabled={!input.trim() || isPending}
-                  className="absolute right-2 bottom-2 h-7 w-7"
-                >
-                  <Send className="h-3.5 w-3.5" />
-                </Button>
               </div>
-            </div>
+            )}
           </div>
 
-          {/* RIGHT: Live preview pane */}
-          {devMode && previewHtml && (
-            <div className="flex-1 flex flex-col min-h-0 bg-[#0a0a0a]">
-              {/* Preview header */}
-              <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-muted/10 shrink-0">
-                <Monitor className="h-3.5 w-3.5 text-muted-foreground/60" />
-                <span className="text-xs font-medium text-muted-foreground">Live Preview</span>
-                <div className="flex-1" />
-                <button
-                  onClick={() => setIframeKey((k) => k + 1)}
-                  className="h-6 w-6 flex items-center justify-center rounded text-muted-foreground/60 hover:text-foreground hover:bg-white/5 transition-colors"
-                  title="Refresh preview"
-                >
-                  <RefreshCw className="h-3 w-3" />
-                </button>
-                <button
-                  onClick={handleOpenInNewTab}
-                  className="h-6 w-6 flex items-center justify-center rounded text-muted-foreground/60 hover:text-foreground hover:bg-white/5 transition-colors"
-                  title="Open in new tab"
-                >
-                  <ExternalLink className="h-3 w-3" />
-                </button>
-                <button
-                  onClick={() => setPreviewHtml(null)}
-                  className="h-6 w-6 flex items-center justify-center rounded text-muted-foreground/60 hover:text-foreground hover:bg-white/5 transition-colors"
-                  title="Close preview"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-
-              {/* iframe */}
-              <iframe
-                key={iframeKey}
-                srcDoc={previewHtml}
-                sandbox="allow-scripts allow-same-origin allow-modals allow-forms allow-popups"
-                className="flex-1 w-full bg-white"
-                title="Live Preview"
+          <div className="p-3 border-t border-white/15 shrink-0 bg-white/[0.02]">
+            <div className="relative flex items-end max-w-full">
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="User message... (Ctrl+Enter to send)"
+                className="w-full bg-black border border-white/30 focus:border-white outline-none resize-none py-2.5 pl-3 pr-10 text-sm max-h-32 scrollbar-thin min-h-[44px] transition-colors"
+                rows={1}
+                onInput={(e) => {
+                  const target = e.target as HTMLTextAreaElement;
+                  target.style.height = 'auto';
+                  target.style.height = `${Math.min(target.scrollHeight, 128)}px`;
+                }}
               />
+              <button
+                onClick={handleSend}
+                disabled={!input.trim() || chatCompletion.isPending}
+                className="absolute right-2 bottom-2 p-1 text-white/60 hover:text-white disabled:opacity-30 transition-colors bg-white/10"
+              >
+                <Play className="w-4 h-4" />
+              </button>
             </div>
-          )}
-
+          </div>
         </div>
       </div>
     </AppLayout>
