@@ -106,8 +106,18 @@
     text-size-adjust: 100%;
   }
 
-  html, body, #root {
+  html {
     height: 100%;
+  }
+
+  body, #root {
+    /* position:fixed + inset:0 prevents the browser from scrolling
+       the page when the soft keyboard opens on mobile, which used to
+       push the header off-screen. height:100dvh adjusts dynamically. */
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100dvh;
     overflow: hidden;
     max-width: 100vw;
   }

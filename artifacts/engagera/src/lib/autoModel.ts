@@ -1,126 +1,102 @@
-export type EngageraModel = "engagera-2.0" | "engagera-2.1" | "engagera-image";
+export type EngageraModel =
+  | "engagera-lite"
+  | "engagera-pro"
+  | "engagera-reason"
+  | "engagera-code"
+  | "engagera-vision"
+  | "engagera-voice"
+  | "engagera-image";
 
-interface AttachmentHint {
-  kind: "image" | "text";
+export interface AttachmentHint {
+  kind: "image" | "audio" | "text";
 }
 
-/**
- * CONSERVATIVE image-gen detection.
- *
- * Only triggers when the user is UNAMBIGUOUSLY asking for a visual image output.
- * General words like "generate", "create", "make", "design", "picture" alone do NOT
- * trigger image generation — they must be clearly paired with image-creation intent.
- *
- * ❌ BAD (too broad — caused false positives):
- *   "please generate" → triggered on "please generate a Python function"
- *   "picture of"      → triggered on "give me a picture of how this works"
- *   "can you create"  → triggered on "can you create a REST API"
- *   "image of"        → triggered on "I have an image of this problem"
- *
- * ✅ GOOD (unambiguous visual output request):
- *   "draw me a cat"
- *   "generate an image of a sunset"
- *   "create a logo for my app"
- *   "paint a watercolor landscape"
- */
-
-// Only keywords that are UNAMBIGUOUSLY requesting a visual image.
-// Must explicitly pair a creation verb with an image noun.
 const IMAGE_GEN_KEYWORDS = [
-  // generate + explicit image noun
-  "generate an image", "generate a image",
-  "generate a picture", "generate the picture",
-  "generate a photo", "generate the photo",
-  "generate artwork", "generate an artwork", "generate some art",
-  "generate an illustration", "generate a illustration",
-  "generate a logo", "generate the logo",
-  "generate a wallpaper", "generate wallpaper",
-  "generate a poster", "generate poster",
-  "generate a banner", "generate banner",
-  "generate a thumbnail", "generate thumbnail",
-  "generate a drawing",
-
-  // create + explicit image noun
-  "create an image", "create a image",
-  "create a picture", "create the picture",
-  "create a photo", "create the photo",
-  "create artwork", "create an artwork",
-  "create an illustration", "create a illustration",
-  "create a logo", "create the logo",
-  "create a wallpaper", "create wallpaper",
-  "create a poster", "create poster",
-  "create a banner", "create banner",
-  "create a thumbnail", "create thumbnail",
-  "create a drawing",
-
-  // make + explicit image noun
-  "make an image", "make a image",
-  "make me an image", "make me a image",
-  "make a picture", "make me a picture",
-  "make a photo", "make me a photo",
-  "make artwork", "make me artwork", "make me art",
-  "make an illustration", "make a illustration",
-  "make a logo", "make me a logo",
-  "make a drawing", "make me a drawing",
-
-  // draw/paint/sketch — these verbs inherently mean visual output
-  "draw me", "draw a ", "draw an ",
-  "paint a ", "paint an ", "paint me",
-  "sketch a ", "sketch an ", "sketch me",
-
-  // illustrate — inherently visual
-  "illustrate this", "illustrate a", "illustrate me",
-  "please illustrate",
-
-  // render — inherently visual
-  "render a ", "render an ", "render me",
-
-  // design + explicit image noun (design alone is NOT enough)
-  "design a logo", "design the logo",
-  "design an image", "design a poster", "design the poster",
-  "design a banner", "design the banner",
-  "design a thumbnail", "design a wallpaper",
-
-  // "show me a/an" + explicit image noun (show alone is not enough)
-  "show me a picture", "show me an image", "show me a photo",
-  "show me a drawing", "show me a painting",
-  "show me an illustration", "show me a logo",
+  "generate an image", "generate a image", "generate a picture", "generate a photo",
+  "generate artwork", "generate a logo", "generate a drawing", "generate a poster",
+  "generate a banner", "generate a thumbnail", "generate an illustration",
+  "create an image", "create a image", "create a picture", "create a logo",
+  "create a drawing", "create artwork", "create an illustration", "create a poster",
+  "make an image", "make a image", "make me an image", "make a picture",
+  "make a logo", "make me a logo", "make artwork", "make a drawing",
+  "draw me", "draw a ", "draw an ", "paint a ", "paint an ", "paint me",
+  "sketch a ", "sketch an ", "sketch me", "illustrate this", "illustrate a",
+  "render a ", "render an ", "render me", "design a logo", "design a poster",
+  "show me a picture", "show me an image", "show me a drawing",
 ];
 
-// Regex patterns — narrow and specific.
-// Each pattern requires both a creation verb AND an explicit image noun close together.
 const IMAGE_GEN_PATTERNS: RegExp[] = [
-  // draw/paint/sketch/illustrate/render + optional "me/a/an" — these verbs = visual output
   /\b(draw|paint|sketch|illustrate|render)\s+(me\s+)?(a\s+|an\s+|the\s+|some\s+|my\s+)?\w/i,
-
-  // generate/create/make/produce + image noun (within 50 chars of the verb)
   /\b(generate|create|make|produce)\b.{0,50}\b(image|picture|photo|drawing|painting|illustration|artwork|logo|poster|wallpaper|banner|thumbnail|graphic)\b/i,
-
-  // "can/could you draw/paint/sketch/illustrate/render" — only explicitly visual verbs
   /\b(can|could|please|would you|will you)\s+you\s+(draw|paint|sketch|illustrate|render)\b/i,
-
-  // "I want/need/would like a/an [image noun]"
   /\b(i want|i need|i'd like|give me)\s+(a\s+|an\s+)(image|picture|photo|drawing|illustration|painting|artwork)\b/i,
 ];
 
+const CODE_PATTERNS: RegExp[] = [
+  /\b(write|build|implement|fix|debug|refactor|optimize|review)\b.{0,40}\b(code|function|class|script|program|algorithm|api|component|module|query)\b/i,
+  /\b(javascript|typescript|python|java|golang|rust|swift|kotlin|php|ruby|sql|html|css|react|vue|angular|node\.?js|express|django|flask|fastapi)\b/i,
+  /\b(bug|exception|syntax error|runtime error|compile|stack trace|undefined|null pointer|npm|pip|yarn|package\.json)\b/i,
+  /\b(for loop|recursion|async\/await|promise|callback|regex|binary tree|sorting|linked list)\b/i,
+];
+
+const REASON_PATTERNS: RegExp[] = [
+  /\b(why|because|therefore|hence|consequently|caused by|explain)\b.{0,60}\b(this|that|it|these|those|the)\b/i,
+  /\b(analyze|analyse|evaluate|assess|compare|contrast|examine|investigate)\b/i,
+  /\b(hypothesis|argument|evidence|proof|logical|reasoning|critical thinking)\b/i,
+  /\b(pros and cons|advantages and disadvantages|trade.?off|should i|which is better|what are the implications)\b/i,
+];
+
+const VOICE_PATTERNS: RegExp[] = [
+  /\b(text.to.speech|tts|speech.to.text|stt|transcribe|narrate|pronunciation|dictate)\b/i,
+  /\b(read (this |it )?aloud|say it|how (is|do) (you|i) pronounce|speak (this|it))\b/i,
+];
+
+const LITE_PATTERNS: RegExp[] = [
+  /^(hi|hello|hey|sup|yo|hiya|greetings|howdy)\b/i,
+  /^(thanks|thank you|thx|ty|cheers|great|ok|okay|got it|sounds good|perfect|nice|cool|awesome)\b/i,
+  /^(good (morning|afternoon|evening|night)|how are you|what('s| is) up|how's it going)\b/i,
+  /^(yes|no|sure|maybe|definitely|absolutely|exactly|correct)\b/i,
+];
+
+function isImageGen(text: string): boolean {
+  return (
+    IMAGE_GEN_KEYWORDS.some(k => text.includes(k)) ||
+    IMAGE_GEN_PATTERNS.some(p => p.test(text))
+  );
+}
+
 /**
- * Picks the right Engagera model based on what the user is asking.
+ * Auto-selects the best Engagera model for the given message + attachments.
  *
- * engagera-image — Dedicated image generation (unambiguous visual output request).
- * engagera-2.1   — Latest model with vision (when image attachment is present).
- * engagera-2.0   — Primary text model (default for all chat).
+ * engagera-image  — Unambiguous image/art generation request
+ * engagera-vision — Image attachment present
+ * engagera-code   — Code, programming, debugging
+ * engagera-reason — Analysis, deep reasoning, pros/cons
+ * engagera-voice  — TTS, pronunciation, speech topics
+ * engagera-lite   — Short greetings / simple one-liners (fast + cheap)
+ * engagera-pro    — Default: general knowledge, complex chat (best balance)
  */
 export function detectModel(text: string, attachments: AttachmentHint[] = []): EngageraModel {
   const lower = text.toLowerCase().trim();
 
-  // Image attachment → needs vision (2.1), not image generation
-  if (attachments.some((a) => a.kind === "image")) return "engagera-2.1";
+  if (attachments.some(a => a.kind === "image")) return "engagera-vision";
+  if (attachments.some(a => a.kind === "audio")) return "engagera-voice";
 
-  // Check keyword list first (fast exact match)
-  if (IMAGE_GEN_KEYWORDS.some((k) => lower.includes(k))) return "engagera-image";
+  if (isImageGen(lower))                          return "engagera-image";
+  if (CODE_PATTERNS.some(p => p.test(lower)))     return "engagera-code";
+  if (REASON_PATTERNS.some(p => p.test(lower)))   return "engagera-reason";
+  if (VOICE_PATTERNS.some(p => p.test(lower)))    return "engagera-voice";
+  if (LITE_PATTERNS.some(p => p.test(lower)) || lower.length < 12) return "engagera-lite";
 
-  // Check regex patterns (broader coverage, still conservative)
-  if (IMAGE_GEN_PATTERNS.some((p) => p.test(lower))) return "engagera-image";
-
-  return "engagera-2.0";
+  return "engagera-pro";
 }
+
+export const MODEL_LABELS: Record<EngageraModel, string> = {
+  "engagera-lite":   "Lite · Fast",
+  "engagera-pro":    "Pro",
+  "engagera-reason": "Reason · Deep",
+  "engagera-code":   "Code",
+  "engagera-vision": "Vision",
+  "engagera-voice":  "Voice",
+  "engagera-image":  "Image Gen",
+};

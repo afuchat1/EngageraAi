@@ -18,9 +18,23 @@ Pure black/white only — #000 background, #fff text. Borders use `white/[0.08]`
 **How to apply:** When adding a new page, decide public vs private first. Public → wrap with `<PublicLayout>`. Private → wrap with `<AppLayout>` and add to `ProtectedRoute` in App.tsx.
 
 ## Chat layout rule (critical)
-Messages area must be `flex-1 overflow-y-auto` inside a `flex flex-col h-screen` (or h-dvh) container. Input is a fixed-height footer in normal flow — never position:fixed. Messages use `break-words whitespace-pre-wrap`.
+Messages area must be `flex-1 overflow-y-auto` inside a `flex flex-col h-full` container. Input is a `shrink-0` footer. Messages use `break-words whitespace-pre-wrap`.
 
 **Why:** Without this, messages get clipped. This was a core user requirement.
+
+## Mobile keyboard fix (critical)
+`body, #root` must use `position: fixed; inset: 0; height: 100dvh` in index.css. PublicLayout uses `h-full` not `h-screen`.
+
+**Why:** On mobile, when the soft keyboard appears, `100vh` stays fixed but the visual viewport shrinks — causing the browser to scroll the page upward and push the header off-screen. `position: fixed; inset: 0` prevents that scroll. `height: 100dvh` adjusts dynamically with the keyboard.
+
+## Auto model selection
+`detectModel(text, attachments?)` in `@/lib/autoModel.ts` returns one of 7 model IDs. Landing page calls it on every input change (useEffect) and on send. No manual dropdown — a small pill indicator shows the auto-detected model with "· auto" suffix.
+
+## Guest limit modal
+Use a `fixed inset-0 z-50` overlay, not `absolute bottom-full`. Trigger on: `status === 429`, `status === 403`, `err?.data?.guestMessageLimit`, or `res.guestMessageCount >= res.guestMessageLimit` in onSuccess.
+
+## Text style convention
+Guest badge and disclaimers use normal text — no `font-mono uppercase tracking-widest`. Only technical labels (API keys, code) use monospace.
 
 ## Routing (App.tsx)
 - Public (no guard): `/`, `/docs`, `/sign-in`, `/sign-up`, `/forgot-password`, `/reset-password`
