@@ -430,19 +430,53 @@ function ImageBlock({ src, alt }: { src: string; alt?: string }) {
 // ── Media card horizontal scroll ──────────────────────────────────────────────
 interface MediaCard { title: string; year?: string; thumbnail?: string | null; fetching: boolean; }
 
+const MEDIA_SKIP = /^(Step|Part|Section|Chapter|Option|Note|Example|Important|Warning|Tip|Reason|First|Second|Third|Then|Next|Finally|Also|However|The following|Note that|Keep in mind|Remember|Consider|Additionally|Furthermore|Moreover)\s/i;
+
 function detectMediaTitles(content: string): string[] {
   const lines = content.split("\n");
   const titles: string[] = [];
+  const seen = new Set<string>();
+
   for (const line of lines) {
-    const m = line.trim().match(/^\*{0,2}\d+[.)]\s+\*{0,2}([A-Z][^(\n*:—–-]{2,45}?)\*{0,2}(?:\s*\(\d{4}\))?(?:\s*[-–—]|$)/);
-    if (m) {
-      const title = m[1].trim().replace(/\*+/g, "").replace(/\s+/g, " ");
-      if (title.length > 4 && title.includes(" ") && /^[A-Z]/.test(title) &&
-          !/^(Step|Part|Section|Chapter|Option|Note|Example|Important|Warning|Tip|Reason|First|Second|Third|Then|Next|Finally|Also|However)\s/i.test(title)) {
-        titles.push(title);
-      }
+    const t = line.trim();
+    let title = "";
+
+    // Pattern 1: "1. Title" or "1. **Title**" (numbered list)
+    const m1 = t.match(/^\*{0,2}\d+[.)]\s+\*{0,2}([A-Z*][^(\n:—–]{2,55}?)\*{0,2}(?:\s*\(\d{4}\))?(?:\s*[-–—:]|$)/);
+    if (m1) title = m1[1];
+
+    // Pattern 2: "**Title (2006)**" or "**Title**" on its own line
+    if (!title) {
+      const m2 = t.match(/^\*{1,2}([A-Z][^*\n]{2,55}?)\*{1,2}\s*(?:\(\d{4}\))?(?:\s*[-–—:]|$)/);
+      if (m2) title = m2[1];
+    }
+
+    // Pattern 3: "- Title" or "• Title" bullet
+    if (!title) {
+      const m3 = t.match(/^[-•]\s+([A-Z][^-•\n:]{2,55}?)\s*(?:\(\d{4}\))?(?:\s*[-–—:]|$)/);
+      if (m3) title = m3[1];
+    }
+
+    // Pattern 4: line that starts with a capital word, ends with (year) — e.g. "Inception (2010)"
+    if (!title) {
+      const m4 = t.match(/^([A-Z][A-Za-z0-9 ',!.&:-]{2,55})\s+\(\d{4}\)\s*(?:[-–—:]|$)/);
+      if (m4) title = m4[1];
+    }
+
+    title = title.trim().replace(/\*+/g, "").replace(/\s+/g, " ");
+
+    if (
+      title.length > 2 &&
+      title.length < 60 &&
+      /^[A-Z]/.test(title) &&
+      !MEDIA_SKIP.test(title) &&
+      !seen.has(title.toLowerCase())
+    ) {
+      titles.push(title);
+      seen.add(title.toLowerCase());
     }
   }
+
   return titles.length >= 2 ? titles.slice(0, 8) : [];
 }
 

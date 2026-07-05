@@ -188,6 +188,9 @@ You have live web search fully integrated. You ALWAYS have access to the interne
 - Never say "as of my knowledge cutoff" — it sounds dated and robotic.
 - When you have current information, present it as current fact. When you don't, say "I'm not certain on the latest there" naturally.
 
+## Recommendations
+When asked to recommend movies, TV shows, books, songs, music, games, restaurants, products, apps, or any media/content — ALWAYS give actual specific titles in a numbered list. NEVER redirect the user to a website, tool, or engine to find the answer. If asked for 5 movies, name 5 movies. If asked for a book, name a specific book. Format: number, title (year if known), 1–2 sentences on why. You know thousands of movies, shows, and books — just recommend them directly.
+
 ## Response Style — MANDATORY
 - **Direct.** Answer immediately. No preamble.
 - **Conversational by default.** Match the energy and register of the person you're talking to.
@@ -1078,6 +1081,17 @@ function detectTimeQuery(text: string): { ianaZone: string; label: string } | nu
     /\b(what.?s the time|what time is it|current time|time now|time (in|at|for)|clock in|timezone|time zone)\b/.test(lower);
   if (!isTimeQuestion) return null;
 
+  // Pad with spaces so boundary check works at start/end of string too.
+  // Match only when key is surrounded by non-letter characters (word-boundary safe for multi-word phrases).
+  const padded = ` ${lower} `;
+  const keys = Object.keys(TIMEZONE_MAP).sort((a, b) => b.length - a.length); // longest first
+  for (const key of keys) {
+    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\function detectTimeQuery(text: string): { ianaZone: string; label: string } | null {
+  const lower = text.toLowerCase().trim();
+  const isTimeQuestion =
+    /\b(what.?s the time|what time is it|current time|time now|time (in|at|for)|clock in|timezone|time zone)\b/.test(lower);
+  if (!isTimeQuestion) return null;
+
   // Try longest match first (e.g. "south africa" before "africa")
   const keys = Object.keys(TIMEZONE_MAP).sort((a, b) => b.length - a.length);
   for (const key of keys) {
@@ -1085,6 +1099,15 @@ function detectTimeQuery(text: string): { ianaZone: string; label: string } | nu
   }
 
   // No location → default to UTC
+  return { ianaZone: "UTC", label: "UTC / Coordinated Universal Time" };
+}");
+    // Ensure the key is not adjacent to another letter (e.g. "uk" won't match inside "lucky")
+    if (new RegExp(`[^a-z]${escaped}[^a-z]`).test(padded)) {
+      return TIMEZONE_MAP[key];
+    }
+  }
+
+  // No location found → default to UTC
   return { ianaZone: "UTC", label: "UTC / Coordinated Universal Time" };
 }
 
@@ -1116,6 +1139,14 @@ const NO_SEARCH_PATTERNS: RegExp[] = [
   /^(what did (i|you|we) (say|ask|mention|discuss)|what was (my|your|our) (last|previous|first)|summaris(e|ize) (this|our|the) conversation|what have we (talked|spoken|discussed))/i,
   // Time queries — answered via system clock + clock widget, web search adds no value
   /\b(what.?s the time|what time is it|current time (in|at)?|time right now|time in [a-z]|clock in [a-z])\b/i,
+  // Generic media/content recommendations — AI already knows; web search only returns listing sites, not titles
+  /^(suggest (me )?(a |some )?(good )?(movie|film|show|series|tv show|anime|book|song|album|game|podcast)s?)/i,
+  /^(recommend (me )?(a |some )?(good )?(movie|film|show|series|tv show|anime|book|song|album|game|podcast)s?)/i,
+  /^(what (movie|film|show|series|tv show|anime|book|song|game) (should i|can i) (watch|read|play|listen))/i,
+  /^(good (movie|film|show|series|anime|book|song|game|podcast) (to |for )?(watch|read|play|listen|today|tonight|weekend))/i,
+  /^(best (movie|film|show|series|anime|book|song|game|podcast) (to |for )?(watch|read|play|listen|today|tonight|weekend))/i,
+  /^(movies? (to watch|for tonight|for today|for the weekend|recommendation|suggestion)s?)/i,
+  /^(what (are some|are the best|movies?|films?|shows?|series) (to watch|i should watch|worth watching|you (recommend|suggest)))/i,
 ];
 
 // ── Build a clean, focused search query ───────────────────────────────────────
