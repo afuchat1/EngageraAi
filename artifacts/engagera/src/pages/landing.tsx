@@ -9,7 +9,7 @@ import {
 } from "@workspace/api-client-react";
 import { useEdgeChatCompletion, ChatMessage } from "@/hooks/useEdgeChatCompletion";
 import { useAuth } from "@/hooks/useAuth";
-import { MessageContent } from "@/components/MessageContent";
+import { MessageContent, Source } from "@/components/MessageContent";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { detectModel, MODEL_LABELS, EngageraModel } from "@/lib/autoModel";
 import PublicLayout from "@/components/layout/PublicLayout";
@@ -17,6 +17,7 @@ import PublicLayout from "@/components/layout/PublicLayout";
 interface DisplayMessage {
   role: "user" | "assistant";
   content: string;
+  sources?: Source[];
 }
 
 /**
@@ -101,6 +102,7 @@ export default function Landing() {
           const assistantMsg: DisplayMessage = {
             role: "assistant",
             content: sanitizeResponse(res.message.content ?? ""),
+            sources: res.searchInfo?.sources?.length ? res.searchInfo.sources : undefined,
           };
           setMessages([...newMessages, assistantMsg]);
 
@@ -263,7 +265,7 @@ export default function Landing() {
                       }`}
                     >
                       {msg.role === "assistant" ? (
-                        <MessageContent content={msg.content as string} />
+                        <MessageContent content={msg.content as string} sources={msg.sources} />
                       ) : (
                         msg.content as string
                       )}
