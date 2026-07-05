@@ -28,6 +28,11 @@ export interface SearchInfo {
   sources: SearchSource[];
 }
 
+export interface TimeInfo {
+  ianaZone: string;
+  label: string;
+}
+
 interface ChatResponse {
   id: string;
   model: string;
@@ -38,6 +43,7 @@ interface ChatResponse {
   guestMessageLimit?: number;
   searchInfo?: SearchInfo;
   crawledUrls?: string[];
+  timeInfo?: TimeInfo;
 }
 
 const EDGE_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/chat`;

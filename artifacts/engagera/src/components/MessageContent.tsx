@@ -6,8 +6,9 @@ import { useState, useEffect, useRef } from "react";
 import {
   Copy, Check, ImageOff, Film,
   ThumbsUp, ThumbsDown, Volume2, VolumeX,
-  Share2, MoreHorizontal, Globe,
+  Share2, Globe,
 } from "lucide-react";
+import type { TimeInfo } from "@/hooks/useEdgeChatCompletion";
 
 export interface Source {
   title: string;
@@ -18,6 +19,7 @@ export interface Source {
 interface MessageContentProps {
   content: string;
   sources?: Source[];
+  timeInfo?: TimeInfo;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -45,6 +47,36 @@ function cleanForSpeech(md: string) {
     .trim();
 }
 
+/** Extract display name from a source (e.g. "Wikipedia" from "en.wikipedia.org") */
+function extractSiteName(source: Source): string {
+  if (source.title) {
+    for (const sep of [" - ", " | ", " – ", " — "]) {
+      if (source.title.includes(sep)) {
+        const last = source.title.split(sep).pop()?.trim() ?? "";
+        if (last.length > 1 && last.length < 40) return last;
+      }
+    }
+  }
+  try {
+    const hostname = new URL(source.url).hostname.replace(/^www\./, "");
+    const parts = hostname.split(".");
+    const name = parts.length >= 2 ? parts[parts.length - 2] : hostname;
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  } catch { return source.url.slice(0, 20); }
+}
+
+/** Recursively pull all text content from React children nodes */
+function childrenToText(children: React.ReactNode): string {
+  if (typeof children === "string") return children;
+  if (typeof children === "number") return String(children);
+  if (!children) return "";
+  if (Array.isArray(children)) return children.map(childrenToText).join("");
+  if (typeof children === "object" && "props" in (children as object)) {
+    return childrenToText((children as any).props?.children ?? "");
+  }
+  return "";
+}
+
 // ── Favicon image with fallback ───────────────────────────────────────────────
 function Favicon({ url, size = 16 }: { url: string; size?: number }) {
   const [src, setSrc] = useState<string | null>(() => getFavicon(url, size));
@@ -62,7 +94,7 @@ function Favicon({ url, size = 16 }: { url: string; size?: number }) {
   );
 }
 
-// ── Inline favicon cluster (appears at end of paragraph in text) ──────────────
+// ── Inline favicon cluster (appears at end of last paragraph) ─────────────────
 function InlineFaviconCluster({ sources }: { sources: Source[] }) {
   if (!sources.length) return null;
   const shown = sources.slice(0, 4);
@@ -230,6 +262,99 @@ function MessageActions({ content, sources }: { content: string; sources?: Sourc
   );
 }
 
+// ── Real-time clock widget ────────────────────────────────────────────────────
+function ClockWidget({ timeInfo }: { timeInfo: TimeInfo }) {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const fmt = (opts: Intl.DateTimeFormatOptions) =>
+    new Intl.DateTimeFormat("en-US", { ...opts, timeZone: timeInfo.ianaZone }).format(now);
+
+  const hours24 = (() => {
+    const h = parseInt(fmt({ hour: "numeric", hour12: false }), 10);
+    return isNaN(h) ? 0 : h % 24;
+  })();
+  const minutes = parseInt(fmt({ minute: "2-digit" }), 10) || 0;
+  const seconds = parseInt(fmt({ second: "2-digit" }), 10) || 0;
+
+  const digital = `${String(hours24).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  const dateLabel = fmt({ weekday: "short", month: "short", day: "numeric" });
+
+  // UTC offset label
+  const utcOffsetMin = (() => {
+    try {
+      const localStr = now.toLocaleString("en-US", { timeZone: timeInfo.ianaZone });
+      const utcStr = now.toLocaleString("en-US", { timeZone: "UTC" });
+      const diff = (new Date(localStr).getTime() - new Date(utcStr).getTime()) / 60000;
+      return Math.round(diff);
+    } catch { return 0; }
+  })();
+  const sign = utcOffsetMin >= 0 ? "+" : "-";
+  const abs = Math.abs(utcOffsetMin);
+  const utcLabel = `UTC${sign}${Math.floor(abs / 60)}${abs % 60 ? ":" + String(abs % 60).padStart(2, "0") : ""}`;
+
+  // Clock hand angles (degrees, 0 = 12 o'clock)
+  const secDeg = seconds * 6;
+  const minDeg = minutes * 6 + seconds * 0.1;
+  const hrDeg = (hours24 % 12) * 30 + minutes * 0.5;
+
+  const hand = (deg: number, len: number, color: string, width: number) => {
+    const rad = (deg - 90) * (Math.PI / 180);
+    return (
+      <line
+        x1="32" y1="32"
+        x2={32 + len * Math.cos(rad)}
+        y2={32 + len * Math.sin(rad)}
+        stroke={color} strokeWidth={width} strokeLinecap="round"
+      />
+    );
+  };
+
+  return (
+    <div className="my-4 flex items-center gap-4 p-4 rounded-2xl border border-white/[0.09] bg-white/[0.03] max-w-[290px]">
+      {/* Digital + location */}
+      <div className="flex-1 min-w-0">
+        <div className="text-3xl font-bold tracking-tight tabular-nums leading-none">{digital}</div>
+        <div className="text-[13px] text-white/55 mt-1.5 truncate">{timeInfo.label}</div>
+        <div className="text-[11px] text-white/30 mt-0.5">{dateLabel} · {utcLabel}</div>
+      </div>
+
+      {/* Analog clock */}
+      <div className="shrink-0">
+        <svg width="64" height="64" viewBox="0 0 64 64">
+          {/* Face */}
+          <circle cx="32" cy="32" r="31" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.12)" strokeWidth="1" />
+          {/* Hour markers */}
+          {Array.from({ length: 12 }, (_, i) => {
+            const a = (i * 30 - 90) * (Math.PI / 180);
+            const isQuarter = i % 3 === 0;
+            const r1 = isQuarter ? 24 : 26;
+            return (
+              <line key={i}
+                x1={32 + r1 * Math.cos(a)} y1={32 + r1 * Math.sin(a)}
+                x2={32 + 30 * Math.cos(a)} y2={32 + 30 * Math.sin(a)}
+                stroke={isQuarter ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.2)"}
+                strokeWidth={isQuarter ? 1.5 : 1}
+              />
+            );
+          })}
+          {/* Hands */}
+          {hand(hrDeg, 16, "white", 2.5)}
+          {hand(minDeg, 23, "rgba(255,255,255,0.85)", 1.5)}
+          {hand(secDeg, 27, "#ef4444", 1)}
+          {/* Center cap */}
+          <circle cx="32" cy="32" r="2.5" fill="white" />
+          <circle cx="32" cy="32" r="1.2" fill="#ef4444" />
+        </svg>
+      </div>
+    </div>
+  );
+}
+
 // ── SVG renderer ──────────────────────────────────────────────────────────────
 function SvgBlock({ code }: { code: string }) {
   const [expanded, setExpanded] = useState(false);
@@ -356,7 +481,7 @@ function MediaCardsRow({ titles }: { titles: string[] }) {
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
-export function MessageContent({ content, sources }: MessageContentProps) {
+export function MessageContent({ content, sources, timeInfo }: MessageContentProps) {
   const mediaTitles = detectMediaTitles(content);
   const hasSources = sources && sources.length > 0;
 
@@ -366,6 +491,10 @@ export function MessageContent({ content, sources }: MessageContentProps) {
 
   return (
     <div className="text-[0.875rem] leading-relaxed text-white/90 min-w-0 overflow-hidden">
+
+      {/* ── Real-time clock widget (time queries) ── */}
+      {timeInfo && <ClockWidget timeInfo={timeInfo} />}
+
       {/* Media cards above text */}
       {mediaTitles.length >= 2 && <MediaCardsRow titles={mediaTitles} />}
 
@@ -375,11 +504,41 @@ export function MessageContent({ content, sources }: MessageContentProps) {
           p: ({ children }) => {
             paragraphIdx++;
             const isLast = paragraphIdx === paragraphCount;
+
+            // ── Inline source badges: detect which sources are mentioned in this paragraph ──
+            // Match source names against paragraph text so we can show favicon badges inline.
+            const paraText = childrenToText(children).toLowerCase();
+            const mentionedSources = hasSources
+              ? sources!.filter(s => {
+                  const name = extractSiteName(s).toLowerCase();
+                  return name.length > 2 && paraText.includes(name);
+                })
+              : [];
+
             return (
-              <div className="mb-3 last:mb-0 leading-[1.75] text-white/88">
-                {children}
-                {/* Inline favicon cluster at end of last paragraph */}
-                {isLast && hasSources && <InlineFaviconCluster sources={sources!} />}
+              <div className="mb-3 last:mb-0">
+                {/* Source attribution chips — appear when source name is mentioned in paragraph */}
+                {mentionedSources.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-1.5">
+                    {mentionedSources.map((s, i) => (
+                      <a
+                        key={i}
+                        href={s.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/[0.06] border border-white/[0.08] text-white/55 text-[11px] hover:bg-white/[0.1] hover:text-white/75 transition-all no-underline"
+                      >
+                        <Favicon url={s.url} size={11} />
+                        <span>{extractSiteName(s)}</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
+                <div className="leading-[1.75] text-white/88">
+                  {children}
+                  {/* Trailing favicon cluster at end of last paragraph */}
+                  {isLast && hasSources && <InlineFaviconCluster sources={sources!} />}
+                </div>
               </div>
             );
           },

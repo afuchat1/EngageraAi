@@ -165,6 +165,9 @@ You are knowledgeable, well-read, and capable of real-time awareness. When you h
 
 You simply know. You speak with the confident, natural authority of an expert.
 
+## Web Search & Internet Access
+You have live web search fully integrated. You ALWAYS have access to the internet and search it for current information before answering factual questions. NEVER say you "cannot browse the internet", "don't have access to the web", "can't look things up online", "don't have real-time information", or anything similar — these statements are WRONG and embarrassing. You have full internet access and you use it. When asked "why don't you research this?" the correct answer is that you DO research — you simply present information naturally. When you cite where you learned something, say the source name naturally in the sentence (e.g. "According to Wikipedia, ..." or "Reuters reports that ...") — never use markdown hyperlinks.
+
 ## Core Capabilities
 - **Conversation**: Natural, warm, thoughtful dialogue across any topic.
 - **Research & current events**: You know what's happening. You discuss it naturally, as fact.
@@ -962,6 +965,129 @@ async function saveToKB(
   } catch { /* non-fatal */ }
 }
 
+// ── Timezone map + time query detection ──────────────────────────────────────
+const TIMEZONE_MAP: Record<string, { ianaZone: string; label: string }> = {
+  // Russia
+  "russia": { ianaZone: "Europe/Moscow", label: "Moscow, Russia" },
+  "moscow": { ianaZone: "Europe/Moscow", label: "Moscow, Russia" },
+  "saint petersburg": { ianaZone: "Europe/Moscow", label: "Saint Petersburg, Russia" },
+  "st petersburg": { ianaZone: "Europe/Moscow", label: "St. Petersburg, Russia" },
+  "novosibirsk": { ianaZone: "Asia/Novosibirsk", label: "Novosibirsk, Russia" },
+  "vladivostok": { ianaZone: "Asia/Vladivostok", label: "Vladivostok, Russia" },
+  "yekaterinburg": { ianaZone: "Asia/Yekaterinburg", label: "Yekaterinburg, Russia" },
+  // USA
+  "new york": { ianaZone: "America/New_York", label: "New York, USA" },
+  "los angeles": { ianaZone: "America/Los_Angeles", label: "Los Angeles, USA" },
+  "chicago": { ianaZone: "America/Chicago", label: "Chicago, USA" },
+  "denver": { ianaZone: "America/Denver", label: "Denver, USA" },
+  "california": { ianaZone: "America/Los_Angeles", label: "California, USA" },
+  "usa": { ianaZone: "America/New_York", label: "Eastern USA" },
+  "america": { ianaZone: "America/New_York", label: "Eastern USA" },
+  // UK / Europe
+  "london": { ianaZone: "Europe/London", label: "London, UK" },
+  "uk": { ianaZone: "Europe/London", label: "United Kingdom" },
+  "england": { ianaZone: "Europe/London", label: "England, UK" },
+  "paris": { ianaZone: "Europe/Paris", label: "Paris, France" },
+  "france": { ianaZone: "Europe/Paris", label: "France" },
+  "berlin": { ianaZone: "Europe/Berlin", label: "Berlin, Germany" },
+  "germany": { ianaZone: "Europe/Berlin", label: "Germany" },
+  "rome": { ianaZone: "Europe/Rome", label: "Rome, Italy" },
+  "italy": { ianaZone: "Europe/Rome", label: "Italy" },
+  "madrid": { ianaZone: "Europe/Madrid", label: "Madrid, Spain" },
+  "spain": { ianaZone: "Europe/Madrid", label: "Spain" },
+  "amsterdam": { ianaZone: "Europe/Amsterdam", label: "Amsterdam, Netherlands" },
+  "stockholm": { ianaZone: "Europe/Stockholm", label: "Stockholm, Sweden" },
+  "oslo": { ianaZone: "Europe/Oslo", label: "Oslo, Norway" },
+  "helsinki": { ianaZone: "Europe/Helsinki", label: "Helsinki, Finland" },
+  "warsaw": { ianaZone: "Europe/Warsaw", label: "Warsaw, Poland" },
+  "athens": { ianaZone: "Europe/Athens", label: "Athens, Greece" },
+  // Asia
+  "tokyo": { ianaZone: "Asia/Tokyo", label: "Tokyo, Japan" },
+  "japan": { ianaZone: "Asia/Tokyo", label: "Japan" },
+  "beijing": { ianaZone: "Asia/Shanghai", label: "Beijing, China" },
+  "shanghai": { ianaZone: "Asia/Shanghai", label: "Shanghai, China" },
+  "china": { ianaZone: "Asia/Shanghai", label: "China" },
+  "seoul": { ianaZone: "Asia/Seoul", label: "Seoul, South Korea" },
+  "korea": { ianaZone: "Asia/Seoul", label: "South Korea" },
+  "singapore": { ianaZone: "Asia/Singapore", label: "Singapore" },
+  "hong kong": { ianaZone: "Asia/Hong_Kong", label: "Hong Kong" },
+  "dubai": { ianaZone: "Asia/Dubai", label: "Dubai, UAE" },
+  "uae": { ianaZone: "Asia/Dubai", label: "United Arab Emirates" },
+  "mumbai": { ianaZone: "Asia/Kolkata", label: "Mumbai, India" },
+  "india": { ianaZone: "Asia/Kolkata", label: "India (IST)" },
+  "delhi": { ianaZone: "Asia/Kolkata", label: "New Delhi, India" },
+  "kolkata": { ianaZone: "Asia/Kolkata", label: "Kolkata, India" },
+  "karachi": { ianaZone: "Asia/Karachi", label: "Karachi, Pakistan" },
+  "pakistan": { ianaZone: "Asia/Karachi", label: "Pakistan" },
+  "dhaka": { ianaZone: "Asia/Dhaka", label: "Dhaka, Bangladesh" },
+  "bangkok": { ianaZone: "Asia/Bangkok", label: "Bangkok, Thailand" },
+  "thailand": { ianaZone: "Asia/Bangkok", label: "Thailand" },
+  "jakarta": { ianaZone: "Asia/Jakarta", label: "Jakarta, Indonesia" },
+  "kuala lumpur": { ianaZone: "Asia/Kuala_Lumpur", label: "Kuala Lumpur, Malaysia" },
+  "malaysia": { ianaZone: "Asia/Kuala_Lumpur", label: "Malaysia" },
+  "riyadh": { ianaZone: "Asia/Riyadh", label: "Riyadh, Saudi Arabia" },
+  "saudi arabia": { ianaZone: "Asia/Riyadh", label: "Saudi Arabia" },
+  "tehran": { ianaZone: "Asia/Tehran", label: "Tehran, Iran" },
+  "istanbul": { ianaZone: "Europe/Istanbul", label: "Istanbul, Turkey" },
+  "turkey": { ianaZone: "Europe/Istanbul", label: "Turkey" },
+  // Africa
+  "cairo": { ianaZone: "Africa/Cairo", label: "Cairo, Egypt" },
+  "egypt": { ianaZone: "Africa/Cairo", label: "Egypt" },
+  "nairobi": { ianaZone: "Africa/Nairobi", label: "Nairobi, Kenya" },
+  "kenya": { ianaZone: "Africa/Nairobi", label: "Kenya" },
+  "lagos": { ianaZone: "Africa/Lagos", label: "Lagos, Nigeria" },
+  "nigeria": { ianaZone: "Africa/Lagos", label: "Nigeria" },
+  "johannesburg": { ianaZone: "Africa/Johannesburg", label: "Johannesburg, South Africa" },
+  "cape town": { ianaZone: "Africa/Johannesburg", label: "Cape Town, South Africa" },
+  "south africa": { ianaZone: "Africa/Johannesburg", label: "South Africa" },
+  "accra": { ianaZone: "Africa/Accra", label: "Accra, Ghana" },
+  "ghana": { ianaZone: "Africa/Accra", label: "Ghana" },
+  "addis ababa": { ianaZone: "Africa/Addis_Ababa", label: "Addis Ababa, Ethiopia" },
+  "ethiopia": { ianaZone: "Africa/Addis_Ababa", label: "Ethiopia" },
+  "dar es salaam": { ianaZone: "Africa/Dar_es_Salaam", label: "Dar es Salaam, Tanzania" },
+  "tanzania": { ianaZone: "Africa/Dar_es_Salaam", label: "Tanzania" },
+  "abuja": { ianaZone: "Africa/Lagos", label: "Abuja, Nigeria" },
+  "dakar": { ianaZone: "Africa/Dakar", label: "Dakar, Senegal" },
+  "senegal": { ianaZone: "Africa/Dakar", label: "Senegal" },
+  "casablanca": { ianaZone: "Africa/Casablanca", label: "Casablanca, Morocco" },
+  "morocco": { ianaZone: "Africa/Casablanca", label: "Morocco" },
+  // Australia / NZ
+  "sydney": { ianaZone: "Australia/Sydney", label: "Sydney, Australia" },
+  "melbourne": { ianaZone: "Australia/Melbourne", label: "Melbourne, Australia" },
+  "australia": { ianaZone: "Australia/Sydney", label: "Australia (AEST)" },
+  "auckland": { ianaZone: "Pacific/Auckland", label: "Auckland, New Zealand" },
+  "new zealand": { ianaZone: "Pacific/Auckland", label: "New Zealand" },
+  // Americas
+  "toronto": { ianaZone: "America/Toronto", label: "Toronto, Canada" },
+  "canada": { ianaZone: "America/Toronto", label: "Canada (Eastern)" },
+  "vancouver": { ianaZone: "America/Vancouver", label: "Vancouver, Canada" },
+  "mexico city": { ianaZone: "America/Mexico_City", label: "Mexico City, Mexico" },
+  "mexico": { ianaZone: "America/Mexico_City", label: "Mexico" },
+  "sao paulo": { ianaZone: "America/Sao_Paulo", label: "São Paulo, Brazil" },
+  "brazil": { ianaZone: "America/Sao_Paulo", label: "Brazil (BRT)" },
+  "buenos aires": { ianaZone: "America/Argentina/Buenos_Aires", label: "Buenos Aires, Argentina" },
+  "argentina": { ianaZone: "America/Argentina/Buenos_Aires", label: "Argentina" },
+  // Global
+  "utc": { ianaZone: "UTC", label: "UTC / Coordinated Universal Time" },
+  "gmt": { ianaZone: "UTC", label: "GMT / Greenwich Mean Time" },
+};
+
+function detectTimeQuery(text: string): { ianaZone: string; label: string } | null {
+  const lower = text.toLowerCase().trim();
+  const isTimeQuestion =
+    /\b(what.?s the time|what time is it|current time|time now|time (in|at|for)|clock in|timezone|time zone)\b/.test(lower);
+  if (!isTimeQuestion) return null;
+
+  // Try longest match first (e.g. "south africa" before "africa")
+  const keys = Object.keys(TIMEZONE_MAP).sort((a, b) => b.length - a.length);
+  for (const key of keys) {
+    if (lower.includes(key)) return TIMEZONE_MAP[key];
+  }
+
+  // No location → default to UTC
+  return { ianaZone: "UTC", label: "UTC / Coordinated Universal Time" };
+}
+
 // ── Search SKIP patterns ───────────────────────────────────────────────────────
 // Web search is ONLY triggered for queries that genuinely need live/external data.
 // Everything else is answered from model knowledge + system prompt.
@@ -988,6 +1114,8 @@ const NO_SEARCH_PATTERNS: RegExp[] = [
   /^(\d[\d\s\+\-\*\/\(\)\.]*=|\d+\s*(plus|minus|times|divided|percent|%)|convert \d)/i,
   // Questions about the current conversation
   /^(what did (i|you|we) (say|ask|mention|discuss)|what was (my|your|our) (last|previous|first)|summaris(e|ize) (this|our|the) conversation|what have we (talked|spoken|discussed))/i,
+  // Time queries — answered via system clock + clock widget, web search adds no value
+  /\b(what.?s the time|what time is it|current time (in|at)?|time right now|time in [a-z]|clock in [a-z])\b/i,
 ];
 
 // ── Build a clean, focused search query ───────────────────────────────────────
@@ -1094,8 +1222,9 @@ async function agenticChat(
       "",
       "---",
       "",
-      "INSTRUCTIONS: Use the verified knowledge above to answer the user's question accurately. " +
-      "Cite sources as [Title](URL). If it doesn't fully cover the question, supplement from general knowledge and clearly flag that.",
+      "INSTRUCTIONS: Answer the user's question naturally and confidently using the verified knowledge above. " +
+      "When referencing where information comes from, say the source name naturally in text (e.g. 'According to Wikipedia, ...' or 'Reuters notes that ...'). " +
+      "Do NOT use markdown hyperlinks [Title](URL) — cite source names only. Supplement from general knowledge when needed without flagging it.",
     ].join("\n");
     const kbConvo = [...baseConvo];
     const sysIdx  = kbConvo.findIndex((m) => m.role === "system");
@@ -1210,9 +1339,9 @@ async function agenticChat(
           ? `\n\n📄 **Full page content from top sources** (deep-crawled just now):\n\n${deepParts.join("\n\n---\n\n")}`
           : "";
         const contextBlock = `\n\n---\n${snippetBlock}${deepBlock}\n\n---\n\n` +
-          `INSTRUCTIONS: Base your answer on the above real-world data. ` +
-          `Cite every factual claim as [Title](URL). ` +
-          `If the data above doesn't cover something the user asked about, say so honestly  -  do NOT fill in gaps from training memory.`;
+          `INSTRUCTIONS: Answer naturally and confidently using the above real-world data. ` +
+          `When referencing sources, cite them by name naturally in your answer (e.g. "According to Wikipedia, ..." or "Reuters reports that ..."). ` +
+          `Do NOT use markdown hyperlinks [Title](URL) — cite source names only. Answer fully; you have real data to work with.`;
 
         const convo: ChatMessage[] = [...baseConvo];
         const sysIdx = convo.findIndex((m) => m.role === "system");
@@ -1437,6 +1566,9 @@ Deno.serve(async (req: Request) => {
     const promptPreview = (lastUserMsg ? getTextPreview(lastUserMsg.content) : "").slice(0, 120);
     logEntry.prompt_preview = promptPreview;
 
+    // Detect time query for real-time clock widget on the frontend
+    const timeInfo = lastUserMsg ? detectTimeQuery(getTextPreview(lastUserMsg.content)) : null;
+
     const chain = MODEL_CHAINS[model] ?? DEFAULT_CHAIN;
 
     log("info", "request.start", {
@@ -1470,9 +1602,18 @@ Deno.serve(async (req: Request) => {
       }
 
       const basePrompt = mode === "dev" ? ENGAGERA_DEV_SYSTEM_PROMPT : SYSTEM_PROMPT;
+      // If this is a time query, inject the exact current time in the target timezone
+      const timeContext = timeInfo
+        ? `\n\n[Current time in ${timeInfo.label}]: ${new Intl.DateTimeFormat("en-US", {
+            timeZone: timeInfo.ianaZone,
+            weekday: "long", year: "numeric", month: "long", day: "numeric",
+            hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+          }).format(new Date())}`
+        : "";
       const systemContent = [
         basePrompt,
         userContextBlock,
+        timeContext,
         contextHint ? `\n\n[Additional user context] ${contextHint}` : "",
       ].join("");
 
@@ -1601,6 +1742,7 @@ Deno.serve(async (req: Request) => {
       conversationId: convId,
       ...(searchInfo   && { searchInfo }),
       ...(crawledUrls?.length && { crawledUrls }),
+      ...(timeInfo && { timeInfo }),
       ...(newGuestCount !== undefined && {
         guestMessageCount: newGuestCount, guestMessageLimit: GUEST_LIMIT,
       }),

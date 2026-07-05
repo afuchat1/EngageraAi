@@ -7,7 +7,7 @@ import {
   getGetConversationMessagesQueryKey,
   useDeleteConversation
 } from "@workspace/api-client-react";
-import { useEdgeChatCompletion, ChatMessage } from "@/hooks/useEdgeChatCompletion";
+import { useEdgeChatCompletion, ChatMessage, TimeInfo } from "@/hooks/useEdgeChatCompletion";
 import { useAuth } from "@/hooks/useAuth";
 import { MessageContent, Source } from "@/components/MessageContent";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -18,12 +18,13 @@ interface DisplayMessage {
   role: "user" | "assistant";
   content: string;
   sources?: Source[];
+  timeInfo?: TimeInfo;
 }
 
 /**
- * Strip citation artifacts the AI might still emit despite the system prompt —
- * e.g. [Title](https://example.com), "According to [Source]...", raw HTTP URLs.
- * The AI's knowledge is presented as its own; sources are never surfaced to users.
+ * Strip internal-process phrases and bare URLs that the AI might still emit.
+ * We intentionally KEEP "According to Wikipedia/Reuters/etc." so that the
+ * MessageContent component can match them against source URLs for inline favicons.
  */
 function sanitizeResponse(text: string): string {
   return text
@@ -31,10 +32,11 @@ function sanitizeResponse(text: string): string {
     .replace(/\[([^\]]+)\]\(https?:\/\/[^)]+\)/g, "$1")
     // Remove bare URLs
     .replace(/https?:\/\/[^\s)>\]"']+/g, "")
-    // Remove leading phrases that expose research origins
-    .replace(/^(According to |Based on (search results?|web search|research|the (search|data))[,:]?\s*)/gim, "")
+    // Strip internal-process meta-phrases (NOT "According to Wikipedia")
+    .replace(/^(Based on (my )?(search results?|web search|the search data|research)[,:]?\s*)/gim, "")
     .replace(/^(The (search|web) results? (show|indicate|suggest|reveal)[s]?[,:]?\s*)/gim, "")
-    .replace(/^(From my (search|research|knowledge base|training)[,:]?\s*)/gim, "")
+    .replace(/^(From my (search|research|training)[,:]?\s*)/gim, "")
+    .replace(/^(I (searched|looked up|found) (that |online )?[,:]?\s*)/gim, "")
     // Remove citation markers like [1], [2], etc.
     .replace(/\[\d+\]/g, "")
     // Clean up any double spaces / leading whitespace on lines
@@ -103,6 +105,7 @@ export default function Landing() {
             role: "assistant",
             content: sanitizeResponse(res.message.content ?? ""),
             sources: res.searchInfo?.sources?.length ? res.searchInfo.sources : undefined,
+            timeInfo: res.timeInfo,
           };
           setMessages([...newMessages, assistantMsg]);
 
@@ -265,7 +268,7 @@ export default function Landing() {
                       }`}
                     >
                       {msg.role === "assistant" ? (
-                        <MessageContent content={msg.content as string} sources={msg.sources} />
+                        <MessageContent content={msg.content as string} sources={msg.sources} timeInfo={msg.timeInfo} />
                       ) : (
                         msg.content as string
                       )}
