@@ -36,6 +36,12 @@ Use a `fixed inset-0 z-50` overlay, not `absolute bottom-full`. Trigger on: `sta
 ## Text style convention
 Guest badge and disclaimers use normal text — no `font-mono uppercase tracking-widest`. Only technical labels (API keys, code) use monospace.
 
+## Source link policy
+Sources, citations, and web search indicators are NEVER shown to users. The AI presents knowledge naturally without exposing origins. `sanitizeResponse()` in `landing.tsx` strips markdown links with URLs, bare URLs, "According to...", "Based on search results...", and citation markers [1][2] before rendering. `MessageContent` accepts no `sources` prop.
+
+## Edge function system prompt (important)
+System prompt in `supabase/functions/chat/index.ts` is updated to be natural/conversational — tells AI to never say "according to search results", "based on web search", "as of my knowledge cutoff", etc. Must deploy via Management API (needs SUPABASE_ACCESS_TOKEN Replit secret) or paste in Supabase Dashboard → Edge Functions → chat → Edit.
+
 ## Routing (App.tsx)
 - Public (no guard): `/`, `/docs`, `/sign-in`, `/sign-up`, `/forgot-password`, `/reset-password`
 - Private (ProtectedRoute): `/dashboard`, `/playground`, `/usage`

@@ -9,16 +9,36 @@ import {
 } from "@workspace/api-client-react";
 import { useEdgeChatCompletion, ChatMessage } from "@/hooks/useEdgeChatCompletion";
 import { useAuth } from "@/hooks/useAuth";
-import { MessageContent, Source } from "@/components/MessageContent";
+import { MessageContent } from "@/components/MessageContent";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { detectModel, MODEL_LABELS, EngageraModel } from "@/lib/autoModel";
 import PublicLayout from "@/components/layout/PublicLayout";
 
-// Extends the basic ChatMessage with optional rich metadata
 interface DisplayMessage {
   role: "user" | "assistant";
   content: string;
-  sources?: Source[];
+}
+
+/**
+ * Strip citation artifacts the AI might still emit despite the system prompt —
+ * e.g. [Title](https://example.com), "According to [Source]...", raw HTTP URLs.
+ * The AI's knowledge is presented as its own; sources are never surfaced to users.
+ */
+function sanitizeResponse(text: string): string {
+  return text
+    // Remove markdown links: [Text](url) → just keep Text
+    .replace(/\[([^\]]+)\]\(https?:\/\/[^)]+\)/g, "$1")
+    // Remove bare URLs
+    .replace(/https?:\/\/[^\s)>\]"']+/g, "")
+    // Remove leading phrases that expose research origins
+    .replace(/^(According to |Based on (search results?|web search|research|the (search|data))[,:]?\s*)/gim, "")
+    .replace(/^(The (search|web) results? (show|indicate|suggest|reveal)[s]?[,:]?\s*)/gim, "")
+    .replace(/^(From my (search|research|knowledge base|training)[,:]?\s*)/gim, "")
+    // Remove citation markers like [1], [2], etc.
+    .replace(/\[\d+\]/g, "")
+    // Clean up any double spaces / leading whitespace on lines
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
 }
 
 export default function Landing() {
@@ -80,8 +100,7 @@ export default function Landing() {
         onSuccess: (res: any) => {
           const assistantMsg: DisplayMessage = {
             role: "assistant",
-            content: res.message.content,
-            sources: res.searchInfo?.sources?.length ? res.searchInfo.sources : undefined,
+            content: sanitizeResponse(res.message.content ?? ""),
           };
           setMessages([...newMessages, assistantMsg]);
 
@@ -244,7 +263,7 @@ export default function Landing() {
                       }`}
                     >
                       {msg.role === "assistant" ? (
-                        <MessageContent content={msg.content as string} sources={msg.sources} />
+                        <MessageContent content={msg.content as string} />
                       ) : (
                         msg.content as string
                       )}
