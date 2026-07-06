@@ -1529,15 +1529,36 @@ Deno.serve(async (req: Request) => {
     // ── Auth ──────────────────────────────────────────────────────────────────
     let userId: string | undefined;
     let guestSessionId: string | undefined;
+    let apiKeyId: number | undefined;
 
     const authHeader = req.headers.get("authorization");
     if (authHeader?.startsWith("Bearer ")) {
       const token   = authHeader.slice(7);
       const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
       if (token && token !== anonKey) {
-        const { data, error: authErr } = await db.auth.getUser(token);
-        userId = data.user?.id;
-        if (authErr) log("warn", "auth.jwt_error", { requestId, error: authErr.message });
+        if (token.startsWith("eng_")) {
+          // Developer API key — hash and look up in engagera_api_keys
+          const buf  = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+          const hash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+          const { data: keyRow, error: keyErr } = await db
+            .from("engagera_api_keys")
+            .select("id, user_id, is_active")
+            .eq("key_hash", hash)
+            .maybeSingle();
+          if (keyErr) {
+            log("warn", "auth.api_key_lookup_failed", { requestId, error: keyErr.message });
+          } else if (!keyRow || !keyRow.is_active) {
+            return json({ error: "Invalid or revoked API key" }, 401);
+          } else {
+            userId   = keyRow.user_id as string;
+            apiKeyId = keyRow.id as number;
+          }
+        } else {
+          // Supabase session JWT
+          const { data, error: authErr } = await db.auth.getUser(token);
+          userId = data.user?.id;
+          if (authErr) log("warn", "auth.jwt_error", { requestId, error: authErr.message });
+        }
       }
     }
 
@@ -1747,7 +1768,20 @@ Deno.serve(async (req: Request) => {
         await db.from("engagera_usage_records").insert({
           user_id: userId, model,
           input_tokens: inputTokens, output_tokens: outputTokens, total_tokens: totalTokens,
+          ...(apiKeyId !== undefined && { api_key_id: apiKeyId }),
         });
+      } catch { /* non-fatal */ }
+    }
+
+    // Update last_used_at and increment total_requests on the API key
+    if (apiKeyId !== undefined) {
+      try {
+        await Promise.all([
+          db.from("engagera_api_keys")
+            .update({ last_used_at: new Date().toISOString() })
+            .eq("id", apiKeyId),
+          db.rpc("engagera_increment_api_key_requests", { p_key_id: apiKeyId }),
+        ]);
       } catch { /* non-fatal */ }
     }
 
