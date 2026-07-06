@@ -12,7 +12,7 @@ export default function PublicLayout({ children }: PublicLayoutProps) {
   const { user } = useAuth();
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-black text-white">
+    <div className="flex flex-col h-full bg-black text-white">
       <header className="shrink-0 flex items-center justify-between px-4 md:px-6 py-3 border-b border-white/15 bg-black z-30">
         <div className="flex items-center gap-5">
           <Link href="/" className="flex items-center gap-2">
@@ -45,7 +45,7 @@ export default function PublicLayout({ children }: PublicLayoutProps) {
           )}
         </div>
       </header>
-      <main className="flex-1 min-h-0 overflow-hidden">
+      <main className="flex-1 min-h-0 overflow-y-auto">
         {children}
       </main>
     </div>
