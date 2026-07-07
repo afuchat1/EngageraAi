@@ -43,11 +43,11 @@
   --font-sans: var(--app-font-sans);
   --font-mono: var(--app-font-mono);
 
-  --radius-sm: 0;
-  --radius-md: 0;
-  --radius-lg: 0;
-  --radius-xl: 0;
-  --radius: 0;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius: 0.5rem;
 }
 
 :root, .dark {
@@ -85,7 +85,7 @@
 
   --app-font-sans: 'Inter', system-ui, -apple-system, sans-serif;
   --app-font-mono: 'JetBrains Mono', 'Menlo', monospace;
-  --radius: 0;
+  --radius: 0.5rem;
 
   --shadow-sm: none;
   --shadow: none;
@@ -96,6 +96,11 @@
 @layer base {
   * {
     @apply border-border;
+  }
+
+  /* Global: every interactive element is rounded by default */
+  button, input, textarea, select {
+    border-radius: 0.75rem;
   }
 
   html {
@@ -151,6 +156,6 @@
 
   .scrollbar-thin::-webkit-scrollbar-thumb {
     background: var(--border);
-    border-radius: 0px;
+    border-radius: 4px;
   }
 }

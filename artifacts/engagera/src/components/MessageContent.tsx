@@ -386,7 +386,7 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
     <div className="relative my-3 overflow-hidden rounded-xl">
       <div className="flex items-center justify-between px-4 py-2 bg-[#1e1e1e] border border-white/10 rounded-t-xl">
         <span className="text-[10px] text-white/35 font-mono uppercase tracking-wider">{language || "code"}</span>
-        <button onClick={() => navigator.clipboard.writeText(code).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); })} className="flex items-center gap-1.5 text-[11px] text-white/35 hover:text-white/70 transition-colors">
+        <button onClick={() => navigator.clipboard.writeText(code).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); })} className="flex items-center gap-1.5 text-[11px] text-white/35 hover:text-white/70 transition-colors rounded-lg px-1.5 py-0.5">
           {copied ? <><Check className="h-3 w-3" /> Copied</> : <><Copy className="h-3 w-3" /> Copy</>}
         </button>
       </div>

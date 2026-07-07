@@ -135,7 +135,7 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
           </div>
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger asChild>
-              <button className="p-2 text-white/50 hover:text-white transition-colors">
+              <button className="p-2 text-white/50 hover:text-white transition-colors rounded-xl">
                 {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
               </button>
             </SheetTrigger>
