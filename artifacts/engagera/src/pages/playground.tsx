@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { useListModels } from "@workspace/api-client-react";
-import { streamEdgeChat, ChatMessage } from "@/hooks/useEdgeChatCompletion";
+import { callEdgeChat, ChatMessage } from "@/hooks/useEdgeChatCompletion";
 import { MessageContent } from "@/components/MessageContent";
 import { Trash2, SlidersHorizontal, Terminal, Send } from "lucide-react";
 import { useConfirm } from "@/hooks/useConfirm";
@@ -23,19 +23,19 @@ export default function Playground() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [temperature, setTemperature] = useState(0.7);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [streamingContent, setStreamingContent] = useState<string>("");
-  const abortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const confirm = useConfirm();
   const alert = useAlert();
 
-  useEffect(() => () => { abortRef.current?.abort(); }, []);
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isLoading]);
 
   const handleSend = useCallback(async () => {
-    if (!input.trim() || isStreaming) return;
+    if (!input.trim() || isLoading) return;
 
     const userMsg: ChatMessage = { role: "user", content: input.trim() };
     const conversation: ChatMessage[] =
@@ -45,44 +45,18 @@ export default function Playground() {
 
     setMessages(conversation);
     setInput("");
-    setIsStreaming(true);
-    setStreamingContent("");
-
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
-    let accumulated = "";
+    setIsLoading(true);
 
     try {
-      await streamEdgeChat(
-        { messages: conversation, model: selectedModel },
-        {
-          onToken: (chunk) => {
-            accumulated += chunk;
-            setStreamingContent(accumulated);
-            messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-          },
-          onDone: () => {
-            setIsStreaming(false);
-            setStreamingContent("");
-            setMessages([...conversation, { role: "assistant", content: accumulated }]);
-            messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-          },
-          onError: (err) => {
-            setIsStreaming(false);
-            setStreamingContent("");
-            alert("Error: " + err.message, "error");
-            setMessages([...conversation]);
-          },
-        },
-        ctrl.signal,
-      );
-    } catch {
-      setIsStreaming(false);
-      setStreamingContent("");
+      const response = await callEdgeChat({ messages: conversation, model: selectedModel });
+      setMessages([...conversation, { role: "assistant", content: response.message.content }]);
+    } catch (err: any) {
+      alert("Error: " + (err?.message ?? "Request failed"), "error");
+      setMessages([...conversation]);
     } finally {
-      abortRef.current = null;
+      setIsLoading(false);
     }
-  }, [input, isStreaming, messages, systemPrompt, selectedModel, alert]);
+  }, [input, isLoading, messages, systemPrompt, selectedModel, alert]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.ctrlKey && !e.shiftKey) {
@@ -100,15 +74,8 @@ export default function Playground() {
       cancelLabel: "Cancel",
     });
     if (!ok) return;
-    abortRef.current?.abort();
-    setIsStreaming(false);
-    setStreamingContent("");
     setMessages([]);
   };
-
-  const allMessages: ChatMessage[] = isStreaming
-    ? [...messages, { role: "assistant", content: streamingContent }]
-    : messages;
 
   return (
     <AppLayout title="Playground">
@@ -150,6 +117,8 @@ export default function Playground() {
                   <span>Creative</span>
                 </div>
               </div>
+
+              <Pill label="Mode" value="Standard" />
             </div>
           </div>
 
@@ -184,7 +153,7 @@ export default function Playground() {
           </div>
 
           <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3 scrollbar-thin">
-            {allMessages.length === 0 ? (
+            {messages.length === 0 && !isLoading ? (
               <div className="h-full flex items-center justify-center">
                 <div className="text-center">
                   <Terminal className="w-8 h-8 text-white/15 mx-auto mb-3" />
@@ -193,10 +162,8 @@ export default function Playground() {
                 </div>
               </div>
             ) : (
-              allMessages.map((msg, idx) => {
-                const isStreamingMsg =
-                  isStreaming && idx === allMessages.length - 1 && msg.role === "assistant";
-                return (
+              <>
+                {messages.map((msg, idx) => (
                   <div
                     key={idx}
                     className={`rounded-xl px-4 py-3 ${
@@ -211,23 +178,27 @@ export default function Playground() {
                       {msg.role}
                     </p>
                     {msg.role === "assistant" ? (
-                      isStreamingMsg && !msg.content ? (
-                        <div className="flex gap-1.5 py-1">
-                          <span className="w-1.5 h-1.5 bg-white/40 rounded-full animate-pulse" />
-                          <span className="w-1.5 h-1.5 bg-white/40 rounded-full animate-pulse" style={{ animationDelay: "150ms" }} />
-                          <span className="w-1.5 h-1.5 bg-white/40 rounded-full animate-pulse" style={{ animationDelay: "300ms" }} />
-                        </div>
-                      ) : (
-                        <MessageContent content={msg.content as string} />
-                      )
+                      <MessageContent content={msg.content as string} />
                     ) : (
                       <p className="text-sm whitespace-pre-wrap text-white/80 font-mono leading-relaxed">
                         {msg.content as string}
                       </p>
                     )}
                   </div>
-                );
-              })
+                ))}
+
+                {/* Loading indicator */}
+                {isLoading && (
+                  <div className="rounded-xl px-4 py-3 bg-transparent mr-4">
+                    <p className="text-[9px] font-mono uppercase tracking-widest text-white/30 mb-2">assistant</p>
+                    <div className="flex gap-1.5 py-1">
+                      <span className="w-1.5 h-1.5 bg-white/40 rounded-full animate-pulse" />
+                      <span className="w-1.5 h-1.5 bg-white/40 rounded-full animate-pulse" style={{ animationDelay: "150ms" }} />
+                      <span className="w-1.5 h-1.5 bg-white/40 rounded-full animate-pulse" style={{ animationDelay: "300ms" }} />
+                    </div>
+                  </div>
+                )}
+              </>
             )}
             <div ref={messagesEndRef} />
           </div>
@@ -239,7 +210,7 @@ export default function Playground() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="User message… (Enter to send, Shift+Enter for newline)"
-                disabled={isStreaming}
+                disabled={isLoading}
                 className="w-full bg-white/[0.04] hover:bg-white/[0.06] focus:bg-white/[0.06] rounded-xl px-4 py-2.5 pr-10 text-sm outline-none resize-none max-h-32 min-h-[44px] scrollbar-thin disabled:opacity-40 transition-colors placeholder:text-white/20"
                 rows={1}
                 onInput={(e) => {
@@ -250,7 +221,7 @@ export default function Playground() {
               />
               <button
                 onClick={handleSend}
-                disabled={!input.trim() || isStreaming}
+                disabled={!input.trim() || isLoading}
                 className="absolute right-2 bottom-2 p-1.5 text-white/40 hover:text-white disabled:opacity-20 transition-colors"
               >
                 <Send className="w-4 h-4" />
