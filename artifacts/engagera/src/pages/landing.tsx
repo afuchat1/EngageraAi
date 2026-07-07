@@ -63,6 +63,13 @@ export default function Landing() {
   // Keep ref in sync so streaming callbacks see the latest snapshot
   useEffect(() => { messagesRef.current = messages; }, [messages]);
 
+  // Merge streaming content into the display list so the assistant MessageContent
+  // component stays at a stable tree position throughout the stream → no blank flash
+  // when the transition from streaming to completed happens.
+  const displayMessages: DisplayMessage[] = isStreaming
+    ? [...messages, { role: "assistant" as const, content: streamingContent }]
+    : messages;
+
   // Abort any in-flight stream on unmount
   useEffect(() => () => { abortRef.current?.abort(); }, []);
 
@@ -291,7 +298,7 @@ export default function Landing() {
               </div>
             ) : (
               <div className="max-w-3xl mx-auto space-y-6 px-4 md:px-8 py-6">
-                {messages.map((msg, idx) => (
+                {displayMessages.map((msg, idx) => (
                   <div key={idx} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                     <div
                       className={`max-w-[88%] break-words ${
@@ -301,30 +308,22 @@ export default function Landing() {
                       }`}
                     >
                       {msg.role === "assistant" ? (
-                        <MessageContent content={msg.content as string} sources={msg.sources} timeInfo={msg.timeInfo} />
+                        // Show bouncing dots while waiting for the first streaming token
+                        isStreaming && idx === displayMessages.length - 1 && !streamingContent ? (
+                          <div className="flex items-center gap-1.5 py-2">
+                            <span className="w-2 h-2 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "0ms" }} />
+                            <span className="w-2 h-2 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "120ms" }} />
+                            <span className="w-2 h-2 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "240ms" }} />
+                          </div>
+                        ) : (
+                          <MessageContent content={msg.content as string} sources={msg.sources} timeInfo={msg.timeInfo} />
+                        )
                       ) : (
                         msg.content as string
                       )}
                     </div>
                   </div>
                 ))}
-
-                {/* Streaming message */}
-                {isStreaming && (
-                  <div className="flex justify-start">
-                    <div className="text-white w-full max-w-[88%] break-words">
-                      {streamingContent ? (
-                        <MessageContent content={streamingContent} />
-                      ) : (
-                        <div className="flex items-center gap-1.5 py-2">
-                          <span className="w-2 h-2 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "0ms" }} />
-                          <span className="w-2 h-2 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "120ms" }} />
-                          <span className="w-2 h-2 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "240ms" }} />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
 
                 <div ref={messagesEndRef} />
               </div>
