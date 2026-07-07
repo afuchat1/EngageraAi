@@ -351,12 +351,6 @@ export default function Docs() {
                 <Param name="model" type="string">
                   The Engagera model ID to use. Defaults to <code className="font-mono text-[11px]">engagera-pro</code> if omitted.
                 </Param>
-                <Param name="conversationId" type="number">
-                  ID of an existing conversation to continue. When provided, the response will append to that conversation's history. Omit to start a new conversation.
-                </Param>
-                <Param name="stream" type="boolean">
-                  Reserved for future streaming support. Currently must be <code className="font-mono text-[11px]">false</code> or omitted.
-                </Param>
               </div>
 
               <h3 id="chat-response" className="text-sm font-semibold mb-3 scroll-mt-20 text-white/80">Response</h3>
@@ -367,14 +361,8 @@ export default function Docs() {
                 <Param name="model" type="string">
                   The model ID used to generate this response.
                 </Param>
-                <Param name="conversationId" type="number">
-                  The conversation ID (new or existing) that this message was saved to.
-                </Param>
                 <Param name="usage" type="object">
                   Token usage — <code className="font-mono text-[11px]">prompt_tokens</code>, <code className="font-mono text-[11px]">completion_tokens</code>, <code className="font-mono text-[11px]">total_tokens</code>.
-                </Param>
-                <Param name="searchInfo" type="object">
-                  Present when the model used live web search. Contains <code className="font-mono text-[11px]">sources</code> array with <code className="font-mono text-[11px]">title</code>, <code className="font-mono text-[11px]">url</code>, <code className="font-mono text-[11px]">snippet</code> per result.
                 </Param>
               </div>
 
@@ -563,7 +551,7 @@ print(data["message"]["content"])`} />
 const BASE = "${BASE_URL}";
 
 interface Message { role: "user" | "assistant" | "system"; content: string; }
-interface ChatOptions { model?: string; conversationId?: number; }
+interface ChatOptions { model?: string; }
 
 export async function chat(
   apiKey: string,
@@ -579,7 +567,6 @@ export async function chat(
     body: JSON.stringify({
       messages,
       model: options.model ?? "engagera-pro",
-      conversationId: options.conversationId,
     }),
   });
   if (!res.ok) {
@@ -607,12 +594,8 @@ def chat(
     api_key: str,
     messages: list[dict],
     model: str = "engagera-pro",
-    conversation_id: Optional[int] = None,
 ) -> dict:
     payload = {"messages": messages, "model": model}
-    if conversation_id:
-        payload["conversationId"] = conversation_id
-
     res = requests.post(
         f"{BASE}/chat",
         headers={

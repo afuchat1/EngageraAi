@@ -6,6 +6,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { setAuthTokenGetter, setFallbackBearerToken, setUrlMapper, setGuestSessionId } from "@workspace/api-client-react";
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
+import { ConfirmProvider } from "@/components/ui/confirm-dialog";
+import { AlertProvider } from "@/components/ui/alert-toast";
 
 import Landing from "./pages/landing";
 import SignIn from "./pages/sign-in";
@@ -16,6 +18,7 @@ import Dashboard from "./pages/dashboard";
 import Playground from "./pages/playground";
 import Usage from "./pages/usage";
 import Docs from "./pages/docs";
+import Settings from "./pages/settings";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -77,6 +80,7 @@ function Router() {
       <Route path="/dashboard"><ProtectedRoute component={Dashboard} /></Route>
       <Route path="/playground"><ProtectedRoute component={Playground} /></Route>
       <Route path="/usage"><ProtectedRoute component={Usage} /></Route>
+      <Route path="/settings"><ProtectedRoute component={Settings} /></Route>
       <Route component={NotFound} />
     </Switch>
   );
@@ -91,10 +95,14 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <Router />
-        </WouterRouter>
-        <Toaster />
+        <ConfirmProvider>
+          <AlertProvider>
+            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+              <Router />
+            </WouterRouter>
+            <Toaster />
+          </AlertProvider>
+        </ConfirmProvider>
       </TooltipProvider>
     </QueryClientProvider>
   );

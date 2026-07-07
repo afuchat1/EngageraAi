@@ -392,6 +392,64 @@ async function callOpenAICompat(
   return { ok: true, content, inputTokens, outputTokens, provider: providerName, model };
 }
 
+
+// ── OpenAI-compatible streaming generator ─────────────────────────────────────
+async function* callOpenAICompatStream(
+  apiUrl: string,
+  apiKey: string,
+  model: string,
+  messages: ChatMessage[],
+  maxTokens: number,
+  requestId: string,
+  providerName: string,
+  extraHeaders?: Record<string, string>,
+): AsyncGenerator<string> {
+  let res: Response;
+  try {
+    res = await fetch(apiUrl, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        ...extraHeaders,
+      },
+      body: JSON.stringify({ model, messages, max_tokens: maxTokens, stream: true }),
+      signal: AbortSignal.timeout(25_000),
+    });
+  } catch (err) {
+    log("warn", `${providerName}.stream_error`, { requestId, error: String(err) });
+    return;
+  }
+  if (!res.ok || !res.body) {
+    log("warn", `${providerName}.stream_http_error`, { requestId, status: res.status });
+    return;
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const raw = line.slice(6).trim();
+        if (raw === "[DONE]") return;
+        try {
+          const parsed = JSON.parse(raw);
+          const chunk = parsed.choices?.[0]?.delta?.content;
+          if (chunk) yield chunk;
+        } catch { /* skip malformed chunk */ }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 // ── Google Gemini call (different API format) ─────────────────────────────────
 async function callGemini(
   apiKey: string,
@@ -1496,10 +1554,11 @@ Deno.serve(async (req: Request) => {
     let body: Record<string,unknown>;
     try { body = await req.json(); } catch { return json({ error: "Invalid JSON" }, 400); }
 
-    const { messages, model = "engagera-2.0", conversationId, contextHint, mode } = body as {
+    const { messages, model = "engagera-2.0", conversationId, stream = false, contextHint, mode } = body as {
       messages: unknown[];
       model?: string;
       conversationId?: number;
+      stream?: boolean;
       contextHint?: string;
       mode?: string;
     };
@@ -1614,6 +1673,178 @@ Deno.serve(async (req: Request) => {
       authed: !!userId, messageCount: validMessages.length,
       providers: chain.map((c) => c.provider).filter((v, i, a) => a.indexOf(v) === i),
     });
+
+
+    // ── Streaming path ──────────────────────────────────────────────────────────
+    if (stream && !generateImage) {
+      // Build system prompt + user context (same as normal path)
+      let userCtxBlock = "";
+      if (userId) {
+        try { userCtxBlock = await loadUserContext(db, userId); } catch {}
+      }
+      const basePrompt2 = mode === "dev" ? ENGAGERA_DEV_SYSTEM_PROMPT : SYSTEM_PROMPT;
+      const timeCtx2 = timeInfo
+        ? `\n\n[Current time in ${timeInfo.label}]: ${new Intl.DateTimeFormat("en-US", {
+            timeZone: timeInfo.ianaZone,
+            weekday: "long", year: "numeric", month: "long", day: "numeric",
+            hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+          }).format(new Date())}`
+        : "";
+      const sysContent2 = [basePrompt2, userCtxBlock, timeCtx2,
+        contextHint ? `\n\n[Additional user context] ${contextHint}` : ""].join("");
+
+      let streamMsgs: ChatMessage[] = [
+        { role: "system", content: sysContent2 },
+        ...validMessages.filter((m) => m.role !== "system").map((m) => ({
+          role: m.role,
+          content: typeof m.content === "string" ? m.content : getTextPreview(m.content as MessageContent),
+        })),
+      ];
+
+      // Pre-search (lightweight — snippets only, no deep crawl to keep TTFT low)
+      let streamSearchInfo: { query: string; sources: Source[] } | undefined;
+      const searchText2 = needsWebSearch(validMessages as IncomingMessage[]);
+      if (searchText2) {
+        try {
+          const recentCtx2 = validMessages.filter((m) => m.role === "user").slice(-3)
+            .map((m) => (typeof m.content === "string" ? m.content : "")).join(" ").slice(0, 120);
+          const q2 = buildSearchQuery(searchText2, recentCtx2);
+          const sr2 = await webSearch(q2, braveKey);
+          if (sr2.sources.length > 0) {
+            const ctxBlk = `\n\n---\n🌐 **Live search results** (retrieved just now):\n\n${sr2.text.slice(0, 2000)}\n---\n\nAnswer naturally using the above data.`;
+            const si2 = streamMsgs.findIndex((m) => m.role === "system");
+            if (si2 >= 0) streamMsgs[si2] = { ...streamMsgs[si2], content: (streamMsgs[si2].content as string) + ctxBlk };
+            streamSearchInfo = { query: q2, sources: sr2.sources.slice(0, 8) };
+          }
+        } catch { /* non-fatal */ }
+      }
+
+      const encoder2 = new TextEncoder();
+      const streamBody = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          const send = (obj: object) =>
+            controller.enqueue(encoder2.encode(`data: ${JSON.stringify(obj)}\n\n`));
+
+          try {
+            if (streamSearchInfo) send({ type: "meta", searchInfo: streamSearchInfo });
+
+            let fullReply = "";
+            let didStream = false;
+
+            // Try OpenAI-compatible providers with real streaming
+            const streamChain2 = (MODEL_CHAINS[model] ?? DEFAULT_CHAIN).filter(
+              ({ provider }) => provider !== "gemini" && !!keys[provider],
+            );
+
+            for (const { provider, model: provModel } of streamChain2) {
+              const key2 = keys[provider]!;
+              const apiUrl2 = provider === "groq" ? GROQ_API_URL :
+                              provider === "openai" ? OPENAI_API_URL :
+                              provider === "deepseek" ? DEEPSEEK_API_URL : OPENROUTER_API_URL;
+              const extra2 = provider === "openrouter"
+                ? { "HTTP-Referer": "https://engagera.afuchat.com", "X-Title": "Engagera" } : undefined;
+              try {
+                for await (const chunk of callOpenAICompatStream(apiUrl2, key2, provModel, streamMsgs, 4096, requestId, provider, extra2)) {
+                  fullReply += chunk;
+                  send({ type: "token", content: chunk });
+                  didStream = true;
+                }
+                if (didStream && fullReply) break;
+                fullReply = ""; didStream = false;
+              } catch { fullReply = ""; didStream = false; }
+            }
+
+            // Fallback: non-streaming call, stream word-by-word
+            if (!fullReply) {
+              const fbResult = await callWithFallback(streamChain2.length ? streamChain2 : DEFAULT_CHAIN, keys, streamMsgs, 4096, requestId);
+              fullReply = fbResult.content || "I'm having trouble connecting right now. Please try again.";
+              for (const wrd of fullReply.split(/(\s+)/)) {
+                if (wrd) send({ type: "token", content: wrd });
+              }
+            }
+
+            // Persist conversation
+            let convId2: number | undefined = conversationId;
+            try {
+              if (!convId2) {
+                const ins2: Record<string, unknown> = { title: promptPreview.slice(0, 60) || "New conversation", model };
+                if (userId) ins2.user_id = userId; else ins2.guest_session_id = guestSessionId;
+                const { data: cd2 } = await db.from("engagera_conversations").insert(ins2).select("id").single();
+                convId2 = cd2?.id;
+              }
+              if (convId2) {
+                if (lastUserMsg) {
+                  await db.from("engagera_messages").insert({
+                    conversation_id: convId2, role: "user",
+                    content: typeof lastUserMsg.content === "string" ? lastUserMsg.content : getTextPreview(lastUserMsg.content as MessageContent),
+                    token_count: 0,
+                  });
+                }
+                await db.from("engagera_messages").insert({
+                  conversation_id: convId2, role: "assistant", content: fullReply,
+                  token_count: Math.ceil(fullReply.length / 4),
+                });
+                await db.rpc("engagera_increment_message_count", { p_conversation_id: convId2 }).catch(() => {});
+              }
+            } catch { /* non-fatal */ }
+
+            // Usage + guest counter
+            if (userId) {
+              try {
+                const approxIn = Math.ceil(streamMsgs.reduce((a, m) => a + (typeof m.content === "string" ? m.content.length : 0), 0) / 4);
+                const approxOut = Math.ceil(fullReply.length / 4);
+                await db.from("engagera_usage_records").insert({
+                  user_id: userId, model,
+                  input_tokens: approxIn, output_tokens: approxOut, total_tokens: approxIn + approxOut,
+                  ...(apiKeyId !== undefined && { api_key_id: apiKeyId }),
+                });
+                if (apiKeyId !== undefined) {
+                  await Promise.all([
+                    db.from("engagera_api_keys").update({ last_used_at: new Date().toISOString() }).eq("id", apiKeyId),
+                    db.rpc("engagera_increment_api_key_requests", { p_key_id: apiKeyId }),
+                  ]);
+                }
+              } catch { /* non-fatal */ }
+            }
+            let streamGuestCount: number | undefined;
+            if (guestSessionId) {
+              try {
+                const { data: gcd } = await db.rpc("engagera_increment_guest_count", { p_session_id: guestSessionId });
+                streamGuestCount = typeof gcd === "number" ? gcd : undefined;
+              } catch { /* non-fatal */ }
+            }
+
+            // Memory extraction (fire-and-forget)
+            if (userId && lastUserMsg && fullReply) {
+              const umt = typeof lastUserMsg.content === "string" ? lastUserMsg.content : getTextPreview(lastUserMsg.content as MessageContent);
+              extractAndSaveMemory(db, userId, umt, fullReply, keys, requestId).catch(() => {});
+            }
+
+            send({ type: "done", model, conversationId: convId2,
+              ...(streamSearchInfo && { searchInfo: streamSearchInfo }),
+              ...(streamGuestCount !== undefined && {
+                guestMessageCount: streamGuestCount, guestMessageLimit: GUEST_LIMIT,
+              }) });
+            controller.enqueue(encoder2.encode("data: [DONE]\n\n"));
+          } catch (streamErr) {
+            try {
+              controller.enqueue(encoder2.encode(`data: ${JSON.stringify({ type: "error", error: String(streamErr) })}\n\n`));
+            } catch {}
+          } finally {
+            controller.close();
+          }
+        },
+      });
+
+      return new Response(streamBody, {
+        headers: {
+          ...CORS_HEADERS,
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "X-Accel-Buffering": "no",
+        },
+      });
+    }
 
     let reply = "", inputTokens = 0, outputTokens = 0, totalTokens = 0;
 

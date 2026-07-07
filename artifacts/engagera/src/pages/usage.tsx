@@ -1,229 +1,232 @@
 import React, { useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { useGetUsage, useGetUsageSummary } from "@workspace/api-client-react";
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, CartesianGrid } from "recharts";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { format, subDays, parseISO } from "date-fns";
+import {
+  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  BarChart, Bar, CartesianGrid,
+} from "recharts";
+import { format, subDays, parseISO, startOfDay, endOfDay, differenceInCalendarDays } from "date-fns";
+import { TrendingUp, Hash, ArrowRight, ArrowUpRight, ArrowDownRight } from "lucide-react";
+
+function toDateInputValue(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
+
+function StatCard({
+  label, value, loading, icon: Icon,
+}: {
+  label: string; value: string | number | undefined; loading: boolean; icon: React.ElementType;
+}) {
+  return (
+    <div className="rounded-2xl bg-white/[0.04] p-5">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-[10px] font-mono uppercase tracking-widest text-white/30">{label}</p>
+        <Icon className="w-3.5 h-3.5 text-white/20" />
+      </div>
+      <p className="text-3xl font-light tracking-tight">
+        {loading ? "—" : (value?.toLocaleString() ?? "0")}
+      </p>
+    </div>
+  );
+}
 
 export default function Usage() {
-  const [timeRange, setTimeRange] = useState("30");
-  
-  const { data: usageRecords = [], isLoading: recordsLoading } = useGetUsage({ days: parseInt(timeRange) });
+  const defaultTo   = new Date();
+  const defaultFrom = subDays(defaultTo, 29);
+
+  const [fromDate, setFromDate] = useState(toDateInputValue(defaultFrom));
+  const [toDate,   setToDate]   = useState(toDateInputValue(defaultTo));
+
+  const { data: allRecords = [], isLoading: recordsLoading } = useGetUsage({ days: 90 });
   const { data: summary, isLoading: summaryLoading } = useGetUsageSummary();
 
-  // Process data for charts
-  // Group usage by date for the area chart
-  const usageByDate = usageRecords.reduce((acc: any, record) => {
-    const dateStr = format(parseISO(record.createdAt), "MMM dd");
-    if (!acc[dateStr]) {
-      acc[dateStr] = { date: dateStr, tokens: 0, requests: 0 };
-    }
-    acc[dateStr].tokens += record.totalTokens;
-    acc[dateStr].requests += 1;
-    return acc;
-  }, {});
+  const from = startOfDay(new Date(fromDate + "T00:00:00"));
+  const to   = endOfDay(new Date(toDate   + "T00:00:00"));
 
-  const chartData = Object.values(usageByDate).sort((a: any, b: any) => {
-     // Naive sort by assuming they are sequentially ordered from API, 
-     // but ideally we'd sort by actual date object. The API returns descending.
-     return 1; 
-  }).reverse();
+  const usageRecords = allRecords.filter((r) => {
+    const d = new Date(r.createdAt);
+    return d >= from && d <= to;
+  });
 
-  // If chartData is empty, pad it with some zeroes for the UI
-  if (chartData.length === 0 && !recordsLoading) {
-    for(let i=6; i>=0; i--) {
-      chartData.push({
-        date: format(subDays(new Date(), i), "MMM dd"),
-        tokens: 0,
-        requests: 0
-      });
-    }
-  }
+  const byDate: Record<string, { date: string; tokens: number; requests: number }> = {};
+  usageRecords.forEach((r) => {
+    const key = format(parseISO(r.createdAt), "MMM dd");
+    if (!byDate[key]) byDate[key] = { date: key, tokens: 0, requests: 0 };
+    byDate[key].tokens   += r.totalTokens;
+    byDate[key].requests += 1;
+  });
 
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-black border border-white/20 p-3 shadow-xl">
-          <p className="text-white/60 text-xs mb-2 font-mono uppercase">{label}</p>
-          <p className="text-white text-sm font-medium">{payload[0].value.toLocaleString()} Tokens</p>
-          <p className="text-white/60 text-xs mt-1">{payload[0].payload.requests} Requests</p>
-        </div>
-      );
-    }
-    return null;
+  const diffDays = Math.min(differenceInCalendarDays(to, from) + 1, 90);
+  const chartData = Array.from({ length: diffDays }, (_, i) => {
+    const d = format(subDays(to, diffDays - 1 - i), "MMM dd");
+    return byDate[d] ?? { date: d, tokens: 0, requests: 0 };
+  });
+
+  const ChartTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload?.length) return null;
+    return (
+      <div className="bg-[#111] rounded-xl px-3 py-2.5 shadow-2xl text-xs">
+        <p className="text-white/40 font-mono mb-1.5 uppercase tracking-wider text-[10px]">{label}</p>
+        <p className="text-white font-medium">{payload[0].value.toLocaleString()} tokens</p>
+        <p className="text-white/40 mt-0.5">{payload[0].payload.requests} requests</p>
+      </div>
+    );
   };
 
   return (
     <AppLayout title="Usage & Analytics">
-      <div className="flex justify-end mb-6">
-        <Select value={timeRange} onValueChange={setTimeRange}>
-          <SelectTrigger className="w-[180px] bg-transparent border-white/20 rounded-none text-sm">
-            <SelectValue placeholder="Select Range" />
-          </SelectTrigger>
-          <SelectContent className="bg-black border-white/20 rounded-none">
-            <SelectItem value="7" className="rounded-none hover:bg-white/10">Last 7 Days</SelectItem>
-            <SelectItem value="30" className="rounded-none hover:bg-white/10">Last 30 Days</SelectItem>
-            <SelectItem value="90" className="rounded-none hover:bg-white/10">Last 90 Days</SelectItem>
-          </SelectContent>
-        </Select>
+
+      {/* Date range */}
+      <div className="flex items-center gap-2 justify-end mb-6">
+        <input
+          type="date"
+          value={fromDate}
+          max={toDate}
+          onChange={(e) => setFromDate(e.target.value)}
+          className="bg-white/[0.04] text-sm text-white/80 px-3 py-1.5 rounded-xl outline-none focus:bg-white/[0.07] transition-colors [color-scheme:dark]"
+        />
+        <ArrowRight className="w-3.5 h-3.5 text-white/20 shrink-0" />
+        <input
+          type="date"
+          value={toDate}
+          min={fromDate}
+          max={toDateInputValue(new Date())}
+          onChange={(e) => setToDate(e.target.value)}
+          className="bg-white/[0.04] text-sm text-white/80 px-3 py-1.5 rounded-xl outline-none focus:bg-white/[0.07] transition-colors [color-scheme:dark]"
+        />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        <div className="p-6 border border-white/15 bg-white/[0.01]">
-          <div className="text-white/60 text-[10px] uppercase font-mono tracking-wider mb-2">Total Tokens</div>
-          <div className="text-3xl font-light">
-            {summaryLoading ? "..." : summary?.totalTokens.toLocaleString() || "0"}
-          </div>
-        </div>
-        <div className="p-6 border border-white/15 bg-white/[0.01]">
-          <div className="text-white/60 text-[10px] uppercase font-mono tracking-wider mb-2">Total Requests</div>
-          <div className="text-3xl font-light">
-            {summaryLoading ? "..." : summary?.totalRequests.toLocaleString() || "0"}
-          </div>
-        </div>
-        <div className="p-6 border border-white/15 bg-white/[0.01]">
-          <div className="text-white/60 text-[10px] uppercase font-mono tracking-wider mb-2">Input Tokens</div>
-          <div className="text-3xl font-light">
-            {summaryLoading ? "..." : summary?.totalInputTokens.toLocaleString() || "0"}
-          </div>
-        </div>
-        <div className="p-6 border border-white/15 bg-white/[0.01]">
-          <div className="text-white/60 text-[10px] uppercase font-mono tracking-wider mb-2">Output Tokens</div>
-          <div className="text-3xl font-light">
-            {summaryLoading ? "..." : summary?.totalOutputTokens.toLocaleString() || "0"}
-          </div>
-        </div>
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <StatCard label="Total Tokens"   value={summary?.totalTokens}       loading={summaryLoading} icon={TrendingUp} />
+        <StatCard label="Total Requests" value={summary?.totalRequests}     loading={summaryLoading} icon={Hash} />
+        <StatCard label="Input Tokens"   value={summary?.totalInputTokens}  loading={summaryLoading} icon={ArrowUpRight} />
+        <StatCard label="Output Tokens"  value={summary?.totalOutputTokens} loading={summaryLoading} icon={ArrowDownRight} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-        <div className="lg:col-span-2 border border-white/15 p-6 bg-white/[0.01]">
-          <h3 className="text-sm font-medium mb-6 flex items-center justify-between">
-            Token Usage Over Time
-            {recordsLoading && <span className="text-[10px] text-white/40 uppercase font-mono">Loading...</span>}
-          </h3>
-          <div className="h-[300px] w-full">
+      {/* Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+        <div className="lg:col-span-2 rounded-2xl bg-white/[0.03] p-5">
+          <div className="flex items-center justify-between mb-5">
+            <p className="text-sm font-medium">Token Usage</p>
+            {recordsLoading && (
+              <span className="text-[10px] text-white/30 uppercase font-mono tracking-wider">Loading…</span>
+            )}
+          </div>
+          <div className="h-60 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+              <AreaChart data={chartData} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
                 <defs>
-                  <linearGradient id="colorTokens" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#ffffff" stopOpacity={0.2}/>
-                    <stop offset="95%" stopColor="#ffffff" stopOpacity={0}/>
+                  <linearGradient id="tokGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor="#fff" stopOpacity={0.15} />
+                    <stop offset="95%" stopColor="#fff" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                <XAxis 
-                  dataKey="date" 
-                  stroke="rgba(255,255,255,0.4)" 
-                  fontSize={10} 
-                  tickLine={false} 
-                  axisLine={false}
-                  dy={10}
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                <XAxis
+                  dataKey="date" stroke="rgba(255,255,255,0.3)" fontSize={10}
+                  tickLine={false} axisLine={false} dy={8}
+                  interval="preserveStartEnd"
                 />
-                <YAxis 
-                  stroke="rgba(255,255,255,0.4)" 
-                  fontSize={10} 
-                  tickLine={false} 
-                  axisLine={false}
-                  tickFormatter={(value) => value >= 1000 ? `${(value / 1000).toFixed(0)}k` : value}
+                <YAxis
+                  stroke="rgba(255,255,255,0.3)" fontSize={10} tickLine={false} axisLine={false}
+                  tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v)}
                 />
-                <Tooltip content={<CustomTooltip />} />
-                <Area 
-                  type="monotone" 
-                  dataKey="tokens" 
-                  stroke="#ffffff" 
-                  strokeWidth={2}
-                  fillOpacity={1} 
-                  fill="url(#colorTokens)" 
-                  animationDuration={1000}
+                <Tooltip content={<ChartTooltip />} />
+                <Area
+                  type="monotone" dataKey="tokens" stroke="#ffffff" strokeWidth={1.5}
+                  fillOpacity={1} fill="url(#tokGrad)" animationDuration={500}
                 />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        <div className="border border-white/15 p-6 bg-white/[0.01]">
-          <h3 className="text-sm font-medium mb-6">Model Distribution</h3>
-          <div className="h-[300px] w-full">
+        <div className="rounded-2xl bg-white/[0.03] p-5 relative">
+          <p className="text-sm font-medium mb-5">Model Distribution</p>
+          <div className="h-60 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={summary?.byModel || []} layout="vertical" margin={{ top: 0, right: 0, left: 10, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={true} vertical={false} />
+              <BarChart
+                data={summary?.byModel || []}
+                layout="vertical"
+                margin={{ top: 0, right: 0, left: 10, bottom: 0 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" horizontal={false} />
                 <XAxis type="number" hide />
-                <YAxis 
-                  dataKey="model" 
-                  type="category" 
-                  stroke="rgba(255,255,255,0.6)" 
-                  fontSize={10} 
-                  tickLine={false} 
-                  axisLine={false}
-                  width={90}
+                <YAxis
+                  dataKey="model" type="category"
+                  stroke="rgba(255,255,255,0.4)" fontSize={10}
+                  tickLine={false} axisLine={false} width={80}
                 />
-                <Tooltip 
-                  cursor={{ fill: 'rgba(255,255,255,0.05)' }}
-                  content={({ active, payload }) => {
-                    if (active && payload && payload.length) {
-                      return (
-                        <div className="bg-black border border-white/20 p-2 text-xs shadow-xl">
-                          <span className="font-medium">{payload[0].value?.toLocaleString()}</span> tokens
-                        </div>
-                      );
-                    }
-                    return null;
-                  }}
+                <Tooltip
+                  cursor={{ fill: "rgba(255,255,255,0.04)" }}
+                  content={({ active, payload }) =>
+                    active && payload?.length ? (
+                      <div className="bg-[#111] rounded-xl px-3 py-2 text-xs shadow-2xl">
+                        <span className="font-medium">{payload[0].value?.toLocaleString()}</span> tokens
+                      </div>
+                    ) : null
+                  }
                 />
-                <Bar 
-                  dataKey="tokens" 
-                  fill="#ffffff" 
-                  radius={[0, 4, 4, 0]}
-                  barSize={20}
-                  animationDuration={1000}
-                />
+                <Bar dataKey="tokens" fill="#ffffff" radius={[0, 6, 6, 0]} barSize={16} animationDuration={500} />
               </BarChart>
             </ResponsiveContainer>
           </div>
           {(!summary?.byModel || summary.byModel.length === 0) && !summaryLoading && (
-            <div className="absolute inset-0 flex items-center justify-center text-sm text-white/40 pointer-events-none">
-              No model usage data
+            <div className="absolute inset-0 flex items-center justify-center text-xs text-white/30 pointer-events-none">
+              No model data yet
             </div>
           )}
         </div>
       </div>
-      
-      <div className="border border-white/15 overflow-x-auto">
-        <table className="w-full text-sm text-left">
-          <thead className="text-[10px] text-white/50 uppercase font-mono border-b border-white/15 bg-white/5 tracking-wider">
-            <tr>
-              <th className="px-6 py-4 font-normal">Date</th>
-              <th className="px-6 py-4 font-normal">Model</th>
-              <th className="px-6 py-4 font-normal text-right">Input Tokens</th>
-              <th className="px-6 py-4 font-normal text-right">Output Tokens</th>
-              <th className="px-6 py-4 font-normal text-right">Total Tokens</th>
-            </tr>
-          </thead>
-          <tbody>
-            {recordsLoading ? (
-              <tr>
-                <td colSpan={5} className="px-6 py-8 text-center text-white/40">Loading records...</td>
-              </tr>
-            ) : usageRecords.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="px-6 py-8 text-center text-white/40">No usage records found.</td>
-              </tr>
-            ) : (
-              usageRecords.slice(0, 10).map((record) => (
-                <tr key={record.id} className="border-b border-white/10 last:border-0 hover:bg-white/[0.02]">
-                  <td className="px-6 py-4 text-white/80">{new Date(record.createdAt).toLocaleString()}</td>
-                  <td className="px-6 py-4 text-white/80"><span className="px-2 py-0.5 border border-white/10 text-[10px] font-mono rounded">{record.model}</span></td>
-                  <td className="px-6 py-4 text-white/60 text-right font-mono">{record.inputTokens.toLocaleString()}</td>
-                  <td className="px-6 py-4 text-white/60 text-right font-mono">{record.outputTokens.toLocaleString()}</td>
-                  <td className="px-6 py-4 font-medium text-right font-mono">{record.totalTokens.toLocaleString()}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-        {usageRecords.length > 10 && (
-          <div className="p-4 text-center border-t border-white/15 text-xs text-white/40">
-            Showing latest 10 records. Use API for full export.
+
+      {/* Records table */}
+      <div className="rounded-2xl bg-white/[0.03] overflow-hidden">
+        <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-4 px-5 py-3 text-[10px] font-mono uppercase tracking-widest text-white/25">
+          <span>Date</span>
+          <span className="hidden sm:block">Model</span>
+          <span className="text-right hidden md:block">Input</span>
+          <span className="text-right hidden md:block">Output</span>
+          <span className="text-right">Total</span>
+        </div>
+        <div className="divide-y divide-white/[0.05]">
+          {recordsLoading ? (
+            <div className="px-5 py-8 text-center text-sm text-white/30">Loading records…</div>
+          ) : usageRecords.length === 0 ? (
+            <div className="px-5 py-12 text-center">
+              <TrendingUp className="w-8 h-8 text-white/15 mx-auto mb-3" />
+              <p className="text-sm text-white/40">No usage records in this range.</p>
+            </div>
+          ) : (
+            usageRecords.slice(0, 50).map((record) => (
+              <div
+                key={record.id}
+                className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-4 items-center px-5 py-3 hover:bg-white/[0.02] transition-colors"
+              >
+                <span className="text-xs text-white/60">
+                  {new Date(record.createdAt).toLocaleString()}
+                </span>
+                <span className="hidden sm:block">
+                  <span className="text-[10px] font-mono text-white/40 px-2 py-0.5 bg-white/[0.06] rounded-full">
+                    {record.model}
+                  </span>
+                </span>
+                <span className="hidden md:block text-xs font-mono text-white/40 text-right">
+                  {record.inputTokens.toLocaleString()}
+                </span>
+                <span className="hidden md:block text-xs font-mono text-white/40 text-right">
+                  {record.outputTokens.toLocaleString()}
+                </span>
+                <span className="text-xs font-mono font-medium text-right">
+                  {record.totalTokens.toLocaleString()}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+        {usageRecords.length > 50 && (
+          <div className="px-5 py-3 text-center text-xs text-white/30 border-t border-white/[0.05]">
+            Showing 50 most recent records in selected range.
           </div>
         )}
       </div>

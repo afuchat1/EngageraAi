@@ -8,4 +8,6 @@
 - [Engagera image generation](image-generation.md) — SVG via gpt-4o edge fn; pollinations.ai went fully paid June 2026 (all models 402)
 - [TTS service status](tts-service-status.md) — ElevenLabs free tier disabled (proxy detect), OpenAI TTS quota exhausted; hook uses SpeechSynthesis with fast-fail
 - [Engagera web search](engagera-web-search.md) — pre-search architecture; Groq tool-calling API unreliable (llama embeds calls in content); use keyword detection + DuckDuckGo first, then inject results into system message
-- [Engagera frontend design](engagera-frontend-design.md) — B&W only, flat; PublicLayout vs AppLayout split; chat must use flex-1 overflow-y-auto; ProtectedRoute guards /dashboard /playground /usage
+- [Engagera frontend design](engagera-frontend-design.md) — B&W only, flat, no outer borders (use bg-white/[0.03-0.06] surface instead); PublicLayout vs AppLayout split; chat must use flex-1 overflow-y-auto; ProtectedRoute guards /dashboard /playground /usage /settings
+- [Engagera dialog system](engagera-dialog-system.md) — ConfirmProvider in confirm-dialog.tsx, AlertProvider in alert-toast.tsx; hooks in src/hooks/useConfirm.ts + useAlert.ts (split to avoid Vite Fast Refresh warning from mixing components+hooks in one file)
+- [Engagera sidebar](engagera-sidebar.md) — AppLayout collapsible sidebar; collapsed state in localStorage("sidebar_collapsed"); /settings route added; logout lives in /settings only (not sidebar quick access)

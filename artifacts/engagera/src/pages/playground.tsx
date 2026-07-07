@@ -1,10 +1,20 @@
-import React, { useState } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { useListModels } from "@workspace/api-client-react";
-import { useEdgeChatCompletion, ChatMessage } from "@/hooks/useEdgeChatCompletion";
+import { streamEdgeChat, ChatMessage } from "@/hooks/useEdgeChatCompletion";
 import { MessageContent } from "@/components/MessageContent";
-import { Play, Settings2, Send, Save, Trash2, SlidersHorizontal } from "lucide-react";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Trash2, SlidersHorizontal, Terminal, Send } from "lucide-react";
+import { useConfirm } from "@/hooks/useConfirm";
+import { useAlert } from "@/hooks/useAlert";
+
+function Pill({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between py-1.5">
+      <span className="text-xs text-white/40 font-mono uppercase tracking-wider">{label}</span>
+      <span className="text-xs text-white/70">{value}</span>
+    </div>
+  );
+}
 
 export default function Playground() {
   const { data: models = [] } = useListModels();
@@ -14,32 +24,65 @@ export default function Playground() {
   const [input, setInput] = useState("");
   const [temperature, setTemperature] = useState(0.7);
 
-  const chatCompletion = useEdgeChatCompletion();
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingContent, setStreamingContent] = useState<string>("");
+  const abortRef = useRef<AbortController | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const handleSend = () => {
-    if (!input.trim() || chatCompletion.isPending) return;
+  const confirm = useConfirm();
+  const alert = useAlert();
+
+  useEffect(() => () => { abortRef.current?.abort(); }, []);
+
+  const handleSend = useCallback(async () => {
+    if (!input.trim() || isStreaming) return;
 
     const userMsg: ChatMessage = { role: "user", content: input.trim() };
-    const conversation = messages.length === 0 && systemPrompt.trim()
-      ? [{ role: "system" as const, content: systemPrompt }, userMsg]
-      : [...messages, userMsg];
+    const conversation: ChatMessage[] =
+      messages.length === 0 && systemPrompt.trim()
+        ? [{ role: "system" as const, content: systemPrompt }, userMsg]
+        : [...messages, userMsg];
 
     setMessages(conversation);
     setInput("");
+    setIsStreaming(true);
+    setStreamingContent("");
 
-    chatCompletion.mutate(
-      { messages: conversation, model: selectedModel },
-      {
-        onSuccess: (res) => {
-          setMessages([...conversation, { role: "assistant", content: res.message.content }]);
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    let accumulated = "";
+
+    try {
+      await streamEdgeChat(
+        { messages: conversation, model: selectedModel },
+        {
+          onToken: (chunk) => {
+            accumulated += chunk;
+            setStreamingContent(accumulated);
+            messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+          },
+          onDone: () => {
+            setIsStreaming(false);
+            setStreamingContent("");
+            setMessages([...conversation, { role: "assistant", content: accumulated }]);
+            messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+          },
+          onError: (err) => {
+            setIsStreaming(false);
+            setStreamingContent("");
+            alert("Error: " + err.message, "error");
+            setMessages([...conversation]);
+          },
         },
-        onError: (err) => {
-          alert("Error: " + err.message);
-          setMessages([...conversation]); // keep user msg
-        }
-      }
-    );
-  };
+        ctrl.signal,
+      );
+    } catch {
+      setIsStreaming(false);
+      setStreamingContent("");
+    } finally {
+      abortRef.current = null;
+    }
+  }, [input, isStreaming, messages, systemPrompt, selectedModel, alert]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.ctrlKey && !e.shiftKey) {
@@ -48,135 +91,169 @@ export default function Playground() {
     }
   };
 
-  const handleClear = () => {
+  const handleClear = async () => {
+    if (messages.length === 0) return;
+    const ok = await confirm({
+      title: "Clear session?",
+      description: "All messages in this session will be removed.",
+      confirmLabel: "Clear",
+      cancelLabel: "Cancel",
+    });
+    if (!ok) return;
+    abortRef.current?.abort();
+    setIsStreaming(false);
+    setStreamingContent("");
     setMessages([]);
   };
 
+  const allMessages: ChatMessage[] = isStreaming
+    ? [...messages, { role: "assistant", content: streamingContent }]
+    : messages;
+
   return (
     <AppLayout title="Playground">
-      <div className="flex flex-col lg:flex-row gap-6 h-[calc(100vh-140px)]">
-        {/* Settings Panel */}
-        <div className="w-full lg:w-80 flex flex-col gap-6 shrink-0 overflow-y-auto scrollbar-thin">
-          <div className="border border-white/15 p-4 bg-white/[0.02]">
-            <h3 className="text-sm font-medium flex items-center gap-2 mb-4">
-              <Settings2 className="w-4 h-4" />
-              Configuration
-            </h3>
-            
+      <div className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-156px)]">
+
+        {/* Config Panel */}
+        <div className="w-full lg:w-72 flex flex-col gap-4 shrink-0 overflow-y-auto scrollbar-thin">
+          <div className="rounded-2xl bg-white/[0.03] p-4">
+            <p className="text-xs font-mono uppercase tracking-widest text-white/30 mb-4">Configuration</p>
             <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-xs text-white/60 uppercase font-mono tracking-wider">Model</label>
-                <Select value={selectedModel} onValueChange={setSelectedModel}>
-                  <SelectTrigger className="w-full bg-black border-white/20 rounded-none text-sm">
-                    <SelectValue placeholder="Select a model" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-black border-white/20 rounded-none">
-                    {models.map(m => (
-                      <SelectItem key={m.id} value={m.id} className="rounded-none hover:bg-white/10">
-                        {m.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-mono uppercase tracking-wider text-white/40">Model</label>
+                <select
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  className="w-full px-3 py-2 bg-white/[0.05] rounded-xl text-sm outline-none focus:bg-white/[0.08] transition-colors appearance-none cursor-pointer"
+                >
+                  {models.map((m) => (
+                    <option key={m.id} value={m.id} className="bg-black">
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <label className="text-xs text-white/60 uppercase font-mono tracking-wider">Temperature</label>
-                  <span className="text-xs font-mono">{temperature.toFixed(2)}</span>
+                <div className="flex justify-between">
+                  <label className="text-[10px] font-mono uppercase tracking-wider text-white/40">Temperature</label>
+                  <span className="text-xs font-mono text-white/60">{temperature.toFixed(2)}</span>
                 </div>
-                <input 
-                  type="range" 
-                  min="0" max="2" step="0.1" 
+                <input
+                  type="range" min="0" max="2" step="0.1"
                   value={temperature}
                   onChange={(e) => setTemperature(parseFloat(e.target.value))}
                   className="w-full accent-white"
                 />
+                <div className="flex justify-between text-[10px] font-mono text-white/20">
+                  <span>Precise</span>
+                  <span>Creative</span>
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="border border-white/15 p-4 bg-white/[0.02] flex-1 flex flex-col min-h-[200px]">
-            <h3 className="text-sm font-medium flex items-center gap-2 mb-4 shrink-0">
-              <SlidersHorizontal className="w-4 h-4" />
-              System Prompt
-            </h3>
+          <div className="rounded-2xl bg-white/[0.03] p-4 flex-1 flex flex-col min-h-[160px]">
+            <div className="flex items-center gap-2 mb-3">
+              <Terminal className="w-3.5 h-3.5 text-white/30" />
+              <p className="text-xs font-mono uppercase tracking-widest text-white/30">System Prompt</p>
+            </div>
             <textarea
               value={systemPrompt}
               onChange={(e) => setSystemPrompt(e.target.value)}
-              placeholder="Enter system prompt..."
-              className="w-full flex-1 bg-black border border-white/20 p-3 text-sm focus:border-white outline-none resize-none scrollbar-thin transition-colors"
+              placeholder="You are a helpful assistant…"
+              className="w-full flex-1 bg-transparent text-sm outline-none resize-none placeholder:text-white/20 text-white/80 scrollbar-thin"
             />
           </div>
         </div>
 
         {/* Chat Panel */}
-        <div className="flex-1 border border-white/15 flex flex-col min-w-0 bg-black">
-          <div className="flex items-center justify-between p-3 border-b border-white/15 bg-white/[0.02] shrink-0">
-            <span className="text-sm font-medium">Session</span>
-            <button 
+        <div className="flex-1 rounded-2xl bg-white/[0.03] flex flex-col min-w-0 overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.06] shrink-0">
+            <div className="flex items-center gap-2">
+              <SlidersHorizontal className="w-3.5 h-3.5 text-white/30" />
+              <span className="text-xs font-mono uppercase tracking-widest text-white/30">Session</span>
+            </div>
+            <button
               onClick={handleClear}
-              className="text-white/40 hover:text-white transition-colors"
-              title="Clear Session"
+              className="p-1.5 text-white/30 hover:text-white hover:bg-white/[0.07] rounded-lg transition-colors"
+              title="Clear session"
             >
-              <Trash2 className="w-4 h-4" />
+              <Trash2 className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
-            {messages.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-white/30 text-sm">
-                No messages in this session.
+          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3 scrollbar-thin">
+            {allMessages.length === 0 ? (
+              <div className="h-full flex items-center justify-center">
+                <div className="text-center">
+                  <Terminal className="w-8 h-8 text-white/15 mx-auto mb-3" />
+                  <p className="text-sm text-white/30">No messages yet.</p>
+                  <p className="text-xs text-white/20 mt-1">Type a message and press Enter to start.</p>
+                </div>
               </div>
             ) : (
-              messages.map((msg, idx) => (
-                <div key={idx} className={`p-4 border ${msg.role === 'system' ? 'border-white/10 bg-white/5' : msg.role === 'user' ? 'border-white/20 ml-8' : 'border-white/10 bg-white/[0.02] mr-8'}`}>
-                  <div className="text-[10px] uppercase font-mono tracking-wider text-white/40 mb-2">
-                    {msg.role}
+              allMessages.map((msg, idx) => {
+                const isStreamingMsg =
+                  isStreaming && idx === allMessages.length - 1 && msg.role === "assistant";
+                return (
+                  <div
+                    key={idx}
+                    className={`rounded-xl px-4 py-3 ${
+                      msg.role === "system"
+                        ? "bg-white/[0.04] border border-white/[0.08]"
+                        : msg.role === "user"
+                        ? "bg-white/[0.06] ml-8"
+                        : "bg-transparent mr-4"
+                    }`}
+                  >
+                    <p className="text-[9px] font-mono uppercase tracking-widest text-white/30 mb-2">
+                      {msg.role}
+                    </p>
+                    {msg.role === "assistant" ? (
+                      isStreamingMsg && !msg.content ? (
+                        <div className="flex gap-1.5 py-1">
+                          <span className="w-1.5 h-1.5 bg-white/40 rounded-full animate-pulse" />
+                          <span className="w-1.5 h-1.5 bg-white/40 rounded-full animate-pulse" style={{ animationDelay: "150ms" }} />
+                          <span className="w-1.5 h-1.5 bg-white/40 rounded-full animate-pulse" style={{ animationDelay: "300ms" }} />
+                        </div>
+                      ) : (
+                        <MessageContent content={msg.content as string} />
+                      )
+                    ) : (
+                      <p className="text-sm whitespace-pre-wrap text-white/80 font-mono leading-relaxed">
+                        {msg.content as string}
+                      </p>
+                    )}
                   </div>
-                  {msg.role === "assistant" ? (
-                    <MessageContent content={msg.content as string} />
-                  ) : (
-                    <div className="text-sm whitespace-pre-wrap font-mono">{msg.content as string}</div>
-                  )}
-                </div>
-              ))
+                );
+              })
             )}
-            {chatCompletion.isPending && (
-              <div className="p-4 border border-white/10 bg-white/[0.02] mr-8">
-                <div className="text-[10px] uppercase font-mono tracking-wider text-white/40 mb-2">
-                  Assistant
-                </div>
-                <div className="flex gap-2">
-                  <span className="w-1.5 h-1.5 bg-white/40 animate-pulse"></span>
-                  <span className="w-1.5 h-1.5 bg-white/40 animate-pulse" style={{ animationDelay: "150ms" }}></span>
-                  <span className="w-1.5 h-1.5 bg-white/40 animate-pulse" style={{ animationDelay: "300ms" }}></span>
-                </div>
-              </div>
-            )}
+            <div ref={messagesEndRef} />
           </div>
 
-          <div className="p-3 border-t border-white/15 shrink-0 bg-white/[0.02]">
-            <div className="relative flex items-end max-w-full">
+          <div className="px-4 py-3 border-t border-white/[0.06] shrink-0">
+            <div className="relative flex items-end gap-2">
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="User message... (Ctrl+Enter to send)"
-                className="w-full bg-black border border-white/30 focus:border-white outline-none resize-none py-2.5 pl-3 pr-10 text-sm max-h-32 scrollbar-thin min-h-[44px] transition-colors"
+                placeholder="User message… (Enter to send, Shift+Enter for newline)"
+                disabled={isStreaming}
+                className="w-full bg-white/[0.04] hover:bg-white/[0.06] focus:bg-white/[0.06] rounded-xl px-4 py-2.5 pr-10 text-sm outline-none resize-none max-h-32 min-h-[44px] scrollbar-thin disabled:opacity-40 transition-colors placeholder:text-white/20"
                 rows={1}
                 onInput={(e) => {
-                  const target = e.target as HTMLTextAreaElement;
-                  target.style.height = 'auto';
-                  target.style.height = `${Math.min(target.scrollHeight, 128)}px`;
+                  const t = e.target as HTMLTextAreaElement;
+                  t.style.height = "auto";
+                  t.style.height = `${Math.min(t.scrollHeight, 128)}px`;
                 }}
               />
               <button
                 onClick={handleSend}
-                disabled={!input.trim() || chatCompletion.isPending}
-                className="absolute right-2 bottom-2 p-1 text-white/60 hover:text-white disabled:opacity-30 transition-colors bg-white/10"
+                disabled={!input.trim() || isStreaming}
+                className="absolute right-2 bottom-2 p-1.5 text-white/40 hover:text-white disabled:opacity-20 transition-colors"
               >
-                <Play className="w-4 h-4" />
+                <Send className="w-4 h-4" />
               </button>
             </div>
           </div>
