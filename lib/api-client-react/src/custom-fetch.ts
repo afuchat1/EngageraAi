@@ -404,8 +404,10 @@ export async function customFetch<T = unknown>(
     }
   }
 
-  // Attach guest session ID when set and caller is unauthenticated.
-  if (_guestSessionId && !headers.has("authorization") && !headers.has("x-guest-session-id")) {
+  // Attach guest session ID whenever it is set — include it alongside the bearer
+  // token so Edge Functions using optionalAuth() can identify guest sessions even
+  // when the Supabase anon key is used as a fallback Bearer token.
+  if (_guestSessionId && !headers.has("x-guest-session-id")) {
     headers.set("x-guest-session-id", _guestSessionId);
   }
 
