@@ -11,3 +11,4 @@
 - [Engagera frontend design](engagera-frontend-design.md) — B&W only, flat, no outer borders (use bg-white/[0.03-0.06] surface instead); PublicLayout vs AppLayout split; chat must use flex-1 overflow-y-auto; ProtectedRoute guards /dashboard /playground /usage /settings
 - [Engagera dialog system](engagera-dialog-system.md) — ConfirmProvider in confirm-dialog.tsx, AlertProvider in alert-toast.tsx; hooks in src/hooks/useConfirm.ts + useAlert.ts (split to avoid Vite Fast Refresh warning from mixing components+hooks in one file)
 - [Engagera sidebar](engagera-sidebar.md) — AppLayout collapsible sidebar; collapsed state in localStorage("sidebar_collapsed"); /settings route added; logout lives in /settings only (not sidebar quick access)
+- [Supabase deploy in Replit](supabase-deploy-replit.md) — use --use-api flag; Docker bundling blocked by Replit network firewall
