@@ -266,7 +266,7 @@ Respond EXACTLY in this format (absolutely nothing else before or after):
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin":  "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-guest-session-id",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-guest-session-id, x-engagera-api-key",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -1576,33 +1576,50 @@ Deno.serve(async (req: Request) => {
     let guestSessionId: string | undefined;
     let apiKeyId: number | undefined;
 
-    const authHeader = req.headers.get("authorization");
-    if (authHeader?.startsWith("Bearer ")) {
-      const token   = authHeader.slice(7);
-      const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
-      if (token && token !== anonKey) {
-        if (token.startsWith("eng_")) {
-          // Developer API key — hash and look up in engagera_api_keys
-          const buf  = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
-          const hash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
-          const { data: keyRow, error: keyErr } = await db
-            .from("engagera_api_keys")
-            .select("id, user_id, is_active")
-            .eq("key_hash", hash)
-            .maybeSingle();
-          if (keyErr) {
-            log("warn", "auth.api_key_lookup_failed", { requestId, error: keyErr.message });
-          } else if (!keyRow || !keyRow.is_active) {
-            return json({ error: "Invalid or revoked API key" }, 401);
+    // Resolve an Engagera developer API key (eng_...) to a userId + apiKeyId.
+    // Returns false if the key is not found or revoked (caller should 401).
+    async function resolveEngKey(raw: string): Promise<boolean> {
+      const buf  = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw));
+      const hash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+      const { data: keyRow, error: keyErr } = await db
+        .from("engagera_api_keys")
+        .select("id, user_id, is_active")
+        .eq("key_hash", hash)
+        .maybeSingle();
+      if (keyErr) {
+        log("warn", "auth.api_key_lookup_failed", { requestId, error: keyErr.message });
+        return false;
+      }
+      if (!keyRow || !keyRow.is_active) return false;
+      userId   = keyRow.user_id as string;
+      apiKeyId = keyRow.id as number;
+      return true;
+    }
+
+    // Path 1: API-server proxy forwards the eng_ key in x-engagera-api-key so
+    // the Supabase gateway (which only accepts valid JWTs as Bearer) doesn't
+    // reject the request before the Edge Function even runs.
+    const customKey = req.headers.get("x-engagera-api-key");
+    if (customKey?.startsWith("eng_")) {
+      const ok = await resolveEngKey(customKey);
+      if (!ok) return json({ error: "Invalid or revoked API key" }, 401);
+    } else {
+      // Path 2: direct call — either a Supabase session JWT or an eng_ key
+      // sent as Bearer (only works when deployed with --no-verify-jwt).
+      const authHeader = req.headers.get("authorization");
+      if (authHeader?.startsWith("Bearer ")) {
+        const token   = authHeader.slice(7);
+        const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+        if (token && token !== anonKey) {
+          if (token.startsWith("eng_")) {
+            const ok = await resolveEngKey(token);
+            if (!ok) return json({ error: "Invalid or revoked API key" }, 401);
           } else {
-            userId   = keyRow.user_id as string;
-            apiKeyId = keyRow.id as number;
+            // Supabase session JWT
+            const { data, error: authErr } = await db.auth.getUser(token);
+            userId = data.user?.id;
+            if (authErr) log("warn", "auth.jwt_error", { requestId, error: authErr.message });
           }
-        } else {
-          // Supabase session JWT
-          const { data, error: authErr } = await db.auth.getUser(token);
-          userId = data.user?.id;
-          if (authErr) log("warn", "auth.jwt_error", { requestId, error: authErr.message });
         }
       }
     }
