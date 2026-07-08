@@ -12,3 +12,4 @@
 - [Engagera dialog system](engagera-dialog-system.md) — ConfirmProvider in confirm-dialog.tsx, AlertProvider in alert-toast.tsx; hooks in src/hooks/useConfirm.ts + useAlert.ts (split to avoid Vite Fast Refresh warning from mixing components+hooks in one file)
 - [Engagera sidebar](engagera-sidebar.md) — AppLayout collapsible sidebar; collapsed state in localStorage("sidebar_collapsed"); /settings route added; logout lives in /settings only (not sidebar quick access)
 - [Supabase deploy in Replit](supabase-deploy-replit.md) — use --use-api flag; Docker bundling blocked by Replit network firewall
+- [Engagera architecture](engagera-architecture.md) — fully client-side + Supabase Edge Functions; no server-side code in production
