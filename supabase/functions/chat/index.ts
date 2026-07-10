@@ -39,38 +39,31 @@ interface ProviderModel {
   model: string;
 }
 
+// Only Groq is currently a live, responding provider (verified 2026-07-10 —
+// OpenAI/Gemini are quota-exhausted, DeepSeek has no account balance,
+// OpenRouter's free-tier models are erroring upstream). Their keys have been
+// removed from Supabase secrets rather than left in as dead weight. Chains
+// below use two distinct Groq models so a rate limit on one model doesn't
+// take down the other (separate per-model rate-limit buckets).
+// Re-add a provider's entry here once its key is restored and re-verified.
 const STANDARD_CHAIN: ProviderModel[] = [
-  { provider: "groq",       model: "llama-3.1-8b-instant" },
-  { provider: "groq",       model: "llama-3.3-70b-versatile" },   // separate rate-limit bucket
-  { provider: "openai",     model: "gpt-4o-mini" },
-  { provider: "deepseek",   model: "deepseek-chat" },
-  { provider: "gemini",     model: "gemini-1.5-flash-latest" },
-  { provider: "openrouter", model: "meta-llama/llama-3.1-8b-instruct:free" },
+  { provider: "groq", model: "llama-3.1-8b-instant" },
+  { provider: "groq", model: "llama-3.3-70b-versatile" },
 ];
 
 const PREMIUM_CHAIN: ProviderModel[] = [
-  { provider: "groq",       model: "llama-3.3-70b-versatile" },
-  { provider: "openai",     model: "gpt-4o" },
-  { provider: "deepseek",   model: "deepseek-chat" },
-  { provider: "gemini",     model: "gemini-1.5-pro-latest" },
-  { provider: "openrouter", model: "deepseek/deepseek-r1:free" },
-  { provider: "groq",       model: "llama-3.1-8b-instant" },
+  { provider: "groq", model: "llama-3.3-70b-versatile" },
+  { provider: "groq", model: "llama-3.1-8b-instant" },
 ];
 
 const CODE_CHAIN: ProviderModel[] = [
-  { provider: "groq",       model: "llama-3.3-70b-versatile" },
-  { provider: "openai",     model: "gpt-4o-mini" },
-  { provider: "deepseek",   model: "deepseek-chat" },
-  { provider: "openrouter", model: "qwen/qwen-2.5-coder-32b-instruct:free" },
-  { provider: "gemini",     model: "gemini-1.5-pro-latest" },
-  { provider: "groq",       model: "llama-3.1-8b-instant" },
+  { provider: "groq", model: "llama-3.3-70b-versatile" },
+  { provider: "groq", model: "llama-3.1-8b-instant" },
 ];
 
 const IMAGE_CHAIN: ProviderModel[] = [
-  { provider: "groq",   model: "llama-3.1-8b-instant" },
-  { provider: "openai", model: "gpt-4o-mini" },
-  { provider: "groq",   model: "llama-3.3-70b-versatile" },
-  { provider: "gemini", model: "gemini-1.5-flash-latest" },
+  { provider: "groq", model: "llama-3.1-8b-instant" },
+  { provider: "groq", model: "llama-3.3-70b-versatile" },
 ];
 
 // Map Engagera model ID → provider chain

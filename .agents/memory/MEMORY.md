@@ -1,6 +1,6 @@
 - [Engagera DB convention](engagera-db-convention.md) — all tables in `public` schema with `engagera_` prefix; always use `engageraDb` alias
 - [Engagera guest access](engagera-guest-access.md) — guest session ID via `setGuestSessionId()` global, 5-message limit, 429 on breach
-- [AI provider status](openrouter-free-models.md) — 5 providers: Groq/OpenAI/DeepSeek/Gemini/OpenRouter; no retry (fast failover); 8s per call, 48s global deadline; STANDARD_CHAIN starts with Groq 8b then 70b (separate buckets)
+- [AI provider status](openrouter-free-models.md) — only Groq responds (verified 2026-07-10); OpenAI/DeepSeek/Gemini/OpenRouter keys removed (quota/balance/upstream errors), chains are Groq-only now
 - [Engagera storage audit](engagera-storage-audit.md) — Supabase-only confirmed; DATABASE_URL and @workspace/db removed; engagera schema dropped
 - [Engagera edge function](engagera-edge-function.md) — chat deployed with Dev Mode (mode:"dev" → ENGAGERA_DEV_SYSTEM_PROMPT); all 8 Edge Functions live; URL mapper in custom-fetch.ts routes /api/... → Supabase Edge Functions; anon key as fallback bearer in App.tsx
 - [Engagera api routing](engagera-api-routing.md) — setUrlMapper in custom-fetch.ts rewrites /api/* to Supabase Edge Function URLs; setFallbackBearerToken(SUPABASE_ANON_KEY) for guests; configured once at App.tsx module level
