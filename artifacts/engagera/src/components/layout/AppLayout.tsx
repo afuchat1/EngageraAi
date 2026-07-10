@@ -2,9 +2,10 @@ import React, { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import {
   MessageSquare, Play, Book, LayoutDashboard, Activity, Settings, Menu, X,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, ShieldCheck,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { logoSrc } from "@/lib/assets";
 
@@ -56,6 +57,10 @@ function NavLink({
 export default function AppLayout({ children, title }: AppLayoutProps) {
   const [location] = useLocation();
   const { user } = useAuth();
+  const { isAdmin } = useIsAdmin();
+  const navItems = isAdmin
+    ? [...NAV_ITEMS, { href: "/admin", label: "Admin", icon: ShieldCheck }]
+    : NAV_ITEMS;
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem("sidebar_collapsed") === "true"; } catch { return false; }
   });
@@ -90,7 +95,7 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
 
         {/* Main nav */}
         <nav className="flex-1 px-2 space-y-0.5 overflow-y-auto scrollbar-thin">
-          {NAV_ITEMS.map((item) => (
+          {navItems.map((item) => (
             <NavLink
               key={item.href}
               {...item}
@@ -146,7 +151,7 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
                   <span className="font-bold text-sm">Engagera</span>
                 </div>
                 <nav className="flex-1 space-y-0.5">
-                  {NAV_ITEMS.map((item) => (
+                  {navItems.map((item) => (
                     <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)}>
                       <div className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${
                         isActive(item.href) ? "bg-white text-black" : "text-white/50 hover:text-white hover:bg-white/[0.07]"

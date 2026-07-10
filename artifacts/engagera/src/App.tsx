@@ -19,7 +19,13 @@ import Playground from "./pages/playground";
 import Usage from "./pages/usage";
 import Docs from "./pages/docs";
 import Settings from "./pages/settings";
+import AdminOverview from "./pages/admin/overview";
+import AdminDataset from "./pages/admin/dataset";
+import AdminReviewer from "./pages/admin/reviewer";
+import AdminModels from "./pages/admin/models";
+import AdminAnalytics from "./pages/admin/analytics";
 import NotFound from "@/pages/not-found";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 const queryClient = new QueryClient();
 
@@ -40,6 +46,9 @@ setUrlMapper((path) => {
   if (path.startsWith("/api/chat")) return `${FN_BASE}/chat`;
   if (path.startsWith("/api/conversations")) return path.replace("/api/conversations", `${FN_BASE}/conversations`);
   if (path.startsWith("/api/healthz")) return `${FN_BASE}/status`;
+  if (path.startsWith("/api/admin")) return path.replace("/api/admin", `${FN_BASE}/admin`);
+  if (path.startsWith("/api/reviewer")) return path.replace("/api/reviewer", `${FN_BASE}/reviewer`);
+  if (path.startsWith("/api/dataset-export")) return `${FN_BASE}/dataset-export`;
   return path;
 });
 
@@ -68,6 +77,24 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   return <Component />;
 }
 
+function AdminRoute({ component: Component }: { component: React.ComponentType<any> }) {
+  const { user, loading } = useAuth();
+  const { isAdmin, isLoading, isForbidden } = useIsAdmin();
+  const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (!loading && !user) {
+      setLocation("/sign-in");
+    } else if (!loading && user && !isLoading && isForbidden) {
+      setLocation("/dashboard");
+    }
+  }, [user, loading, isLoading, isForbidden, setLocation]);
+
+  if (loading || !user || isLoading || !isAdmin) return null;
+
+  return <Component />;
+}
+
 function Router() {
   return (
     <Switch>
@@ -81,6 +108,11 @@ function Router() {
       <Route path="/playground"><ProtectedRoute component={Playground} /></Route>
       <Route path="/usage"><ProtectedRoute component={Usage} /></Route>
       <Route path="/settings"><ProtectedRoute component={Settings} /></Route>
+      <Route path="/admin"><AdminRoute component={AdminOverview} /></Route>
+      <Route path="/admin/dataset"><AdminRoute component={AdminDataset} /></Route>
+      <Route path="/admin/reviewer"><AdminRoute component={AdminReviewer} /></Route>
+      <Route path="/admin/models"><AdminRoute component={AdminModels} /></Route>
+      <Route path="/admin/analytics"><AdminRoute component={AdminAnalytics} /></Route>
       <Route component={NotFound} />
     </Switch>
   );

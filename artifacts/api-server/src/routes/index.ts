@@ -8,6 +8,9 @@ import chatRouter from "./chat.js";
 import devChatRouter from "./devChat.js";
 import conversationsRouter from "./conversations.js";
 import sttRouter from "./stt.js";
+import adminRouter from "./admin.js";
+import reviewerRouter from "./reviewer.js";
+import datasetExportRouter from "./datasetExport.js";
 
 const router = Router();
 
@@ -20,5 +23,8 @@ router.use(chatRouter);
 router.use(devChatRouter);
 router.use(conversationsRouter);
 router.use(sttRouter);
+router.use(adminRouter);
+router.use(reviewerRouter);
+router.use(datasetExportRouter);
 
 export default router;

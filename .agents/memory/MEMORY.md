@@ -13,3 +13,4 @@
 - [Engagera sidebar](engagera-sidebar.md) — AppLayout collapsible sidebar; collapsed state in localStorage("sidebar_collapsed"); /settings route added; logout lives in /settings only (not sidebar quick access)
 - [Supabase deploy in Replit](supabase-deploy-replit.md) — use --use-api flag; Docker bundling blocked by Replit network firewall
 - [Engagera architecture](engagera-architecture.md) — fully client-side + Supabase Edge Functions; no server-side code in production
+- [Engagera admin dashboard](engagera-admin-dashboard.md) — admin gating via engagera_admins table; admin/reviewer/dataset-export Edge Fns proxied with JWT passthrough; hand-written adminApi.ts hooks (not generated client)
