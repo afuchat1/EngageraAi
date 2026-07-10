@@ -26,6 +26,7 @@ export interface DatasetCandidate {
   duplicate_score: number | null;
   hallucination_score: number | null;
   dataset_version: string | null;
+  reviewer_notes: string | null;
   created_at: string;
 }
 

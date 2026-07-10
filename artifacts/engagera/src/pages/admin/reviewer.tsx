@@ -59,20 +59,23 @@ export default function AdminReviewer() {
             <div className="px-5 py-12 text-center text-sm text-white/40">No reviewer activity yet.</div>
           ) : (
             logs.map((l) => (
-              <div key={l.id} className="grid grid-cols-[auto_1fr_auto_auto_auto] gap-x-4 items-center px-5 py-3">
-                <span className="text-sm font-mono text-white/50">#{l.candidate_id}</span>
-                <span className="text-xs font-mono text-white/40 truncate">
-                  {Object.entries(l.scores).map(([k, v]) => `${k}:${v}`).join(" ") || "—"}
-                </span>
-                <span className={`text-sm font-medium capitalize ${DECISION_COLOR[l.decision] ?? ""}`}>{l.decision}</span>
-                <span className="text-xs text-white/40">{new Date(l.created_at).toLocaleString()}</span>
-                <button
-                  onClick={() => setDetailId(l.candidate_id)}
-                  className="p-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] transition-colors justify-self-end"
-                  title="View full message"
-                >
-                  <Maximize2 className="w-3.5 h-3.5" />
-                </button>
+              <div key={l.id} className="px-5 py-3">
+                <div className="grid grid-cols-[auto_1fr_auto_auto_auto] gap-x-4 items-center">
+                  <span className="text-sm font-mono text-white/50">#{l.candidate_id}</span>
+                  <span className="text-xs font-mono text-white/40 truncate">
+                    {Object.entries(l.scores).filter(([, v]) => v !== null).map(([k, v]) => `${k}:${v}`).join(" ") || "—"}
+                  </span>
+                  <span className={`text-sm font-medium capitalize ${DECISION_COLOR[l.decision] ?? ""}`}>{l.decision}</span>
+                  <span className="text-xs text-white/40">{new Date(l.created_at).toLocaleString()}</span>
+                  <button
+                    onClick={() => setDetailId(l.candidate_id)}
+                    className="p-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] transition-colors justify-self-end"
+                    title="View full message"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                {l.notes && <p className="text-xs text-white/35 mt-1.5 leading-snug">{l.notes}</p>}
               </div>
             ))
           )}

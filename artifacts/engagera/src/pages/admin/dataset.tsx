@@ -133,6 +133,9 @@ export default function AdminDataset() {
                     quality {c.quality_score} · safety {c.safety_score} · dup {c.duplicate_score} · hallucination {c.hallucination_score}
                   </p>
                 )}
+                {c.reviewer_notes && (
+                  <p className="text-xs text-white/35 mt-1.5 leading-snug">{c.reviewer_notes}</p>
+                )}
               </div>
             ))}
           </div>
@@ -150,6 +153,7 @@ export default function AdminDataset() {
             { label: "model", value: detail.model },
             { label: "language", value: detail.language ?? "en" },
             { label: "status", value: detail.reviewer_status },
+            ...(detail.reviewer_notes ? [{ label: "notes", value: detail.reviewer_notes }] : []),
             ...(detail.quality_score !== null ? [
               { label: "quality", value: detail.quality_score! },
               { label: "safety", value: detail.safety_score! },
