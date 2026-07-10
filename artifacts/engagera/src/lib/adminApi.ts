@@ -101,6 +101,15 @@ export function useDatasetCandidates(status: "pending" | "approved" | "rejected"
   });
 }
 
+export function useDatasetCandidate(id: number | null) {
+  return useQuery({
+    queryKey: ["admin", "dataset-candidate", id],
+    queryFn: () => customFetch<{ candidate: DatasetCandidate }>(`/api/admin/dataset-candidate?id=${id}`),
+    enabled: id !== null,
+    retry: false,
+  });
+}
+
 export function useDatasetStats() {
   return useQuery({
     queryKey: ["admin", "dataset-stats"],
@@ -175,6 +184,13 @@ export function useOverrideCandidate() {
       qc.invalidateQueries({ queryKey: ["admin", "dataset-candidates"] });
       qc.invalidateQueries({ queryKey: ["admin", "reviewer-logs"] });
     },
+  });
+}
+
+export function useDatasetDownloadUrl() {
+  return useMutation({
+    mutationFn: (path: string) =>
+      customFetch<{ url: string }>(`/api/admin/dataset-download?path=${encodeURIComponent(path)}`),
   });
 }
 

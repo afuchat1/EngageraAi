@@ -3,10 +3,11 @@ import AppLayout from "@/components/layout/AppLayout";
 import { AdminNav } from "@/components/admin/AdminNav";
 import {
   useDatasetCandidates, useDatasetStats, useDatasetVersions,
-  useOverrideCandidate, useExportDataset,
+  useOverrideCandidate, useExportDataset, DatasetCandidate,
 } from "@/lib/adminApi";
-import { Check, X, Download, Loader2 } from "lucide-react";
+import { Check, X, Download, Loader2, Maximize2 } from "lucide-react";
 import { useAlert } from "@/hooks/useAlert";
+import { MessageDetailModal } from "@/components/admin/MessageDetailModal";
 
 const TABS: { key: "pending" | "approved" | "rejected"; label: string }[] = [
   { key: "pending", label: "Pending" },
@@ -16,6 +17,7 @@ const TABS: { key: "pending" | "approved" | "rejected"; label: string }[] = [
 
 export default function AdminDataset() {
   const [tab, setTab] = useState<"pending" | "approved" | "rejected">("pending");
+  const [detail, setDetail] = useState<DatasetCandidate | null>(null);
   const { data, isLoading } = useDatasetCandidates(tab);
   const { data: stats } = useDatasetStats();
   const { data: versions } = useDatasetVersions();
@@ -87,30 +89,45 @@ export default function AdminDataset() {
             {candidates.map((c) => (
               <div key={c.id} className="px-5 py-4">
                 <div className="flex items-start justify-between gap-4 mb-2">
-                  <div className="min-w-0 flex-1">
+                  <button
+                    onClick={() => setDetail(c)}
+                    className="min-w-0 flex-1 text-left group"
+                    title="View full request and response"
+                  >
                     <p className="text-xs text-white/40 font-mono mb-1">{c.model} · {c.language ?? "en"} · {new Date(c.created_at).toLocaleString()}</p>
-                    <p className="text-sm font-medium truncate">{c.request}</p>
+                    <p className="text-sm font-medium truncate group-hover:text-white/80">{c.request}</p>
+                  </button>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      onClick={() => setDetail(c)}
+                      className="p-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] transition-colors"
+                      title="View full message"
+                    >
+                      <Maximize2 className="w-4 h-4" />
+                    </button>
+                    {tab === "pending" && (
+                      <>
+                        <button
+                          onClick={() => override.mutate({ id: c.id, status: "approved" })}
+                          className="p-1.5 rounded-lg bg-white/[0.06] hover:bg-emerald-400/20 hover:text-emerald-400 transition-colors"
+                          title="Approve"
+                        >
+                          <Check className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => override.mutate({ id: c.id, status: "rejected" })}
+                          className="p-1.5 rounded-lg bg-white/[0.06] hover:bg-red-400/20 hover:text-red-400 transition-colors"
+                          title="Reject"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
                   </div>
-                  {tab === "pending" && (
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        onClick={() => override.mutate({ id: c.id, status: "approved" })}
-                        className="p-1.5 rounded-lg bg-white/[0.06] hover:bg-emerald-400/20 hover:text-emerald-400 transition-colors"
-                        title="Approve"
-                      >
-                        <Check className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => override.mutate({ id: c.id, status: "rejected" })}
-                        className="p-1.5 rounded-lg bg-white/[0.06] hover:bg-red-400/20 hover:text-red-400 transition-colors"
-                        title="Reject"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  )}
                 </div>
-                <p className="text-xs text-white/50 line-clamp-2">{c.response}</p>
+                <button onClick={() => setDetail(c)} className="text-left w-full">
+                  <p className="text-xs text-white/50 line-clamp-2 hover:text-white/70 transition-colors">{c.response}</p>
+                </button>
                 {(c.quality_score !== null) && (
                   <p className="text-[10px] font-mono text-white/30 mt-2">
                     quality {c.quality_score} · safety {c.safety_score} · dup {c.duplicate_score} · hallucination {c.hallucination_score}
@@ -121,6 +138,27 @@ export default function AdminDataset() {
           </div>
         )}
       </div>
+
+      {detail && (
+        <MessageDetailModal
+          open={!!detail}
+          onClose={() => setDetail(null)}
+          title={`Candidate #${detail.id}`}
+          request={detail.request}
+          response={detail.response}
+          meta={[
+            { label: "model", value: detail.model },
+            { label: "language", value: detail.language ?? "en" },
+            { label: "status", value: detail.reviewer_status },
+            ...(detail.quality_score !== null ? [
+              { label: "quality", value: detail.quality_score! },
+              { label: "safety", value: detail.safety_score! },
+              { label: "duplicate", value: detail.duplicate_score! },
+              { label: "hallucination", value: detail.hallucination_score! },
+            ] : []),
+          ]}
+        />
+      )}
     </AppLayout>
   );
 }

@@ -58,6 +58,13 @@ export async function proxyToEdge(
     forwardHeaders["x-guest-session-id"] = guestId;
   }
 
+  // Forward the original query string (e.g. ?status=pending) unless the
+  // caller already baked query params into targetUrl.
+  const queryIndex = req.originalUrl.indexOf("?");
+  if (queryIndex !== -1 && !targetUrl.includes("?")) {
+    targetUrl = `${targetUrl}${req.originalUrl.slice(queryIndex)}`;
+  }
+
   const upstream = await fetch(targetUrl, {
     method: req.method,
     headers: forwardHeaders,

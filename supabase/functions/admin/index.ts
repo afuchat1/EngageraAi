@@ -49,6 +49,16 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  // ── Single dataset candidate: /admin/dataset-candidate?id=123 ───────────
+  if (path === "dataset-candidate") {
+    const id = Number(url.searchParams.get("id"));
+    if (!id) return json({ error: "id is required" }, 400);
+    const { data, error } = await db.from("engagera_dataset_candidates").select("*").eq("id", id).maybeSingle();
+    if (error) return json({ error: error.message }, 500);
+    if (!data) return json({ error: "Not found" }, 404);
+    return json({ candidate: data });
+  }
+
   // ── Dataset candidates: /admin/dataset-candidates?status=pending ───────
   if (path === "dataset-candidates") {
     const status = url.searchParams.get("status") ?? "pending";
@@ -140,6 +150,15 @@ Deno.serve(async (req: Request) => {
       .order("created_at", { ascending: false });
     if (error) return json({ error: error.message }, 500);
     return json({ versions: data });
+  }
+
+  // ── Dataset file download: /admin/dataset-download?path=... ────────────
+  if (path === "dataset-download") {
+    const storagePath = url.searchParams.get("path");
+    if (!storagePath) return json({ error: "path is required" }, 400);
+    const { data, error } = await db.storage.from("datasets").createSignedUrl(storagePath, 300);
+    if (error) return json({ error: error.message }, 500);
+    return json({ url: data.signedUrl });
   }
 
   // ── System health: /admin/system-health ─────────────────────────────────

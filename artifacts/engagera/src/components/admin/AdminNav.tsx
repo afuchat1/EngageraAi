@@ -7,6 +7,7 @@ const TABS = [
   { href: "/admin/reviewer", label: "Reviewer" },
   { href: "/admin/models", label: "Models & Training" },
   { href: "/admin/analytics", label: "API Analytics" },
+  { href: "/admin/storage", label: "Storage" },
 ];
 
 export function AdminNav() {
