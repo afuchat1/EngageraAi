@@ -1513,6 +1513,60 @@ async function persistLog(
   try { await db.from("engagera_request_logs").insert(logEntry); } catch { /* fire-and-forget */ }
 }
 
+// ── API-key traffic: NEVER becomes a Dashboard Chat ────────────────────────
+// External developer requests (authenticated via an eng_ API key) must only
+// produce API Logs + Dataset Candidates — the API owner never sees the raw
+// conversation inside their own Dashboard Chat history.
+async function recordApiTraffic(
+  db: ReturnType<typeof createClient>,
+  opts: {
+    apiKeyId: number;
+    userId?: string;
+    model: string;
+    request: string;
+    response: string;
+    inputTokens: number;
+    outputTokens: number;
+    latencyMs: number;
+    statusCode?: number;
+    errorMessage?: string;
+  },
+): Promise<void> {
+  const totalTokens = opts.inputTokens + opts.outputTokens;
+  try {
+    await db.from("engagera_api_logs").insert({
+      api_key_id: opts.apiKeyId,
+      user_id: opts.userId,
+      model: opts.model,
+      endpoint: "/chat",
+      status_code: opts.statusCode ?? 200,
+      latency_ms: opts.latencyMs,
+      input_tokens: opts.inputTokens,
+      output_tokens: opts.outputTokens,
+      total_tokens: totalTokens,
+      error_message: opts.errorMessage,
+    });
+  } catch { /* non-fatal */ }
+
+  if (opts.statusCode && opts.statusCode >= 400) return; // don't dataset-mine errors
+
+  try {
+    const hashBuf = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(`${opts.request}\u0000${opts.response}`),
+    );
+    const contentHash = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, "0")).join("");
+    await db.from("engagera_dataset_candidates").insert({
+      request: opts.request.slice(0, 8000),
+      response: opts.response.slice(0, 16000),
+      model: opts.model,
+      api_key_id: opts.apiKeyId,
+      content_hash: contentHash,
+      reviewer_status: "pending",
+    });
+  } catch { /* non-fatal */ }
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
@@ -1780,48 +1834,56 @@ Deno.serve(async (req: Request) => {
               }
             }
 
-            // Persist conversation
+            // Persist: API-key traffic -> API Logs + Dataset Candidates only.
+            // Dashboard (session) traffic -> Conversation history only.
             let convId2: number | undefined = conversationId;
-            try {
-              if (!convId2) {
-                const ins2: Record<string, unknown> = { title: promptPreview.slice(0, 60) || "New conversation", model };
-                if (userId) ins2.user_id = userId; else ins2.guest_session_id = guestSessionId;
-                const { data: cd2 } = await db.from("engagera_conversations").insert(ins2).select("id").single();
-                convId2 = cd2?.id;
-              }
-              if (convId2) {
-                if (lastUserMsg) {
-                  await db.from("engagera_messages").insert({
-                    conversation_id: convId2, role: "user",
-                    content: typeof lastUserMsg.content === "string" ? lastUserMsg.content : getTextPreview(lastUserMsg.content as MessageContent),
-                    token_count: 0,
-                  });
-                }
-                await db.from("engagera_messages").insert({
-                  conversation_id: convId2, role: "assistant", content: fullReply,
-                  token_count: Math.ceil(fullReply.length / 4),
-                });
-                await db.rpc("engagera_increment_message_count", { p_conversation_id: convId2 }).catch(() => {});
-              }
-            } catch { /* non-fatal */ }
+            const approxIn = Math.ceil(streamMsgs.reduce((a, m) => a + (typeof m.content === "string" ? m.content.length : 0), 0) / 4);
+            const approxOut = Math.ceil(fullReply.length / 4);
 
-            // Usage + guest counter
-            if (userId) {
+            if (apiKeyId !== undefined) {
+              const reqText = lastUserMsg
+                ? (typeof lastUserMsg.content === "string" ? lastUserMsg.content : getTextPreview(lastUserMsg.content as MessageContent))
+                : "";
+              await recordApiTraffic(db, {
+                apiKeyId, userId, model, request: reqText, response: fullReply,
+                inputTokens: approxIn, outputTokens: approxOut, latencyMs: Date.now() - startTime,
+              });
+              await Promise.all([
+                db.from("engagera_api_keys").update({ last_used_at: new Date().toISOString() }).eq("id", apiKeyId),
+                db.rpc("engagera_increment_api_key_requests", { p_key_id: apiKeyId }),
+              ]).catch(() => {});
+            } else {
               try {
-                const approxIn = Math.ceil(streamMsgs.reduce((a, m) => a + (typeof m.content === "string" ? m.content.length : 0), 0) / 4);
-                const approxOut = Math.ceil(fullReply.length / 4);
-                await db.from("engagera_usage_records").insert({
-                  user_id: userId, model,
-                  input_tokens: approxIn, output_tokens: approxOut, total_tokens: approxIn + approxOut,
-                  ...(apiKeyId !== undefined && { api_key_id: apiKeyId }),
-                });
-                if (apiKeyId !== undefined) {
-                  await Promise.all([
-                    db.from("engagera_api_keys").update({ last_used_at: new Date().toISOString() }).eq("id", apiKeyId),
-                    db.rpc("engagera_increment_api_key_requests", { p_key_id: apiKeyId }),
-                  ]);
+                if (!convId2) {
+                  const ins2: Record<string, unknown> = { title: promptPreview.slice(0, 60) || "New conversation", model };
+                  if (userId) ins2.user_id = userId; else ins2.guest_session_id = guestSessionId;
+                  const { data: cd2 } = await db.from("engagera_conversations").insert(ins2).select("id").single();
+                  convId2 = cd2?.id;
+                }
+                if (convId2) {
+                  if (lastUserMsg) {
+                    await db.from("engagera_messages").insert({
+                      conversation_id: convId2, role: "user",
+                      content: typeof lastUserMsg.content === "string" ? lastUserMsg.content : getTextPreview(lastUserMsg.content as MessageContent),
+                      token_count: 0,
+                    });
+                  }
+                  await db.from("engagera_messages").insert({
+                    conversation_id: convId2, role: "assistant", content: fullReply,
+                    token_count: Math.ceil(fullReply.length / 4),
+                  });
+                  await db.rpc("engagera_increment_message_count", { p_conversation_id: convId2 }).catch(() => {});
                 }
               } catch { /* non-fatal */ }
+
+              if (userId) {
+                try {
+                  await db.from("engagera_usage_records").insert({
+                    user_id: userId, model,
+                    input_tokens: approxIn, output_tokens: approxOut, total_tokens: approxIn + approxOut,
+                  });
+                } catch { /* non-fatal */ }
+              }
             }
             let streamGuestCount: number | undefined;
             if (guestSessionId) {
@@ -1952,63 +2014,17 @@ Deno.serve(async (req: Request) => {
     logEntry.output_tokens = outputTokens;
     logEntry.total_tokens  = totalTokens;
 
-    // ── Persist conversation ──────────────────────────────────────────────────
+    // ── Persist: API-key traffic never becomes a Dashboard Chat ────────────────
     let convId: number | undefined = conversationId;
-    try {
-      if (!convId) {
-        const insert: Record<string,unknown> = {
-          title: promptPreview.slice(0, 60) || "New conversation", model,
-        };
-        if (userId) insert.user_id = userId;
-        else insert.guest_session_id = guestSessionId;
-        const { data, error: convErr } = await db.from("engagera_conversations")
-          .insert(insert).select("id").single();
-        if (convErr) log("warn", "conv.insert_failed", { requestId, error: JSON.stringify(convErr) });
-        convId = data?.id;
-      } else {
-        await db.from("engagera_conversations")
-          .update({ updated_at: new Date().toISOString(), model }).eq("id", convId);
-      }
-      if (convId) {
-        // Save user message first (correct chronological order), then assistant reply
-        if (lastUserMsg) {
-          const userText = typeof lastUserMsg.content === "string"
-            ? lastUserMsg.content : JSON.stringify(lastUserMsg.content);
-          const { error: userMsgErr } = await db.from("engagera_messages").insert({
-            conversation_id: convId, role: "user", content: userText, token_count: 0,
-          });
-          if (userMsgErr) log("warn", "msg.user_insert_failed", { requestId, convId, error: JSON.stringify(userMsgErr) });
-        }
-        const [assistantResult, rpcResult] = await Promise.allSettled([
-          db.from("engagera_messages").insert({
-            conversation_id: convId, role: "assistant", content: reply, token_count: totalTokens,
-          }),
-          db.rpc("engagera_increment_message_count", { p_conversation_id: convId }),
-        ]);
-        if (assistantResult.status === "fulfilled" && assistantResult.value?.error) {
-          log("warn", "msg.assistant_insert_failed", { requestId, convId, error: JSON.stringify(assistantResult.value.error) });
-        }
-        if (rpcResult.status === "fulfilled" && rpcResult.value?.error) {
-          log("warn", "msg.rpc_failed", { requestId, convId, error: JSON.stringify(rpcResult.value.error) });
-        }
-      }
-    } catch (err) {
-      log("warn", "conv.persist_failed", { requestId, error: String(err) });
-    }
 
-    // ── Usage record ──────────────────────────────────────────────────────────
-    if (userId) {
-      try {
-        await db.from("engagera_usage_records").insert({
-          user_id: userId, model,
-          input_tokens: inputTokens, output_tokens: outputTokens, total_tokens: totalTokens,
-          ...(apiKeyId !== undefined && { api_key_id: apiKeyId }),
-        });
-      } catch { /* non-fatal */ }
-    }
-
-    // Update last_used_at and increment total_requests on the API key
     if (apiKeyId !== undefined) {
+      const reqText = lastUserMsg
+        ? (typeof lastUserMsg.content === "string" ? lastUserMsg.content : JSON.stringify(lastUserMsg.content))
+        : "";
+      await recordApiTraffic(db, {
+        apiKeyId, userId, model, request: reqText, response: reply,
+        inputTokens, outputTokens, latencyMs: Date.now() - startTime,
+      });
       try {
         await Promise.all([
           db.from("engagera_api_keys")
@@ -2017,6 +2033,57 @@ Deno.serve(async (req: Request) => {
           db.rpc("engagera_increment_api_key_requests", { p_key_id: apiKeyId }),
         ]);
       } catch { /* non-fatal */ }
+    } else {
+      try {
+        if (!convId) {
+          const insert: Record<string,unknown> = {
+            title: promptPreview.slice(0, 60) || "New conversation", model,
+          };
+          if (userId) insert.user_id = userId;
+          else insert.guest_session_id = guestSessionId;
+          const { data, error: convErr } = await db.from("engagera_conversations")
+            .insert(insert).select("id").single();
+          if (convErr) log("warn", "conv.insert_failed", { requestId, error: JSON.stringify(convErr) });
+          convId = data?.id;
+        } else {
+          await db.from("engagera_conversations")
+            .update({ updated_at: new Date().toISOString(), model }).eq("id", convId);
+        }
+        if (convId) {
+          // Save user message first (correct chronological order), then assistant reply
+          if (lastUserMsg) {
+            const userText = typeof lastUserMsg.content === "string"
+              ? lastUserMsg.content : JSON.stringify(lastUserMsg.content);
+            const { error: userMsgErr } = await db.from("engagera_messages").insert({
+              conversation_id: convId, role: "user", content: userText, token_count: 0,
+            });
+            if (userMsgErr) log("warn", "msg.user_insert_failed", { requestId, convId, error: JSON.stringify(userMsgErr) });
+          }
+          const [assistantResult, rpcResult] = await Promise.allSettled([
+            db.from("engagera_messages").insert({
+              conversation_id: convId, role: "assistant", content: reply, token_count: totalTokens,
+            }),
+            db.rpc("engagera_increment_message_count", { p_conversation_id: convId }),
+          ]);
+          if (assistantResult.status === "fulfilled" && assistantResult.value?.error) {
+            log("warn", "msg.assistant_insert_failed", { requestId, convId, error: JSON.stringify(assistantResult.value.error) });
+          }
+          if (rpcResult.status === "fulfilled" && rpcResult.value?.error) {
+            log("warn", "msg.rpc_failed", { requestId, convId, error: JSON.stringify(rpcResult.value.error) });
+          }
+        }
+      } catch (err) {
+        log("warn", "conv.persist_failed", { requestId, error: String(err) });
+      }
+
+      if (userId) {
+        try {
+          await db.from("engagera_usage_records").insert({
+            user_id: userId, model,
+            input_tokens: inputTokens, output_tokens: outputTokens, total_tokens: totalTokens,
+          });
+        } catch { /* non-fatal */ }
+      }
     }
 
     // ── Guest counter ─────────────────────────────────────────────────────────
