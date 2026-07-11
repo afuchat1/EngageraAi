@@ -592,6 +592,51 @@ async function callCloudflare(
   return { ok: true, content, inputTokens: 0, outputTokens: 0, provider: "cloudflare", model };
 }
 
+// ── Cloudflare Workers AI raster image generation (Flux Schnell) ──────────────
+// Free tier, no billing. Returns raw base64 JPEG bytes (Workers AI's image
+// models respond with the binary image, not JSON — unlike callCloudflare()
+// above which is for text models).
+async function generateRasterImage(
+  apiToken: string,
+  accountId: string,
+  prompt: string,
+  requestId: string,
+  timeoutMs = 20_000,
+): Promise<{ ok: true; base64: string } | { ok: false; errorDetail: string }> {
+  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/black-forest-labs/flux-1-schnell`;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ prompt: prompt.slice(0, 2000) }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (err) {
+    log("warn", "cloudflare_image.network_error", { requestId, error: String(err) });
+    return { ok: false, errorDetail: String(err) };
+  }
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    log("warn", "cloudflare_image.http_error", { requestId, status: res.status, error: errText.slice(0, 200) });
+    return { ok: false, errorDetail: `HTTP ${res.status}: ${errText.slice(0, 200)}` };
+  }
+
+  const data = await res.json() as { success?: boolean; result?: { image?: string }; errors?: { message?: string }[] };
+  if (!data.success || !data.result?.image) {
+    const errMsg = data.errors?.map((e) => e.message).join("; ") ?? "no image in response";
+    log("warn", "cloudflare_image.api_error", { requestId, error: errMsg });
+    return { ok: false, errorDetail: errMsg };
+  }
+
+  log("info", "cloudflare_image.success", { requestId, len: data.result.image.length });
+  return { ok: true, base64: data.result.image };
+}
+
 // ── Multi-provider fallback call ──────────────────────────────────────────────
 interface ProviderKeys {
   groq?:            string;
@@ -2011,18 +2056,32 @@ Deno.serve(async (req: Request) => {
 
     if (generateImage) {
       const imagePrompt = extractImagePrompt(validMessages);
-      const svgMsgs: ChatMessage[] = [
-        { role: "system", content: IMAGE_SYSTEM_PROMPT },
-        { role: "user",   content: imagePrompt },
-      ];
-      const result = await callWithFallback(IMAGE_CHAIN, keys, svgMsgs, 1500, requestId);
-      if (result.ok && (result.content.includes("```svg") || result.content.includes("<svg"))) {
-        reply = result.content;
-        inputTokens = result.inputTokens; outputTokens = result.outputTokens;
-        totalTokens = inputTokens + outputTokens;
+
+      // Real raster image via Cloudflare Workers AI (Flux Schnell) — free,
+      // no billing. Falls back to an AI-drawn SVG (via IMAGE_CHAIN) only if
+      // Cloudflare is unavailable or misconfigured, so image gen still works
+      // in a degraded form rather than failing outright.
+      const cfImage = keys.cloudflare && keys.cloudflareAccountId
+        ? await generateRasterImage(keys.cloudflare, keys.cloudflareAccountId, imagePrompt, requestId)
+        : { ok: false as const, errorDetail: "cloudflare not configured" };
+
+      if (cfImage.ok) {
+        reply = `![${imagePrompt.slice(0, 100)}](data:image/jpeg;base64,${cfImage.base64})`;
       } else {
-        reply = "I wasn't able to generate that image right now. Please try again.";
-        logEntry.error_code = `image_gen_failed: ${result.errorDetail ?? "no svg block"}`;
+        log("warn", "image_gen.cloudflare_failed_fallback_svg", { requestId, error: cfImage.errorDetail });
+        const svgMsgs: ChatMessage[] = [
+          { role: "system", content: IMAGE_SYSTEM_PROMPT },
+          { role: "user",   content: imagePrompt },
+        ];
+        const result = await callWithFallback(IMAGE_CHAIN, keys, svgMsgs, 1500, requestId);
+        if (result.ok && (result.content.includes("```svg") || result.content.includes("<svg"))) {
+          reply = result.content;
+          inputTokens = result.inputTokens; outputTokens = result.outputTokens;
+          totalTokens = inputTokens + outputTokens;
+        } else {
+          reply = "I wasn't able to generate that image right now. Please try again.";
+          logEntry.error_code = `image_gen_failed: cloudflare=${cfImage.errorDetail} svg=${result.errorDetail ?? "no svg block"}`;
+        }
       }
     } else {
       // Load cross-session user context (memories + recent conv titles) for authed users
