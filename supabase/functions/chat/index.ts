@@ -721,8 +721,51 @@ async function callWithFallback(
   };
 }
 
-// ── Web search (DuckDuckGo free + optional Brave API) ─────────────────────────
-async function webSearch(query: string, braveKey?: string): Promise<{ text: string; sources: Source[] }> {
+// ── Web search: Tavily AI (primary) → Brave → DuckDuckGo fallback ─────────────
+async function webSearch(
+  query: string,
+  tavilyKey?: string,
+  braveKey?: string,
+): Promise<{ text: string; sources: Source[] }> {
+  // ── 1. Tavily AI — purpose-built for AI agents, structured + cited results ──
+  if (tavilyKey) {
+    try {
+      const res = await fetch("https://api.tavily.com/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${tavilyKey}` },
+        body: JSON.stringify({
+          query,
+          max_results: 8,
+          search_depth: "basic",
+          include_answer: true,
+          include_raw_content: false,
+        }),
+        signal: AbortSignal.timeout(8_000),
+      });
+      if (res.ok) {
+        const data = await res.json() as {
+          answer?: string;
+          results?: { title: string; url: string; content: string; score?: number; published_date?: string }[];
+        };
+        const results = data.results ?? [];
+        if (results.length > 0) {
+          const sources: Source[] = results.map((r) => ({
+            title: r.title, url: r.url, snippet: r.content.slice(0, 300),
+          }));
+          const lines = results.map((r, i) =>
+            `${i + 1}. **${r.title}**${r.published_date ? ` (${r.published_date})` : ""}\n   ${r.content.slice(0, 400)}\n   URL: ${r.url}`
+          );
+          const answerBlock = data.answer ? `\n\n**Direct answer**: ${data.answer}` : "";
+          return {
+            text: `Search results for "${query}":${answerBlock}\n\n${lines.join("\n\n")}`,
+            sources,
+          };
+        }
+      }
+    } catch { /* fall through to Brave */ }
+  }
+
+  // ── 2. Brave Search API (if key set) ───────────────────────────────────────
   if (braveKey) {
     try {
       const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=8`;
@@ -828,12 +871,34 @@ async function webSearch(query: string, braveKey?: string): Promise<{ text: stri
   }
 }
 
-// ── Webpage fetcher via Jina AI Reader (free, no key) ─────────────────────────
-async function fetchWebpage(url: string): Promise<string> {
+// ── Webpage fetcher: Firecrawl (primary) → Jina AI Reader fallback ────────────
+async function fetchWebpage(url: string, firecrawlKey?: string): Promise<string> {
+  if (!url.startsWith("http://") && !url.startsWith("https://")) {
+    return "Invalid URL  -  must start with http:// or https://";
+  }
+  // ── 1. Firecrawl — clean markdown extraction, respects robots.txt ──────────
+  if (firecrawlKey) {
+    try {
+      const res = await fetch("https://api.firecrawl.dev/v1/scrape", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${firecrawlKey}`,
+        },
+        body: JSON.stringify({ url, formats: ["markdown"], onlyMainContent: true }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (res.ok) {
+        const data = await res.json() as { success?: boolean; data?: { markdown?: string } };
+        const md = data.data?.markdown ?? "";
+        if (md.length > 100) {
+          return md.length > 4000 ? md.slice(0, 4000) + "\n\n[Content truncated at 4000 chars]" : md;
+        }
+      }
+    } catch { /* fall through to Jina */ }
+  }
+  // ── 2. Jina AI Reader (free, no key) ─────────────────────────────────────
   try {
-    if (!url.startsWith("http://") && !url.startsWith("https://")) {
-      return "Invalid URL  -  must start with http:// or https://";
-    }
     const res = await fetch(`https://r.jina.ai/${url}`, {
       headers: {
         "Accept": "text/plain",
@@ -897,13 +962,13 @@ async function isAllowedByRobots(rawUrl: string): Promise<boolean> {
   }
 }
 
-async function fetchWebpageDirect(url: string, requestId: string): Promise<string> {
+async function fetchWebpageDirect(url: string, requestId: string, firecrawlKey?: string): Promise<string> {
   try {
     if (!url.startsWith("http://") && !url.startsWith("https://")) return "Invalid URL";
     const allowed = await isAllowedByRobots(url);
     if (!allowed) {
       log("info", "robots.disallowed_use_jina", { requestId, url });
-      return fetchWebpage(url); // Jina handles its own compliance
+      return fetchWebpage(url, firecrawlKey); // Firecrawl/Jina handles its own compliance
     }
     const res = await fetch(url, {
       signal:  AbortSignal.timeout(10_000),
@@ -914,7 +979,7 @@ async function fetchWebpageDirect(url: string, requestId: string): Promise<strin
         "Cache-Control":   "no-cache",
       },
     });
-    if (!res.ok) return fetchWebpage(url);
+    if (!res.ok) return fetchWebpage(url, firecrawlKey);
     const html = await res.text();
     const text = html
       .replace(/<style[\s\S]*?<\/style>/gi, " ")
@@ -928,11 +993,11 @@ async function fetchWebpageDirect(url: string, requestId: string): Promise<strin
       .replace(/\s+/g, " ")
       .trim();
     const clean = text.slice(0, 4000);
-    if (!clean) return fetchWebpage(url);
+    if (!clean) return fetchWebpage(url, firecrawlKey);
     log("info", "direct_crawl.success", { requestId, url, chars: clean.length });
     return clean;
   } catch {
-    return fetchWebpage(url); // fall back to Jina on any error
+    return fetchWebpage(url, firecrawlKey); // fall back to Firecrawl/Jina on any error
   }
 }
 
@@ -943,6 +1008,138 @@ function detectURLs(text: string): string[] {
   // Deduplicate and ignore common non-content URLs (social share links, etc.)
   const ignored = /\/(share|tweet|intent|login|signup|oauth|auth|redirect)/i;
   return [...new Set(matches)].filter((u) => !ignored.test(u)).slice(0, 2);
+}
+
+// ── Weather tool (wttr.in — free, no key) ─────────────────────────────────────
+function detectWeatherQuery(text: string): string | null {
+  const t = text.toLowerCase();
+  const patterns = [
+    /weather\s+(?:in|for|at|of)\s+([a-z][a-z\s,]{1,48})(?:\?|$|\.)/i,
+    /(?:what(?:'s| is)(?: the)?)\s+(?:weather|temperature|temp|forecast)\s+(?:in|for|at)\s+([a-z][a-z\s,]{1,48})(?:\?|$|\.)/i,
+    /how(?:'s| is) (?:it|the weather)\s+(?:in|at)\s+([a-z][a-z\s,]{1,48})(?:\?|$|\.)/i,
+    /(?:is it|will it)\s+(?:raining|hot|cold|sunny|cloudy)\s+(?:in|at)\s+([a-z][a-z\s,]{1,48})(?:\?|$|\.)/i,
+    /([a-z][a-z\s]{1,30})\s+(?:weather|temperature|forecast)(?:\?|$|\.)/i,
+  ];
+  for (const p of patterns) {
+    const m = t.match(p);
+    if (m?.[1]) {
+      const loc = m[1].trim().replace(/[.,?!]+$/, "");
+      if (loc.length > 1 && !["my","the","your","this","that","what","how"].includes(loc)) return loc;
+    }
+  }
+  if (/\b(?:weather|forecast)\b/i.test(t) && !/how does weather work|explain weather/i.test(t)) return "auto";
+  return null;
+}
+
+async function fetchWeather(location: string, requestId: string): Promise<string | null> {
+  try {
+    const loc = location === "auto" ? "" : encodeURIComponent(location);
+    const res = await fetch(`https://wttr.in/${loc}?format=j1`, {
+      headers: { "User-Agent": "EngageraBot/1.0 (+https://engagera.afuchat.com/bot)" },
+      signal: AbortSignal.timeout(6_000),
+    });
+    if (!res.ok) return null;
+    const d = await res.json() as {
+      nearest_area?: [{ areaName: [{value:string}]; country: [{value:string}] }];
+      current_condition?: [{
+        temp_C: string; temp_F: string; weatherDesc: [{value:string}];
+        humidity: string; windspeedKmph: string; FeelsLikeC: string; uvIndex: string; visibility: string;
+      }];
+      weather?: [{
+        date: string; maxtempC: string; mintempC: string; maxtempF: string; mintempF: string;
+        hourly?: { tempC: string; weatherDesc: [{value:string}]; time: string }[];
+        astronomy?: [{ sunrise: string; sunset: string }];
+      }];
+    };
+    const area  = d.nearest_area?.[0];
+    const city  = area?.areaName?.[0]?.value ?? location;
+    const ctry  = area?.country?.[0]?.value ?? "";
+    const cur   = d.current_condition?.[0];
+    if (!cur) return null;
+    const desc  = cur.weatherDesc?.[0]?.value ?? "";
+    const astro = d.weather?.[0]?.astronomy?.[0];
+    const forecast = (d.weather ?? []).slice(0, 3).map((w) => {
+      const dt  = new Date(w.date).toLocaleDateString("en-GB", { weekday:"short", month:"short", day:"numeric" });
+      const mid = w.hourly?.[4]?.weatherDesc?.[0]?.value ?? "";
+      return `  • ${dt}: ${w.maxtempC}°C / ${w.mintempC}°C (${w.maxtempF}°F / ${w.mintempF}°F) — ${mid}`;
+    }).join("\n");
+    return [
+      `📍 **${city}${ctry ? ", " + ctry : ""}** — Live weather`,
+      `🌡️ **${cur.temp_C}°C (${cur.temp_F}°F)** — ${desc}`,
+      `💧 Humidity: ${cur.humidity}%  |  💨 Wind: ${cur.windspeedKmph} km/h  |  🌡 Feels like: ${cur.FeelsLikeC}°C`,
+      `☀️ UV Index: ${cur.uvIndex}  |  👁 Visibility: ${cur.visibility} km`,
+      astro ? `🌅 Sunrise: ${astro.sunrise}  |  🌇 Sunset: ${astro.sunset}` : "",
+      forecast ? `\n**3-Day Forecast:**\n${forecast}` : "",
+    ].filter(Boolean).join("\n");
+  } catch (err) {
+    log("warn", "weather.fetch_failed", { requestId, error: String(err) });
+    return null;
+  }
+}
+
+// ── Currency & crypto rates (Frankfurter ECB + Open ER — free, no key) ────────
+interface CurrencyQuery { from: string; to: string; amount: number }
+
+function detectCurrencyQuery(text: string): CurrencyQuery | null {
+  const currMap: Record<string,string> = {
+    dollar:"USD",dollars:"USD",usd:"USD",euro:"EUR",euros:"EUR",eur:"EUR",
+    pound:"GBP",pounds:"GBP",gbp:"GBP",naira:"NGN",ngn:"NGN",
+    shilling:"KES",kes:"KES",cedi:"GHS",ghs:"GHS",rand:"ZAR",zar:"ZAR",
+    yen:"JPY",jpy:"JPY",yuan:"CNY",cny:"CNY",rupee:"INR",inr:"INR",
+    real:"BRL",brl:"BRL",bitcoin:"BTC",btc:"BTC",ethereum:"ETH",eth:"ETH",
+    franc:"CHF",chf:"CHF",krona:"SEK",sek:"SEK",peso:"MXN",mxn:"MXN",
+    cad:"CAD",aud:"AUD",nzd:"NZD",sgd:"SGD",hkd:"HKD",
+  };
+  const norm = (s: string) => currMap[s.toLowerCase()] ?? s.toUpperCase().slice(0, 3);
+  const tickers = Object.keys(currMap).filter(k => k.length <= 3).map(k => currMap[k]);
+  const hasCurr = new RegExp(`\\b(${[...new Set(tickers)].join("|")})\\b`, "i").test(text);
+  if (!hasCurr && !/\b(?:convert|exchange|rate|worth)\b/i.test(text)) return null;
+  const p = [
+    /(\d+(?:[.,]\d+)?)\s*([a-z]{3})\s+(?:to|in|into)\s+([a-z]{3})/i,
+    /convert\s+(\d+(?:[.,]\d+)?)\s*([a-z]{3,20})\s+(?:to|into)\s+([a-z]{3,20})/i,
+    /(\d+(?:[.,]\d+)?)\s*([a-z]{3,10})\s+(?:in|to|worth in)\s+([a-z]{3,10})/i,
+    /([a-z]{3})\s+(?:to|vs\.?|against)\s+([a-z]{3})/i,
+  ];
+  for (const pat of p) {
+    const m = text.match(pat);
+    if (!m) continue;
+    if (m.length >= 4) return { amount: parseFloat(m[1].replace(",", "")) || 1, from: norm(m[2]), to: norm(m[3]) };
+    if (m.length >= 3) return { amount: 1, from: norm(m[1]), to: norm(m[2]) };
+  }
+  return null;
+}
+
+async function fetchCurrencyRate(q: CurrencyQuery, requestId: string): Promise<string | null> {
+  try {
+    const r1 = await fetch(`https://api.frankfurter.app/latest?from=${q.from}&to=${q.to}`, {
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (r1.ok) {
+      const d = await r1.json() as { amount:number; base:string; date:string; rates:Record<string,number> };
+      const rate = d.rates[q.to];
+      if (rate) {
+        const conv = (q.amount * rate).toLocaleString("en-US", { maximumFractionDigits: 4 });
+        return `💱 **Currency Exchange** (ECB / Frankfurter, ${d.date})\n${q.amount} **${q.from}** = **${conv} ${q.to}**\nRate: 1 ${q.from} = ${rate} ${q.to}`;
+      }
+    }
+  } catch { /* try next */ }
+  try {
+    const base = ["USD","EUR","GBP"].includes(q.from) ? q.from : "USD";
+    const r2 = await fetch(`https://open.er-api.com/v6/latest/${base}`, { signal: AbortSignal.timeout(5_000) });
+    if (r2.ok) {
+      const d2 = await r2.json() as { rates:Record<string,number>; time_last_update_utc:string };
+      const fromRate = d2.rates[q.from] ?? 1;
+      const toRate   = d2.rates[q.to];
+      if (toRate) {
+        const rate = toRate / fromRate;
+        const conv = (q.amount * rate).toLocaleString("en-US", { maximumFractionDigits: 4 });
+        return `💱 **Currency Exchange** (Open ER, ${d2.time_last_update_utc.slice(0,16)})\n${q.amount} **${q.from}** = **${conv} ${q.to}**\nRate: 1 ${q.from} ≈ ${rate.toFixed(4)} ${q.to}`;
+      }
+    }
+  } catch (err) {
+    log("warn", "currency.fetch_failed", { requestId, error: String(err) });
+  }
+  return null;
 }
 
 // ── Cross-session user context loader ────────────────────────────────────────
@@ -1600,6 +1797,8 @@ async function agenticChat(
   messages: ChatMessage[],
   requestId: string,
   braveKey?: string,
+  tavilyKey?: string,
+  firecrawlKey?: string,
 ): Promise<{ reply:string; inputTokens:number; outputTokens:number; provider?:string; providerModel?:string; searchInfo?: { query:string; sources:Source[] }; crawledUrls?: string[] }> {
   let baseConvo: ChatMessage[] = [...messages];
 
@@ -1613,7 +1812,7 @@ async function agenticChat(
     if (urls.length > 0) {
       log("info", "url_crawl.start", { requestId, urls });
       try {
-        const fetched = await Promise.allSettled(urls.map((u) => fetchWebpage(u).then((content) => ({ url: u, content }))));
+        const fetched = await Promise.allSettled(urls.map((u) => fetchWebpage(u, firecrawlKey).then((content) => ({ url: u, content }))));
         const urlParts: string[] = [];
         for (const r of fetched) {
           if (r.status === "fulfilled" && !r.value.content.startsWith("Could not") && !r.value.content.startsWith("Failed") && !r.value.content.startsWith("Invalid")) {
@@ -1635,6 +1834,50 @@ async function agenticChat(
         }
       } catch (err) {
         log("warn", "url_crawl.exception", { requestId, error: String(err) });
+      }
+    }
+  }
+
+  // ── Tool: Weather (wttr.in — free, no key required) ─────────────────────────
+  if (lastUserText) {
+    const weatherLoc = detectWeatherQuery(lastUserText);
+    if (weatherLoc) {
+      const weatherData = await fetchWeather(weatherLoc, requestId);
+      if (weatherData) {
+        const weatherBlock = `\n\n---\n🌤️ **Live weather data** (retrieved just now from wttr.in):\n\n${weatherData}\n---\n\nPresent this weather information naturally and conversationally.`;
+        const wConvo = [...baseConvo];
+        const wsysIdx = wConvo.findIndex((m) => m.role === "system");
+        if (wsysIdx >= 0 && typeof wConvo[wsysIdx].content === "string") {
+          wConvo[wsysIdx] = { ...wConvo[wsysIdx], content: (wConvo[wsysIdx].content as string) + weatherBlock };
+        } else { wConvo.unshift({ role: "system", content: weatherBlock }); }
+        const wResult = await callWithFallback(chain, keys, wConvo, 1024, requestId);
+        if (wResult.ok) {
+          log("info", "weather.tool.success", { requestId, location: weatherLoc });
+          return { reply: wResult.content, inputTokens: wResult.inputTokens, outputTokens: wResult.outputTokens,
+            provider: wResult.provider, providerModel: wResult.model, ...(crawledUrls.length && { crawledUrls }) };
+        }
+      }
+    }
+  }
+
+  // ── Tool: Currency rates (Frankfurter ECB + Open ER — free, no key) ──────────
+  if (lastUserText) {
+    const currencyQ = detectCurrencyQuery(lastUserText);
+    if (currencyQ) {
+      const rateData = await fetchCurrencyRate(currencyQ, requestId);
+      if (rateData) {
+        const rateBlock = `\n\n---\n${rateData}\n---\n\nPresent this exchange rate naturally and conversationally.`;
+        const cConvo = [...baseConvo];
+        const csysIdx = cConvo.findIndex((m) => m.role === "system");
+        if (csysIdx >= 0 && typeof cConvo[csysIdx].content === "string") {
+          cConvo[csysIdx] = { ...cConvo[csysIdx], content: (cConvo[csysIdx].content as string) + rateBlock };
+        } else { cConvo.unshift({ role: "system", content: rateBlock }); }
+        const cResult = await callWithFallback(chain, keys, cConvo, 512, requestId);
+        if (cResult.ok) {
+          log("info", "currency.tool.success", { requestId, from: currencyQ.from, to: currencyQ.to });
+          return { reply: cResult.content, inputTokens: cResult.inputTokens, outputTokens: cResult.outputTokens,
+            provider: cResult.provider, providerModel: cResult.model, ...(crawledUrls.length && { crawledUrls }) };
+        }
       }
     }
   }
@@ -1696,7 +1939,7 @@ async function agenticChat(
       const query = buildSearchQuery(userText, recentContext);
       log("info", "pre_search.start", { requestId, query });
 
-      let searchResult = await webSearch(query, braveKey);
+      let searchResult = await webSearch(query, tavilyKey, braveKey);
       log("info", "pre_search.done", { requestId, sourceCount: searchResult.sources.length });
 
       // ── Retry with a simplified query if we got < 3 sources ─────────────────
@@ -1704,7 +1947,7 @@ async function agenticChat(
         const shortQuery = query.split(/\s+/).slice(0, 6).join(" ");
         if (shortQuery.length > 8 && shortQuery !== query.trim()) {
           log("info", "pre_search.retry", { requestId, shortQuery });
-          const retry = await webSearch(shortQuery, braveKey);
+          const retry = await webSearch(shortQuery, tavilyKey, braveKey);
           if (retry.sources.length > searchResult.sources.length) {
             searchResult = retry;
             log("info", "pre_search.retry_better", { requestId, sourceCount: retry.sources.length });
@@ -1726,7 +1969,7 @@ async function agenticChat(
           if (keywords.some((kw) => queryLower.includes(kw))) {
             log("info", "domain_crawl_fallback.start", { requestId, url });
             try {
-              const content = await fetchWebpageDirect(url, requestId);
+              const content = await fetchWebpageDirect(url, requestId, firecrawlKey);
               if (content.length > 200 && !content.startsWith("Could not") && !content.startsWith("Failed")) {
                 searchResult = {
                   text: `Direct website crawl of ${url} (retrieved just now):\n\n${content.slice(0, 2500)}`,
@@ -1754,7 +1997,7 @@ async function agenticChat(
         if (topUrls.length > 0) {
           log("info", "deep_crawl.start", { requestId, urls: topUrls });
           const crawled = await Promise.allSettled(
-            topUrls.map((u) => fetchWebpage(u).then((content) => ({ url: u, content })))
+            topUrls.map((u) => fetchWebpage(u, firecrawlKey).then((content) => ({ url: u, content })))
           );
           for (const r of crawled) {
             if (r.status === "fulfilled") {
@@ -1956,7 +2199,9 @@ Deno.serve(async (req: Request) => {
       cloudflareAccountId: Deno.env.get("CLOUDFLARE_ACCOUNT_ID") || undefined,
       cerebras:   Deno.env.get("CEREBRAS_API_KEY")    || undefined,
     };
-    const braveKey = Deno.env.get("BRAVE_SEARCH_API_KEY");
+    const braveKey     = Deno.env.get("BRAVE_SEARCH_API_KEY");
+    const tavilyKey    = Deno.env.get("TAVILY_API_KEY");
+    const firecrawlKey = Deno.env.get("FIRECRAWL_API_KEY");
 
     if (!supabaseUrl) return json({ error: "SUPABASE_URL not configured" }, 500);
     if (!serviceKey)  return json({ error: "SUPABASE_SERVICE_ROLE_KEY not configured" }, 500);
@@ -2212,7 +2457,7 @@ Deno.serve(async (req: Request) => {
           const recentCtx2 = validMessages.filter((m) => m.role === "user").slice(-3)
             .map((m) => (typeof m.content === "string" ? m.content : "")).join(" ").slice(0, 120);
           const q2 = buildSearchQuery(searchText2, recentCtx2);
-          const sr2 = await webSearch(q2, braveKey);
+          const sr2 = await webSearch(q2, tavilyKey, braveKey);
           if (sr2.sources.length > 0) {
             const ctxBlk = `\n\n---\n🌐 **Live search results** (retrieved just now):\n\n${sr2.text.slice(0, 2000)}\n---\n\nAnswer naturally using the above data.`;
             const si2 = streamMsgs.findIndex((m) => m.role === "system");
@@ -2422,7 +2667,7 @@ Deno.serve(async (req: Request) => {
           })),
       ];
 
-      const chatResult = await agenticChat(db, keys, chain, chatMsgs, requestId, braveKey);
+      const chatResult = await agenticChat(db, keys, chain, chatMsgs, requestId, braveKey, tavilyKey, firecrawlKey);
       reply        = chatResult.reply;
       inputTokens  = chatResult.inputTokens;
       outputTokens = chatResult.outputTokens;
