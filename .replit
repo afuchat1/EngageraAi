@@ -11,18 +11,6 @@ env = { "CI" = "true" }
 [workflows]
 runButton = "Start application"
 
-[[workflows.workflow]]
-name = "Start application"
-author = "agent"
-
-[workflows.workflow.metadata]
-outputType = "webview"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "PORT=5000 pnpm --filter @workspace/engagera run dev"
-waitForPort = 5000
-
 [agent]
 stack = "BEST_EFFORT_FALLBACK"
 expertMode = true

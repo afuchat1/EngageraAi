@@ -4,8 +4,11 @@ Engagera is the official AI platform of AfuChat under AfuAI. A unified AI system
 
 ## Run & Operate
 
-- `PORT=5000 pnpm --filter @workspace/engagera run dev` — run the frontend on Replit (port 5000)
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 8080)
+- Replit runs this as 3 artifact workflows (auto-managed, no manual start needed): `artifacts/engagera: web` (frontend), `artifacts/api-server: API Server`, `artifacts/mockup-sandbox: Component Preview Server` (canvas)
+- `PORT=5000 pnpm --filter @workspace/engagera run dev` — run the frontend manually (port 5000)
+- `pnpm --filter @workspace/api-server run dev` — run the API server manually (port 8080)
+- Supabase URL/anon key are hardcoded as public fallbacks in `artifacts/engagera/src/lib/supabase.ts` and `artifacts/api-server/src/lib/proxy.ts`, so the app runs without extra secrets on Replit. Set `SUPABASE_URL`/`SUPABASE_ANON_KEY`/`VITE_SUPABASE_URL` env vars to override.
+- Known issue: the `chat` Supabase Edge Function currently returns `WORKER_ERROR` for all requests (tracked as a follow-up task) — everything else (landing, auth, models list) works.
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
