@@ -14,3 +14,4 @@
 - [Supabase deploy in Replit](supabase-deploy-replit.md) — use --use-api flag; Docker bundling blocked by Replit network firewall
 - [Engagera architecture](engagera-architecture.md) — fully client-side + Supabase Edge Functions; no server-side code in production
 - [Engagera admin dashboard](engagera-admin-dashboard.md) — admin gating via engagera_admins table; admin/reviewer/dataset-export Edge Fns proxied with JWT passthrough; hand-written adminApi.ts hooks (not generated client)
+- [Engagera tools upgrade](engagera-tools-upgrade.md) — Tavily search, Firecrawl deep crawl, wttr.in weather tool, Frankfurter currency tool added to chat fn; PostHog + StreakBadge on frontend; SUPABASE_ACCESS_TOKEN saved as Replit secret
