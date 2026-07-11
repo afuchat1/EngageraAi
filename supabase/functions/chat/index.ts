@@ -2402,7 +2402,12 @@ Deno.serve(async (req: Request) => {
       if (userId) {
         try { userCtxBlock = await loadUserContext(db, userId); } catch {}
       }
-      const basePrompt2 = mode === "dev" ? ENGAGERA_DEV_SYSTEM_PROMPT : SYSTEM_PROMPT;
+      const developerSysMsg2 = apiKeyId !== undefined
+        ? validMessages.find((m) => m.role === "system")
+        : undefined;
+      const basePrompt2 = developerSysMsg2
+        ? (developerSysMsg2.content as string)
+        : (mode === "dev" ? ENGAGERA_DEV_SYSTEM_PROMPT : SYSTEM_PROMPT);
       const timeCtx2 = timeInfo
         ? `\n\n[Current time in ${timeInfo.label}]: ${new Intl.DateTimeFormat("en-US", {
             timeZone: timeInfo.ianaZone,
@@ -2410,8 +2415,10 @@ Deno.serve(async (req: Request) => {
             hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
           }).format(new Date())}`
         : "";
-      const sysContent2 = [basePrompt2, userCtxBlock, timeCtx2, locationNotice,
-        contextHint ? `\n\n[Additional user context] ${contextHint}` : ""].join("");
+      const sysContent2 = developerSysMsg2
+        ? basePrompt2
+        : [basePrompt2, userCtxBlock, timeCtx2, locationNotice,
+            contextHint ? `\n\n[Additional user context] ${contextHint}` : ""].join("");
 
       let streamMsgs: ChatMessage[] = [
         { role: "system", content: sysContent2 },
@@ -2612,7 +2619,12 @@ Deno.serve(async (req: Request) => {
         userContextBlock = await loadUserContext(db, userId);
       }
 
-      const basePrompt = mode === "dev" ? ENGAGERA_DEV_SYSTEM_PROMPT : SYSTEM_PROMPT;
+      const developerSysMsg = apiKeyId !== undefined
+        ? validMessages.find((m) => m.role === "system")
+        : undefined;
+      const basePrompt = developerSysMsg
+        ? (developerSysMsg.content as string)
+        : (mode === "dev" ? ENGAGERA_DEV_SYSTEM_PROMPT : SYSTEM_PROMPT);
       // If this is a time query, inject the exact current time in the target timezone
       const timeContext = timeInfo
         ? `\n\n[Current time in ${timeInfo.label}]: ${new Intl.DateTimeFormat("en-US", {
@@ -2621,13 +2633,15 @@ Deno.serve(async (req: Request) => {
             hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
           }).format(new Date())}`
         : "";
-      const systemContent = [
-        basePrompt,
-        userContextBlock,
-        timeContext,
-        locationNotice,
-        contextHint ? `\n\n[Additional user context] ${contextHint}` : "",
-      ].join("");
+      const systemContent = developerSysMsg
+        ? basePrompt
+        : [
+            basePrompt,
+            userContextBlock,
+            timeContext,
+            locationNotice,
+            contextHint ? `\n\n[Additional user context] ${contextHint}` : "",
+          ].join("");
 
       const chatMsgs: ChatMessage[] = [
         { role: "system", content: systemContent },
