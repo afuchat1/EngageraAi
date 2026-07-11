@@ -6,7 +6,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   Copy, Check, ImageOff, Film,
   ThumbsUp, ThumbsDown, Volume2, VolumeX,
-  Share2, Globe,
+  Share2, Globe, FileDown,
 } from "lucide-react";
 import type { TimeInfo } from "@/hooks/useEdgeChatCompletion";
 
