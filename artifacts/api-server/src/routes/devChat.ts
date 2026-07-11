@@ -219,8 +219,13 @@ const devChatHandler: RequestHandler = async (req, res) => {
     return;
   }
 
+  const developerSystemMessage = validMessages.find((m) => m.role === "system");
+  const systemPrompt = developerSystemMessage
+    ? developerSystemMessage.content
+    : ENGAGERA_DEV_SYSTEM_PROMPT;
+
   const thread: ChatMessage[] = [
-    { role: "system", content: ENGAGERA_DEV_SYSTEM_PROMPT },
+    { role: "system", content: systemPrompt },
     ...validMessages.filter((m) => m.role !== "system"),
   ];
 
