@@ -24,6 +24,7 @@ const DEEPSEEK_API_URL  = "https://api.deepseek.com/v1/chat/completions";
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 const OPENAI_API_URL    = "https://api.openai.com/v1/chat/completions";
 const GEMINI_API_BASE   = "https://generativelanguage.googleapis.com/v1beta/models";
+const CEREBRAS_API_URL  = "https://api.cerebras.ai/v1/chat/completions";
 
 const GUEST_LIMIT     = 5;
 const WINDOW_MS       = 24 * 60 * 60 * 1000;
@@ -32,7 +33,7 @@ const WINDOW_MS       = 24 * 60 * 60 * 1000;
 //   Each entry: { provider, model, apiUrlOrKey }
 //   The callWithFallback() function fills in the actual key at runtime.
 
-type Provider = "groq" | "deepseek" | "openrouter" | "openai" | "gemini" | "cloudflare";
+type Provider = "groq" | "deepseek" | "openrouter" | "openai" | "gemini" | "cloudflare" | "cerebras";
 
 interface ProviderModel {
   provider: Provider;
@@ -49,27 +50,33 @@ interface ProviderModel {
 // Cloudflare Workers AI added 2026-07-10 as a genuinely-free fallback (no
 // billing, generous daily free-tier quota) behind Groq's two rate-limit
 // buckets, so a Groq outage/rate-limit no longer takes chat down entirely.
+// Cerebras added 2026-07-11 as a second independent free fallback (own
+// infra, separate from both Groq and Cloudflare) — sits between them.
 const STANDARD_CHAIN: ProviderModel[] = [
   { provider: "groq", model: "llama-3.1-8b-instant" },
   { provider: "groq", model: "llama-3.3-70b-versatile" },
+  { provider: "cerebras", model: "gpt-oss-120b" },
   { provider: "cloudflare", model: "@cf/meta/llama-3.1-8b-instruct" },
 ];
 
 const PREMIUM_CHAIN: ProviderModel[] = [
   { provider: "groq", model: "llama-3.3-70b-versatile" },
   { provider: "groq", model: "llama-3.1-8b-instant" },
+  { provider: "cerebras", model: "gpt-oss-120b" },
   { provider: "cloudflare", model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" },
 ];
 
 const CODE_CHAIN: ProviderModel[] = [
   { provider: "groq", model: "llama-3.3-70b-versatile" },
   { provider: "groq", model: "llama-3.1-8b-instant" },
+  { provider: "cerebras", model: "gpt-oss-120b" },
   { provider: "cloudflare", model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" },
 ];
 
 const IMAGE_CHAIN: ProviderModel[] = [
   { provider: "groq", model: "llama-3.1-8b-instant" },
   { provider: "groq", model: "llama-3.3-70b-versatile" },
+  { provider: "cerebras", model: "gpt-oss-120b" },
   { provider: "cloudflare", model: "@cf/meta/llama-3.1-8b-instruct" },
 ];
 
@@ -594,6 +601,7 @@ interface ProviderKeys {
   gemini?:          string;
   cloudflare?:      string;
   cloudflareAccountId?: string;
+  cerebras?:        string;
 }
 
 async function callWithFallback(
@@ -645,6 +653,8 @@ async function callWithFallback(
         continue;
       }
       result = await callCloudflare(key, keys.cloudflareAccountId, model, messages, maxTokens, requestId, perCallMs);
+    } else if (provider === "cerebras") {
+      result = await callOpenAICompat(CEREBRAS_API_URL, key, model, messages, maxTokens, requestId, "cerebras", undefined, perCallMs);
     } else {
       continue;
     }
@@ -1663,6 +1673,7 @@ Deno.serve(async (req: Request) => {
       gemini:     Deno.env.get("GEMINI_API_KEY")      || undefined,
       cloudflare: Deno.env.get("CLOUDFLARE_API_TOKEN") || undefined,
       cloudflareAccountId: Deno.env.get("CLOUDFLARE_ACCOUNT_ID") || undefined,
+      cerebras:   Deno.env.get("CEREBRAS_API_KEY")    || undefined,
     };
     const braveKey = Deno.env.get("BRAVE_SEARCH_API_KEY");
 
