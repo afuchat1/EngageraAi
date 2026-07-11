@@ -6,6 +6,7 @@ import {
   useRevokeApiKey,
   useGetDashboardStats,
 } from "@workspace/api-client-react";
+import { useDeleteApiKeyPermanently } from "@/lib/adminApi";
 import { Copy, Plus, Check, Key, Activity, Zap, MoreHorizontal, Ban, Trash2 } from "lucide-react";
 import { useConfirm } from "@/hooks/useConfirm";
 import { useAlert } from "@/hooks/useAlert";
@@ -79,6 +80,7 @@ export default function Dashboard() {
   const { data: apiKeys = [], isLoading: keysLoading, refetch: refetchKeys } = useListApiKeys();
   const createKey = useCreateApiKey();
   const revokeKey = useRevokeApiKey();
+  const deleteKey = useDeleteApiKeyPermanently();
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -128,17 +130,13 @@ export default function Dashboard() {
       destructive: true,
     });
     if (!ok) return;
-    // Use the same revoke endpoint — permanent delete
-    revokeKey.mutate(
-      { id },
-      {
-        onSuccess: () => {
-          refetchKeys();
-          alert("Key deleted permanently.", "success");
-        },
-        onError: () => alert("Failed to delete key.", "error"),
+    deleteKey.mutate(id, {
+      onSuccess: () => {
+        refetchKeys();
+        alert("Key deleted permanently.", "success");
       },
-    );
+      onError: () => alert("Failed to delete key.", "error"),
+    });
   };
 
   const copyToClipboard = (text: string) => {

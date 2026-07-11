@@ -76,6 +76,17 @@ export interface SystemHealth {
   status: "idle" | "healthy" | "degraded";
 }
 
+// Hand-written since the generated client only exposes revoke (soft
+// deactivate); permanent delete needs the ?permanent=true query param.
+export function useDeleteApiKeyPermanently() {
+  return useMutation({
+    mutationFn: (id: number) =>
+      customFetch<{ success: boolean; message: string }>(`/api/api-keys/${id}?permanent=true`, {
+        method: "DELETE",
+      }),
+  });
+}
+
 export function useAdminOverview() {
   return useQuery({
     queryKey: ["admin", "overview"],

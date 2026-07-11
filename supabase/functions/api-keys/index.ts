@@ -65,6 +65,20 @@ Deno.serve(async (req: Request) => {
   if (req.method === "DELETE" && isItem) {
     const id = parseInt(idParam, 10);
     if (isNaN(id)) return json({ error: "Invalid id" }, 400);
+    const permanent = url.searchParams.get("permanent") === "true";
+
+    if (permanent) {
+      // Hard delete — actually removes the row. Distinct from revoke, which
+      // only flips is_active so the key record stays visible for auditing.
+      const { error } = await db
+        .from("engagera_api_keys")
+        .delete()
+        .eq("id", id)
+        .eq("user_id", userId);
+      if (error) return json({ error: error.message }, 500);
+      return json({ success: true, message: "API key deleted permanently" });
+    }
+
     const { error } = await db
       .from("engagera_api_keys")
       .update({ is_active: false })

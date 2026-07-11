@@ -17,7 +17,7 @@ export default function AdminReviewer() {
   const run = useRunReviewer();
   const alert = useAlert();
   const [detailId, setDetailId] = useState<number | null>(null);
-  const { data: detailData } = useDatasetCandidate(detailId);
+  const { data: detailData, isLoading: detailLoading, isError: detailError } = useDatasetCandidate(detailId);
 
   const logs = data?.logs ?? [];
 
@@ -82,17 +82,21 @@ export default function AdminReviewer() {
         </div>
       </div>
 
-      {detailId !== null && detailData?.candidate && (
+      {detailId !== null && (
         <MessageDetailModal
           open={detailId !== null}
           onClose={() => setDetailId(null)}
-          title={`Candidate #${detailData.candidate.id}`}
-          request={detailData.candidate.request}
-          response={detailData.candidate.response}
-          meta={[
-            { label: "model", value: detailData.candidate.model },
-            { label: "status", value: detailData.candidate.reviewer_status },
-          ]}
+          title={detailData?.candidate ? `Candidate #${detailData.candidate.id}` : `Candidate #${detailId}`}
+          request={detailLoading ? "Loading…" : detailError ? "Failed to load this candidate." : (detailData?.candidate.request ?? "")}
+          response={detailLoading ? "" : detailError ? "The underlying dataset candidate may have been removed." : (detailData?.candidate.response ?? "")}
+          meta={
+            detailData?.candidate
+              ? [
+                  { label: "model", value: detailData.candidate.model },
+                  { label: "status", value: detailData.candidate.reviewer_status },
+                ]
+              : []
+          }
         />
       )}
     </AppLayout>
