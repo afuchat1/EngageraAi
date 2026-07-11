@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { setAuthTokenGetter, setFallbackBearerToken, setUrlMapper, setGuestSessionId } from "@workspace/api-client-react";
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/supabase";
+import { initAnalytics, identifyUser, resetUser } from "@/lib/analytics";
 import { useAuth } from "@/hooks/useAuth";
 import { ConfirmProvider } from "@/components/ui/confirm-dialog";
 import { AlertProvider } from "@/components/ui/alert-toast";
@@ -124,6 +125,15 @@ function App() {
   useEffect(() => {
     document.documentElement.classList.add("dark");
     setGuestSessionId(getOrCreateGuestSessionId());
+    initAnalytics();
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) identifyUser(session.user.id, session.user.email);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) identifyUser(session.user.id, session.user.email);
+      else resetUser();
+    });
+    return () => subscription.unsubscribe();
   }, []);
 
   return (

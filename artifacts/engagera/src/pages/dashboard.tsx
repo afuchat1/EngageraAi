@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
+import { StreakBadge } from "@/components/StreakBadge";
 import {
   useListApiKeys,
   useCreateApiKey,
@@ -147,6 +148,11 @@ export default function Dashboard() {
 
   return (
     <AppLayout title="Dashboard">
+
+      {/* Streak */}
+      <div className="mb-6">
+        <StreakBadge />
+      </div>
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">

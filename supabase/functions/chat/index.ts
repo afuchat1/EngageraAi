@@ -1647,27 +1647,7 @@ function detectTimeQuery(
   const padded = ` ${lower} `;
   const keys = Object.keys(TIMEZONE_MAP).sort((a, b) => b.length - a.length); // longest first
   for (const key of keys) {
-    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\function detectTimeQuery(text: string): { ianaZone: string; label: string } | null {
-  const lower = text.toLowerCase().trim();
-  const isTimeQuestion =
-    /\b(what.?s the time|what time is it|current time|time now|time (in|at|for)|clock in|timezone|time zone)\b/.test(lower);
-  if (!isTimeQuestion) return null;
-
-  // Pad with spaces so boundary check works at start/end of string too.
-  // Match only when key is surrounded by non-letter characters (word-boundary safe for multi-word phrases).
-  const padded = ` ${lower} `;
-  const keys = Object.keys(TIMEZONE_MAP).sort((a, b) => b.length - a.length); // longest first
-  for (const key of keys) {
     const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    // Ensure the key is not adjacent to another letter (e.g. "uk" won't match inside "lucky")
-    if (new RegExp(`[^a-z]${escaped}[^a-z]`).test(padded)) {
-      return TIMEZONE_MAP[key];
-    }
-  }
-
-  // No location found → default to UTC
-  return { ianaZone: "UTC", label: "UTC / Coordinated Universal Time" };
-}");
     // Ensure the key is not adjacent to another letter (e.g. "uk" won't match inside "lucky")
     if (new RegExp(`[^a-z]${escaped}[^a-z]`).test(padded)) {
       return TIMEZONE_MAP[key];
