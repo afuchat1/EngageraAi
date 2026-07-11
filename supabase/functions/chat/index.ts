@@ -1255,9 +1255,202 @@ const TIMEZONE_MAP: Record<string, { ianaZone: string; label: string }> = {
   // Global
   "utc": { ianaZone: "UTC", label: "UTC / Coordinated Universal Time" },
   "gmt": { ianaZone: "UTC", label: "GMT / Greenwich Mean Time" },
+
+  // ── Additional countries (full world coverage, added 2026-07-11) ──────────
+  // East / Central Africa
+  "uganda": { ianaZone: "Africa/Kampala", label: "Uganda" },
+  "kampala": { ianaZone: "Africa/Kampala", label: "Kampala, Uganda" },
+  "rwanda": { ianaZone: "Africa/Kigali", label: "Rwanda" },
+  "kigali": { ianaZone: "Africa/Kigali", label: "Kigali, Rwanda" },
+  "burundi": { ianaZone: "Africa/Bujumbura", label: "Burundi" },
+  "south sudan": { ianaZone: "Africa/Juba", label: "South Sudan" },
+  "sudan": { ianaZone: "Africa/Khartoum", label: "Sudan" },
+  "somalia": { ianaZone: "Africa/Mogadishu", label: "Somalia" },
+  "djibouti": { ianaZone: "Africa/Djibouti", label: "Djibouti" },
+  "eritrea": { ianaZone: "Africa/Asmara", label: "Eritrea" },
+  "dr congo": { ianaZone: "Africa/Kinshasa", label: "DR Congo" },
+  "democratic republic of congo": { ianaZone: "Africa/Kinshasa", label: "DR Congo" },
+  "congo": { ianaZone: "Africa/Brazzaville", label: "Republic of the Congo" },
+  "malawi": { ianaZone: "Africa/Blantyre", label: "Malawi" },
+  "zambia": { ianaZone: "Africa/Lusaka", label: "Zambia" },
+  "zimbabwe": { ianaZone: "Africa/Harare", label: "Zimbabwe" },
+  "mozambique": { ianaZone: "Africa/Maputo", label: "Mozambique" },
+  "madagascar": { ianaZone: "Indian/Antananarivo", label: "Madagascar" },
+  "mauritius": { ianaZone: "Indian/Mauritius", label: "Mauritius" },
+  "seychelles": { ianaZone: "Indian/Mahe", label: "Seychelles" },
+  "comoros": { ianaZone: "Indian/Comoro", label: "Comoros" },
+  // Southern Africa
+  "botswana": { ianaZone: "Africa/Gaborone", label: "Botswana" },
+  "namibia": { ianaZone: "Africa/Windhoek", label: "Namibia" },
+  "lesotho": { ianaZone: "Africa/Maseru", label: "Lesotho" },
+  "eswatini": { ianaZone: "Africa/Mbabane", label: "Eswatini" },
+  "swaziland": { ianaZone: "Africa/Mbabane", label: "Eswatini" },
+  "angola": { ianaZone: "Africa/Luanda", label: "Angola" },
+  // West Africa
+  "cameroon": { ianaZone: "Africa/Douala", label: "Cameroon" },
+  "ivory coast": { ianaZone: "Africa/Abidjan", label: "Ivory Coast" },
+  "cote d'ivoire": { ianaZone: "Africa/Abidjan", label: "Ivory Coast" },
+  "mali": { ianaZone: "Africa/Bamako", label: "Mali" },
+  "niger": { ianaZone: "Africa/Niamey", label: "Niger" },
+  "chad": { ianaZone: "Africa/Ndjamena", label: "Chad" },
+  "benin": { ianaZone: "Africa/Porto-Novo", label: "Benin" },
+  "togo": { ianaZone: "Africa/Lome", label: "Togo" },
+  "burkina faso": { ianaZone: "Africa/Ouagadougou", label: "Burkina Faso" },
+  "guinea": { ianaZone: "Africa/Conakry", label: "Guinea" },
+  "sierra leone": { ianaZone: "Africa/Freetown", label: "Sierra Leone" },
+  "liberia": { ianaZone: "Africa/Monrovia", label: "Liberia" },
+  "gambia": { ianaZone: "Africa/Banjul", label: "Gambia" },
+  "mauritania": { ianaZone: "Africa/Nouakchott", label: "Mauritania" },
+  "guinea-bissau": { ianaZone: "Africa/Bissau", label: "Guinea-Bissau" },
+  "cape verde": { ianaZone: "Atlantic/Cape_Verde", label: "Cape Verde" },
+  "gabon": { ianaZone: "Africa/Libreville", label: "Gabon" },
+  "equatorial guinea": { ianaZone: "Africa/Malabo", label: "Equatorial Guinea" },
+  // North Africa
+  "libya": { ianaZone: "Africa/Tripoli", label: "Libya" },
+  "tunisia": { ianaZone: "Africa/Tunis", label: "Tunisia" },
+  "algeria": { ianaZone: "Africa/Algiers", label: "Algeria" },
+  // Europe
+  "portugal": { ianaZone: "Europe/Lisbon", label: "Portugal" },
+  "lisbon": { ianaZone: "Europe/Lisbon", label: "Lisbon, Portugal" },
+  "ireland": { ianaZone: "Europe/Dublin", label: "Ireland" },
+  "dublin": { ianaZone: "Europe/Dublin", label: "Dublin, Ireland" },
+  "belgium": { ianaZone: "Europe/Brussels", label: "Belgium" },
+  "switzerland": { ianaZone: "Europe/Zurich", label: "Switzerland" },
+  "austria": { ianaZone: "Europe/Vienna", label: "Austria" },
+  "vienna": { ianaZone: "Europe/Vienna", label: "Vienna, Austria" },
+  "denmark": { ianaZone: "Europe/Copenhagen", label: "Denmark" },
+  "iceland": { ianaZone: "Atlantic/Reykjavik", label: "Iceland" },
+  "czech republic": { ianaZone: "Europe/Prague", label: "Czech Republic" },
+  "czechia": { ianaZone: "Europe/Prague", label: "Czech Republic" },
+  "slovakia": { ianaZone: "Europe/Bratislava", label: "Slovakia" },
+  "hungary": { ianaZone: "Europe/Budapest", label: "Hungary" },
+  "romania": { ianaZone: "Europe/Bucharest", label: "Romania" },
+  "bulgaria": { ianaZone: "Europe/Sofia", label: "Bulgaria" },
+  "ukraine": { ianaZone: "Europe/Kyiv", label: "Ukraine" },
+  "kyiv": { ianaZone: "Europe/Kyiv", label: "Kyiv, Ukraine" },
+  "belarus": { ianaZone: "Europe/Minsk", label: "Belarus" },
+  "serbia": { ianaZone: "Europe/Belgrade", label: "Serbia" },
+  "croatia": { ianaZone: "Europe/Zagreb", label: "Croatia" },
+  "bosnia": { ianaZone: "Europe/Sarajevo", label: "Bosnia and Herzegovina" },
+  "slovenia": { ianaZone: "Europe/Ljubljana", label: "Slovenia" },
+  "albania": { ianaZone: "Europe/Tirane", label: "Albania" },
+  "north macedonia": { ianaZone: "Europe/Skopje", label: "North Macedonia" },
+  "montenegro": { ianaZone: "Europe/Podgorica", label: "Montenegro" },
+  "lithuania": { ianaZone: "Europe/Vilnius", label: "Lithuania" },
+  "latvia": { ianaZone: "Europe/Riga", label: "Latvia" },
+  "estonia": { ianaZone: "Europe/Tallinn", label: "Estonia" },
+  "luxembourg": { ianaZone: "Europe/Luxembourg", label: "Luxembourg" },
+  "malta": { ianaZone: "Europe/Malta", label: "Malta" },
+  "cyprus": { ianaZone: "Asia/Nicosia", label: "Cyprus" },
+  "moldova": { ianaZone: "Europe/Chisinau", label: "Moldova" },
+  "netherlands": { ianaZone: "Europe/Amsterdam", label: "Netherlands" },
+  "norway": { ianaZone: "Europe/Oslo", label: "Norway" },
+  "sweden": { ianaZone: "Europe/Stockholm", label: "Sweden" },
+  "finland": { ianaZone: "Europe/Helsinki", label: "Finland" },
+  "poland": { ianaZone: "Europe/Warsaw", label: "Poland" },
+  "greece": { ianaZone: "Europe/Athens", label: "Greece" },
+  // Caucasus / Central Asia
+  "georgia": { ianaZone: "Asia/Tbilisi", label: "Georgia" },
+  "armenia": { ianaZone: "Asia/Yerevan", label: "Armenia" },
+  "azerbaijan": { ianaZone: "Asia/Baku", label: "Azerbaijan" },
+  "kazakhstan": { ianaZone: "Asia/Almaty", label: "Kazakhstan" },
+  "uzbekistan": { ianaZone: "Asia/Tashkent", label: "Uzbekistan" },
+  "turkmenistan": { ianaZone: "Asia/Ashgabat", label: "Turkmenistan" },
+  "kyrgyzstan": { ianaZone: "Asia/Bishkek", label: "Kyrgyzstan" },
+  "tajikistan": { ianaZone: "Asia/Dushanbe", label: "Tajikistan" },
+  "mongolia": { ianaZone: "Asia/Ulaanbaatar", label: "Mongolia" },
+  // South / Southeast Asia
+  "afghanistan": { ianaZone: "Asia/Kabul", label: "Afghanistan" },
+  "nepal": { ianaZone: "Asia/Kathmandu", label: "Nepal" },
+  "bhutan": { ianaZone: "Asia/Thimphu", label: "Bhutan" },
+  "sri lanka": { ianaZone: "Asia/Colombo", label: "Sri Lanka" },
+  "myanmar": { ianaZone: "Asia/Yangon", label: "Myanmar" },
+  "cambodia": { ianaZone: "Asia/Phnom_Penh", label: "Cambodia" },
+  "laos": { ianaZone: "Asia/Vientiane", label: "Laos" },
+  "vietnam": { ianaZone: "Asia/Ho_Chi_Minh", label: "Vietnam" },
+  "philippines": { ianaZone: "Asia/Manila", label: "Philippines" },
+  "manila": { ianaZone: "Asia/Manila", label: "Manila, Philippines" },
+  "brunei": { ianaZone: "Asia/Brunei", label: "Brunei" },
+  "taiwan": { ianaZone: "Asia/Taipei", label: "Taiwan" },
+  "north korea": { ianaZone: "Asia/Pyongyang", label: "North Korea" },
+  "bangladesh": { ianaZone: "Asia/Dhaka", label: "Bangladesh" },
+  "indonesia": { ianaZone: "Asia/Jakarta", label: "Indonesia" },
+  "iran": { ianaZone: "Asia/Tehran", label: "Iran" },
+  // Middle East
+  "israel": { ianaZone: "Asia/Jerusalem", label: "Israel" },
+  "palestine": { ianaZone: "Asia/Gaza", label: "Palestine" },
+  "jordan": { ianaZone: "Asia/Amman", label: "Jordan" },
+  "lebanon": { ianaZone: "Asia/Beirut", label: "Lebanon" },
+  "syria": { ianaZone: "Asia/Damascus", label: "Syria" },
+  "iraq": { ianaZone: "Asia/Baghdad", label: "Iraq" },
+  "kuwait": { ianaZone: "Asia/Kuwait", label: "Kuwait" },
+  "qatar": { ianaZone: "Asia/Qatar", label: "Qatar" },
+  "bahrain": { ianaZone: "Asia/Bahrain", label: "Bahrain" },
+  "oman": { ianaZone: "Asia/Muscat", label: "Oman" },
+  "yemen": { ianaZone: "Asia/Aden", label: "Yemen" },
+  // Americas
+  "guatemala": { ianaZone: "America/Guatemala", label: "Guatemala" },
+  "belize": { ianaZone: "America/Belize", label: "Belize" },
+  "honduras": { ianaZone: "America/Tegucigalpa", label: "Honduras" },
+  "el salvador": { ianaZone: "America/El_Salvador", label: "El Salvador" },
+  "nicaragua": { ianaZone: "America/Managua", label: "Nicaragua" },
+  "costa rica": { ianaZone: "America/Costa_Rica", label: "Costa Rica" },
+  "panama": { ianaZone: "America/Panama", label: "Panama" },
+  "cuba": { ianaZone: "America/Havana", label: "Cuba" },
+  "jamaica": { ianaZone: "America/Jamaica", label: "Jamaica" },
+  "haiti": { ianaZone: "America/Port-au-Prince", label: "Haiti" },
+  "dominican republic": { ianaZone: "America/Santo_Domingo", label: "Dominican Republic" },
+  "bahamas": { ianaZone: "America/Nassau", label: "Bahamas" },
+  "trinidad": { ianaZone: "America/Port_of_Spain", label: "Trinidad and Tobago" },
+  "trinidad and tobago": { ianaZone: "America/Port_of_Spain", label: "Trinidad and Tobago" },
+  "barbados": { ianaZone: "America/Barbados", label: "Barbados" },
+  "puerto rico": { ianaZone: "America/Puerto_Rico", label: "Puerto Rico" },
+  "colombia": { ianaZone: "America/Bogota", label: "Colombia" },
+  "bogota": { ianaZone: "America/Bogota", label: "Bogotá, Colombia" },
+  "venezuela": { ianaZone: "America/Caracas", label: "Venezuela" },
+  "ecuador": { ianaZone: "America/Guayaquil", label: "Ecuador" },
+  "peru": { ianaZone: "America/Lima", label: "Peru" },
+  "lima": { ianaZone: "America/Lima", label: "Lima, Peru" },
+  "bolivia": { ianaZone: "America/La_Paz", label: "Bolivia" },
+  "paraguay": { ianaZone: "America/Asuncion", label: "Paraguay" },
+  "uruguay": { ianaZone: "America/Montevideo", label: "Uruguay" },
+  "chile": { ianaZone: "America/Santiago", label: "Chile" },
+  "santiago": { ianaZone: "America/Santiago", label: "Santiago, Chile" },
+  "guyana": { ianaZone: "America/Guyana", label: "Guyana" },
+  "suriname": { ianaZone: "America/Paramaribo", label: "Suriname" },
+  // Oceania
+  "fiji": { ianaZone: "Pacific/Fiji", label: "Fiji" },
+  "papua new guinea": { ianaZone: "Pacific/Port_Moresby", label: "Papua New Guinea" },
+  "samoa": { ianaZone: "Pacific/Apia", label: "Samoa" },
+  "tonga": { ianaZone: "Pacific/Tongatapu", label: "Tonga" },
+  "vanuatu": { ianaZone: "Pacific/Efate", label: "Vanuatu" },
+  "solomon islands": { ianaZone: "Pacific/Guadalcanal", label: "Solomon Islands" },
+  "palau": { ianaZone: "Pacific/Palau", label: "Palau" },
+  "marshall islands": { ianaZone: "Pacific/Majuro", label: "Marshall Islands" },
+  "micronesia": { ianaZone: "Pacific/Chuuk", label: "Micronesia" },
+  "kiribati": { ianaZone: "Pacific/Tarawa", label: "Kiribati" },
+  "nauru": { ianaZone: "Pacific/Nauru", label: "Nauru" },
+  "tuvalu": { ianaZone: "Pacific/Funafuti", label: "Tuvalu" },
 };
 
-function detectTimeQuery(text: string): { ianaZone: string; label: string } | null {
+// `fallback` is the user's own IP-detected location (if any) — used when the
+// question doesn't name a specific place ("what time is it?" implicitly
+// means "here"), instead of always defaulting to UTC.
+function detectTimeQuery(
+  text: string,
+  fallback?: { ianaZone: string; label: string } | null,
+): { ianaZone: string; label: string } | null {
+  const lower = text.toLowerCase().trim();
+  const isTimeQuestion =
+    /\b(what.?s the time|what time is it|current time|time now|time (in|at|for)|clock in|timezone|time zone)\b/.test(lower);
+  if (!isTimeQuestion) return null;
+
+  // Pad with spaces so boundary check works at start/end of string too.
+  // Match only when key is surrounded by non-letter characters (word-boundary safe for multi-word phrases).
+  const padded = ` ${lower} `;
+  const keys = Object.keys(TIMEZONE_MAP).sort((a, b) => b.length - a.length); // longest first
+  for (const key of keys) {
+    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\function detectTimeQuery(text: string): { ianaZone: string; label: string } | null {
   const lower = text.toLowerCase().trim();
   const isTimeQuestion =
     /\b(what.?s the time|what time is it|current time|time now|time (in|at|for)|clock in|timezone|time zone)\b/.test(lower);
@@ -1277,6 +1470,49 @@ function detectTimeQuery(text: string): { ianaZone: string; label: string } | nu
 
   // No location found → default to UTC
   return { ianaZone: "UTC", label: "UTC / Coordinated Universal Time" };
+}");
+    // Ensure the key is not adjacent to another letter (e.g. "uk" won't match inside "lucky")
+    if (new RegExp(`[^a-z]${escaped}[^a-z]`).test(padded)) {
+      return TIMEZONE_MAP[key];
+    }
+  }
+
+  // No named location → use the user's own IP-detected timezone if we have
+  // one, otherwise fall back to UTC.
+  return fallback ?? { ianaZone: "UTC", label: "UTC / Coordinated Universal Time" };
+}
+
+// ── IP-based location detection (no browser permission prompt) ────────────────
+// Uses the request's IP address only — never the browser Geolocation API —
+// so we can default "what time is it" to the user's own timezone without
+// ever asking for location permission.
+function getClientIp(req: Request): string | null {
+  const fwd = req.headers.get("x-forwarded-for");
+  if (fwd) {
+    const first = fwd.split(",")[0]?.trim();
+    if (first) return first;
+  }
+  return req.headers.get("cf-connecting-ip") ?? req.headers.get("x-real-ip");
+}
+
+interface DetectedLocation { country: string; ianaZone: string; label: string }
+
+async function geolocateIp(ip: string | null, requestId: string): Promise<DetectedLocation | null> {
+  if (!ip || ip === "127.0.0.1" || ip.startsWith("::1") || ip.startsWith("192.168.") || ip.startsWith("10.")) return null;
+  try {
+    const res = await fetch(`https://ipwho.is/${encodeURIComponent(ip)}`, { signal: AbortSignal.timeout(3000) });
+    if (!res.ok) return null;
+    const data = await res.json() as {
+      success?: boolean; country?: string; city?: string;
+      timezone?: { id?: string };
+    };
+    if (!data.success || !data.timezone?.id || !data.country) return null;
+    const label = data.city ? `${data.city}, ${data.country}` : data.country;
+    return { country: data.country, ianaZone: data.timezone.id, label };
+  } catch (err) {
+    log("warn", "geolocate_ip.failed", { requestId, error: String(err) });
+    return null;
+  }
 }
 
 // ── Search SKIP patterns ───────────────────────────────────────────────────────
@@ -1805,6 +2041,9 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    let detectedLocation: DetectedLocation | null = null;
+    let announceLocation = false;
+
     if (!userId) {
       guestSessionId = req.headers.get("x-guest-session-id") ?? undefined;
       if (!guestSessionId) return json({ error: "Authentication or guest session required" }, 401);
@@ -1812,7 +2051,7 @@ Deno.serve(async (req: Request) => {
       const now = new Date();
       const { data: session, error: sessionError } = await db
         .from("engagera_guest_sessions")
-        .select("message_count, window_start")
+        .select("message_count, window_start, detected_timezone, detected_label, detected_country, location_notified")
         .eq("session_id", guestSessionId)
         .maybeSingle();
 
@@ -1822,9 +2061,16 @@ Deno.serve(async (req: Request) => {
       }
 
       if (!session) {
+        const ip = getClientIp(req);
+        detectedLocation = await geolocateIp(ip, requestId);
+        announceLocation = !!detectedLocation;
         const { error: insertError } = await db.from("engagera_guest_sessions").insert({
           session_id: guestSessionId, message_count: 0,
           window_start: now.toISOString(), last_seen_at: now.toISOString(),
+          detected_country: detectedLocation?.country ?? null,
+          detected_timezone: detectedLocation?.ianaZone ?? null,
+          detected_label: detectedLocation?.label ?? null,
+          location_notified: announceLocation,
         });
         if (insertError) {
           log("error", "guest.session_create_failed", { requestId, error: JSON.stringify(insertError) });
@@ -1845,7 +2091,59 @@ Deno.serve(async (req: Request) => {
             guestMessageLimit: GUEST_LIMIT,
           }, 429);
         }
+
+        if (session.detected_timezone) {
+          detectedLocation = {
+            country: session.detected_country ?? "",
+            ianaZone: session.detected_timezone,
+            label: session.detected_label ?? session.detected_timezone,
+          };
+          if (!session.location_notified) {
+            announceLocation = true;
+            await db.from("engagera_guest_sessions").update({ location_notified: true }).eq("session_id", guestSessionId);
+          }
+        } else if (session.detected_timezone === null) {
+          // Never successfully geolocated this session yet — retry once.
+          const ip = getClientIp(req);
+          detectedLocation = await geolocateIp(ip, requestId);
+          if (detectedLocation) {
+            announceLocation = true;
+            await db.from("engagera_guest_sessions").update({
+              detected_country: detectedLocation.country,
+              detected_timezone: detectedLocation.ianaZone,
+              detected_label: detectedLocation.label,
+              location_notified: true,
+            }).eq("session_id", guestSessionId);
+          }
+        }
       }
+    } else {
+      // Authenticated users: location is remembered as a durable memory fact,
+      // same pattern as other cross-session user memory.
+      try {
+        const { data: locMem } = await db
+          .from("engagera_user_memory")
+          .select("value")
+          .eq("user_id", userId)
+          .eq("key", "location")
+          .maybeSingle();
+        if (locMem?.value) {
+          try {
+            const parsed = JSON.parse(locMem.value) as DetectedLocation;
+            if (parsed.ianaZone) detectedLocation = parsed;
+          } catch { /* legacy plain-text value, ignore */ }
+        } else {
+          const ip = getClientIp(req);
+          detectedLocation = await geolocateIp(ip, requestId);
+          if (detectedLocation) {
+            announceLocation = true;
+            await db.from("engagera_user_memory").insert({
+              user_id: userId, key: "location", value: JSON.stringify(detectedLocation), strength: 3,
+              updated_at: new Date().toISOString(), created_at: new Date().toISOString(),
+            });
+          }
+        }
+      } catch { /* non-fatal */ }
     }
 
     logEntry.user_id          = userId ?? null;
@@ -1862,7 +2160,14 @@ Deno.serve(async (req: Request) => {
     logEntry.prompt_preview = promptPreview;
 
     // Detect time query for real-time clock widget on the frontend
-    const timeInfo = lastUserMsg ? detectTimeQuery(getTextPreview(lastUserMsg.content)) : null;
+    const timeInfo = lastUserMsg ? detectTimeQuery(getTextPreview(lastUserMsg.content), detectedLocation) : null;
+
+    // First-turn, one-time notice so the user knows we're defaulting to their
+    // network-detected location — without ever having asked browser
+    // permission. Only fires when we just detected/confirmed it this turn.
+    const locationNotice = announceLocation && detectedLocation
+      ? `\n\n[System note — mention this naturally once, briefly, only in this reply]: Based on your network connection, you appear to be in ${detectedLocation.label}. I'll use this as your default location for things like "what time is it" unless you tell me otherwise or ask about somewhere else.`
+      : "";
 
     const chain = MODEL_CHAINS[model] ?? DEFAULT_CHAIN;
 
@@ -1888,7 +2193,7 @@ Deno.serve(async (req: Request) => {
             hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
           }).format(new Date())}`
         : "";
-      const sysContent2 = [basePrompt2, userCtxBlock, timeCtx2,
+      const sysContent2 = [basePrompt2, userCtxBlock, timeCtx2, locationNotice,
         contextHint ? `\n\n[Additional user context] ${contextHint}` : ""].join("");
 
       let streamMsgs: ChatMessage[] = [
@@ -2103,6 +2408,7 @@ Deno.serve(async (req: Request) => {
         basePrompt,
         userContextBlock,
         timeContext,
+        locationNotice,
         contextHint ? `\n\n[Additional user context] ${contextHint}` : "",
       ].join("");
 
