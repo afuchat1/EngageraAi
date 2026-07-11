@@ -32,7 +32,7 @@ const WINDOW_MS       = 24 * 60 * 60 * 1000;
 //   Each entry: { provider, model, apiUrlOrKey }
 //   The callWithFallback() function fills in the actual key at runtime.
 
-type Provider = "groq" | "deepseek" | "openrouter" | "openai" | "gemini";
+type Provider = "groq" | "deepseek" | "openrouter" | "openai" | "gemini" | "cloudflare";
 
 interface ProviderModel {
   provider: Provider;
@@ -46,24 +46,31 @@ interface ProviderModel {
 // below use two distinct Groq models so a rate limit on one model doesn't
 // take down the other (separate per-model rate-limit buckets).
 // Re-add a provider's entry here once its key is restored and re-verified.
+// Cloudflare Workers AI added 2026-07-10 as a genuinely-free fallback (no
+// billing, generous daily free-tier quota) behind Groq's two rate-limit
+// buckets, so a Groq outage/rate-limit no longer takes chat down entirely.
 const STANDARD_CHAIN: ProviderModel[] = [
   { provider: "groq", model: "llama-3.1-8b-instant" },
   { provider: "groq", model: "llama-3.3-70b-versatile" },
+  { provider: "cloudflare", model: "@cf/meta/llama-3.1-8b-instruct" },
 ];
 
 const PREMIUM_CHAIN: ProviderModel[] = [
   { provider: "groq", model: "llama-3.3-70b-versatile" },
   { provider: "groq", model: "llama-3.1-8b-instant" },
+  { provider: "cloudflare", model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" },
 ];
 
 const CODE_CHAIN: ProviderModel[] = [
   { provider: "groq", model: "llama-3.3-70b-versatile" },
   { provider: "groq", model: "llama-3.1-8b-instant" },
+  { provider: "cloudflare", model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" },
 ];
 
 const IMAGE_CHAIN: ProviderModel[] = [
   { provider: "groq", model: "llama-3.1-8b-instant" },
   { provider: "groq", model: "llama-3.3-70b-versatile" },
+  { provider: "cloudflare", model: "@cf/meta/llama-3.1-8b-instruct" },
 ];
 
 // Map Engagera model ID → provider chain
@@ -517,13 +524,76 @@ async function callGemini(
   return { ok: true, content, inputTokens, outputTokens, provider: "gemini", model };
 }
 
+// ── Cloudflare Workers AI call (own response shape, needs account ID) ─────────
+async function callCloudflare(
+  apiToken: string,
+  accountId: string,
+  model: string,
+  messages: ChatMessage[],
+  maxTokens: number,
+  requestId: string,
+  timeoutMs = 8_000,
+): Promise<AIResult> {
+  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messages: messages.map((m) => ({
+          role: m.role,
+          content: typeof m.content === "string" ? m.content : getTextPreview(m.content as MessageContent),
+        })),
+        max_tokens: maxTokens,
+      }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (err) {
+    log("warn", "cloudflare.network_error", { requestId, error: String(err) });
+    return { ok: false, content: "", inputTokens: 0, outputTokens: 0, errorDetail: String(err) };
+  }
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    log("warn", "cloudflare.http_error", { requestId, status: res.status, error: errText.slice(0, 200) });
+    return { ok: false, content: "", inputTokens: 0, outputTokens: 0, errorDetail: `HTTP ${res.status}: ${errText.slice(0,200)}` };
+  }
+
+  const data = await res.json() as {
+    success?: boolean;
+    result?: { response?: string };
+    errors?: { message?: string }[];
+  };
+
+  if (!data.success) {
+    const errMsg = data.errors?.map((e) => e.message).join("; ") ?? "unknown error";
+    log("warn", "cloudflare.api_error", { requestId, error: errMsg });
+    return { ok: false, content: "", inputTokens: 0, outputTokens: 0, errorDetail: errMsg };
+  }
+
+  const content = data.result?.response ?? "";
+  if (!content) {
+    log("warn", "cloudflare.empty_response", { requestId });
+    return { ok: false, content: "", inputTokens: 0, outputTokens: 0, errorDetail: "empty response" };
+  }
+
+  log("info", "cloudflare.success", { requestId, model, len: content.length });
+  return { ok: true, content, inputTokens: 0, outputTokens: 0, provider: "cloudflare", model };
+}
+
 // ── Multi-provider fallback call ──────────────────────────────────────────────
 interface ProviderKeys {
-  groq?:       string;
-  deepseek?:   string;
-  openrouter?: string;
-  openai?:     string;
-  gemini?:     string;
+  groq?:            string;
+  deepseek?:        string;
+  openrouter?:      string;
+  openai?:          string;
+  gemini?:          string;
+  cloudflare?:      string;
+  cloudflareAccountId?: string;
 }
 
 async function callWithFallback(
@@ -569,6 +639,12 @@ async function callWithFallback(
       }, perCallMs);
     } else if (provider === "gemini") {
       result = await callGemini(key, model, messages, maxTokens, requestId, perCallMs);
+    } else if (provider === "cloudflare") {
+      if (!keys.cloudflareAccountId) {
+        log("info", "provider.no_account_id", { requestId, provider, model });
+        continue;
+      }
+      result = await callCloudflare(key, keys.cloudflareAccountId, model, messages, maxTokens, requestId, perCallMs);
     } else {
       continue;
     }
@@ -1585,6 +1661,8 @@ Deno.serve(async (req: Request) => {
       deepseek:   Deno.env.get("DEEPSEEK_API_KEY")   || undefined,
       openrouter: Deno.env.get("OPENROUTER_API_KEY") || undefined,
       gemini:     Deno.env.get("GEMINI_API_KEY")      || undefined,
+      cloudflare: Deno.env.get("CLOUDFLARE_API_TOKEN") || undefined,
+      cloudflareAccountId: Deno.env.get("CLOUDFLARE_ACCOUNT_ID") || undefined,
     };
     const braveKey = Deno.env.get("BRAVE_SEARCH_API_KEY");
 
