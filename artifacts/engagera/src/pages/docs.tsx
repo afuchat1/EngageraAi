@@ -329,7 +329,7 @@ export default function Docs() {
                 <ModelCard id="engagera-voice" name="Engagera Voice" tagline="Conversational & voice-optimised" speed={90} quality={70} />
               </div>
               <p className="text-xs text-white/30 mt-4">
-                Not sure which model to use? Start with <code className="font-mono bg-white/10 px-1 py-0.5 rounded">engagera-pro</code>. The Engagera Playground auto-selects the best model based on your prompt.
+                Not sure which model to use? Start with <code className="font-mono bg-white/10 px-1 py-0.5 rounded">engagera-pro</code>. The Engagera chat auto-selects the best model based on your prompt.
               </p>
             </Section>
 
@@ -627,7 +627,7 @@ def chat(
                 <p className="text-xs text-white/30 mt-0.5">The unified AI platform for developers.</p>
               </div>
               <div className="flex gap-4 text-xs text-white/30">
-                <a href="/" className="hover:text-white transition-colors">Playground</a>
+                <a href="/" className="hover:text-white transition-colors">Chat</a>
                 <a href="/dashboard" className="hover:text-white transition-colors">Dashboard</a>
                 <a href="mailto:dev@afuchat.com" className="hover:text-white transition-colors">Support</a>
               </div>

@@ -2595,7 +2595,11 @@ Deno.serve(async (req: Request) => {
         : { ok: false as const, errorDetail: "cloudflare not configured" };
 
       if (cfImage.ok) {
-        reply = `![${imagePrompt.slice(0, 100)}](data:image/jpeg;base64,${cfImage.base64})`;
+        // Alt text must not contain characters that break markdown image
+        // syntax ( [ ] ( ) or newlines ) — otherwise the image renders as
+        // broken text instead of an <img> in the chat UI.
+        const safeAlt = imagePrompt.slice(0, 100).replace(/[\[\]()\r\n]/g, " ").trim() || "Generated image";
+        reply = `![${safeAlt}](data:image/jpeg;base64,${cfImage.base64})`;
       } else {
         log("warn", "image_gen.cloudflare_failed_fallback_svg", { requestId, error: cfImage.errorDetail });
         const svgMsgs: ChatMessage[] = [

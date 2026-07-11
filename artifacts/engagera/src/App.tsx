@@ -16,7 +16,6 @@ import SignUp from "./pages/sign-up";
 import ForgotPassword from "./pages/forgot-password";
 import ResetPassword from "./pages/reset-password";
 import Dashboard from "./pages/dashboard";
-import Playground from "./pages/playground";
 import Usage from "./pages/usage";
 import Docs from "./pages/docs";
 import Settings from "./pages/settings";
@@ -107,7 +106,6 @@ function Router() {
       <Route path="/forgot-password" component={ForgotPassword} />
       <Route path="/reset-password" component={ResetPassword} />
       <Route path="/dashboard"><ProtectedRoute component={Dashboard} /></Route>
-      <Route path="/playground"><ProtectedRoute component={Playground} /></Route>
       <Route path="/usage"><ProtectedRoute component={Usage} /></Route>
       <Route path="/settings"><ProtectedRoute component={Settings} /></Route>
       <Route path="/admin"><AdminRoute component={AdminOverview} /></Route>

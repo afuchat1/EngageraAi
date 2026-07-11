@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import {
-  MessageSquare, Play, Book, LayoutDashboard, Activity, Settings, Menu, X,
+  MessageSquare, Book, LayoutDashboard, Activity, Settings, Menu, X,
   ChevronLeft, ChevronRight, ShieldCheck,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -16,7 +16,6 @@ interface AppLayoutProps {
 
 const NAV_ITEMS = [
   { href: "/",           label: "Chat",        icon: MessageSquare },
-  { href: "/playground", label: "Playground",  icon: Play },
   { href: "/docs",       label: "Docs",         icon: Book },
   { href: "/dashboard",  label: "Dashboard",    icon: LayoutDashboard },
   { href: "/usage",      label: "Usage",        icon: Activity },

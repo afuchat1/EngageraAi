@@ -15,3 +15,5 @@
 - [Engagera architecture](engagera-architecture.md) — fully client-side + Supabase Edge Functions; no server-side code in production
 - [Engagera admin dashboard](engagera-admin-dashboard.md) — admin gating via engagera_admins table; admin/reviewer/dataset-export Edge Fns proxied with JWT passthrough; hand-written adminApi.ts hooks (not generated client)
 - [Engagera tools upgrade](engagera-tools-upgrade.md) — Tavily search, Firecrawl deep crawl, wttr.in weather tool, Frankfurter currency tool added to chat fn; PostHog + StreakBadge on frontend; SUPABASE_ACCESS_TOKEN saved as Replit secret
+- [Template literal backtick crash](template-literal-backtick-bug.md) — a bare backtick inside a JS template-literal prompt silently crashes the function (WORKER_ERROR); diagnose via `function_logs` analytics table, not `function_edge_logs`
+- [Engagera product decisions](engagera-product-decisions.md) — Playground page removed entirely (single chat interface only); chat fn already honors a developer-supplied `system` message when an eng_ API key is used, overriding the built-in Engagera persona
