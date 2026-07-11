@@ -47,7 +47,12 @@ export default function Landing() {
 
   useEffect(() => {
     if (historyMessages && historyMessages.length > 0) {
-      setMessages(historyMessages.map(m => ({ role: m.role as "user" | "assistant", content: m.content })));
+      setMessages(historyMessages.map(m => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+        sources: m.sources?.length ? (m.sources as Source[]) : undefined,
+        timeInfo: m.timeInfo as TimeInfo | undefined,
+      })));
     } else if (!conversationId) {
       setMessages([]);
     }

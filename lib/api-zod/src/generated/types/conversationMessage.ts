@@ -5,10 +5,14 @@
  * Engagera AI Platform API
  * OpenAPI spec version: 0.1.0
  */
+import type { ConversationMessageSourcesItem } from './conversationMessageSourcesItem';
+import type { ConversationMessageTimeInfo } from './conversationMessageTimeInfo';
 
 export interface ConversationMessage {
   id: number;
   role: string;
   content: string;
   createdAt: string;
+  sources?: ConversationMessageSourcesItem[];
+  timeInfo?: ConversationMessageTimeInfo;
 }

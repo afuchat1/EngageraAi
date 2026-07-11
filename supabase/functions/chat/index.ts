@@ -2524,9 +2524,13 @@ Deno.serve(async (req: Request) => {
                       token_count: 0,
                     });
                   }
+                  const streamMetadata: Record<string, unknown> = {};
+                  if (streamSearchInfo?.sources?.length) streamMetadata.sources = streamSearchInfo.sources;
+                  if (timeInfo) streamMetadata.timeInfo = { ianaZone: timeInfo.ianaZone, label: timeInfo.label };
                   await db.from("engagera_messages").insert({
                     conversation_id: convId2, role: "assistant", content: fullReply,
                     token_count: Math.ceil(fullReply.length / 4),
+                    metadata: Object.keys(streamMetadata).length ? streamMetadata : null,
                   });
                   await db.rpc("engagera_increment_message_count", { p_conversation_id: convId2 }).catch(() => {});
                 }
@@ -2741,9 +2745,15 @@ Deno.serve(async (req: Request) => {
             });
             if (userMsgErr) log("warn", "msg.user_insert_failed", { requestId, convId, error: JSON.stringify(userMsgErr) });
           }
+          const persistedSearchInfo = (logEntry as any)._searchInfo as { sources?: unknown[] } | undefined;
+          const assistantMetadata: Record<string, unknown> = {};
+          if (persistedSearchInfo?.sources?.length) assistantMetadata.sources = persistedSearchInfo.sources;
+          if (timeInfo) assistantMetadata.timeInfo = { ianaZone: timeInfo.ianaZone, label: timeInfo.label };
+
           const [assistantResult, rpcResult] = await Promise.allSettled([
             db.from("engagera_messages").insert({
               conversation_id: convId, role: "assistant", content: reply, token_count: totalTokens,
+              metadata: Object.keys(assistantMetadata).length ? assistantMetadata : null,
             }),
             db.rpc("engagera_increment_message_count", { p_conversation_id: convId }),
           ]);

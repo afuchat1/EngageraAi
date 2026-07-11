@@ -1,4 +1,4 @@
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
@@ -534,6 +534,13 @@ export function MessageContent({ content, sources, timeInfo }: MessageContentPro
 
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        // react-markdown's default URL sanitizer only allows http(s)/irc(s)/
+        // mailto/xmpp — it silently strips `data:` URIs, which is how
+        // AI-generated images are embedded (`![alt](data:image/jpeg;base64,...)`).
+        // Without this override, generated images always render as a blank
+        // <img> with no src. Allow data:image/* explicitly; defer everything
+        // else to the default sanitizer.
+        urlTransform={(url) => (/^data:image\//i.test(url) ? url : defaultUrlTransform(url))}
         components={{
           p: ({ children }) => {
             paragraphIdx++;

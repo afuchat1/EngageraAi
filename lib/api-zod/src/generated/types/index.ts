@@ -15,6 +15,8 @@ export * from './chatRequest';
 export * from './chatResponse';
 export * from './conversation';
 export * from './conversationMessage';
+export * from './conversationMessageSourcesItem';
+export * from './conversationMessageTimeInfo';
 export * from './dailyUsage';
 export * from './dashboardStats';
 export * from './errorResponse';

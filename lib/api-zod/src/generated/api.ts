@@ -242,7 +242,16 @@ export const GetConversationMessagesResponseItem = zod.object({
   "id": zod.number(),
   "role": zod.string(),
   "content": zod.string(),
-  "createdAt": zod.string()
+  "createdAt": zod.string(),
+  "sources": zod.array(zod.object({
+  "title": zod.string(),
+  "url": zod.string(),
+  "snippet": zod.string().optional()
+})).optional(),
+  "timeInfo": zod.object({
+  "ianaZone": zod.string(),
+  "label": zod.string()
+}).optional()
 })
 export const GetConversationMessagesResponse = zod.array(GetConversationMessagesResponseItem)
 

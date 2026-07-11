@@ -160,11 +160,24 @@ export interface Conversation {
   updatedAt: string;
 }
 
+export type ConversationMessageSourcesItem = {
+  title: string;
+  url: string;
+  snippet?: string;
+};
+
+export type ConversationMessageTimeInfo = {
+  ianaZone: string;
+  label: string;
+};
+
 export interface ConversationMessage {
   id: number;
   role: string;
   content: string;
   createdAt: string;
+  sources?: ConversationMessageSourcesItem[];
+  timeInfo?: ConversationMessageTimeInfo;
 }
 
 export interface SuccessResponse {

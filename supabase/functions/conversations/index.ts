@@ -48,13 +48,15 @@ Deno.serve(async (req: Request) => {
 
     const { data, error } = await db
       .from("engagera_messages")
-      .select("id, role, content, created_at")
+      .select("id, role, content, created_at, metadata")
       .eq("conversation_id", convId)
       .order("created_at", { ascending: true });
     if (error) return json({ error: "Failed to load messages" }, 500);
     return json(
-      (data ?? []).map((m: { id: number; role: string; content: string; created_at: string }) => ({
+      (data ?? []).map((m: { id: number; role: string; content: string; created_at: string; metadata: { sources?: unknown[]; timeInfo?: unknown } | null }) => ({
         id: m.id, role: m.role, content: m.content, createdAt: m.created_at,
+        sources: m.metadata?.sources ?? undefined,
+        timeInfo: m.metadata?.timeInfo ?? undefined,
       })),
     );
   }

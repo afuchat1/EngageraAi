@@ -575,6 +575,26 @@ components:
           type: string
         createdAt:
           type: string
+        sources:
+          type: array
+          items:
+            type: object
+            required: [title, url]
+            properties:
+              title:
+                type: string
+              url:
+                type: string
+              snippet:
+                type: string
+        timeInfo:
+          type: object
+          required: [ianaZone, label]
+          properties:
+            ianaZone:
+              type: string
+            label:
+              type: string
 
     SuccessResponse:
       type: object
