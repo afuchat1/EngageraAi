@@ -280,15 +280,16 @@ export default function Docs() {
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm mb-1.5">Use the response</p>
                     <CodeBlock language="json" code={`{
+  "id": "eng_1783860177654_cj924v",
   "message": {
     "role": "assistant",
     "content": "I'm Engagera, an AI assistant..."
   },
   "model": "engagera-pro",
   "usage": {
-    "prompt_tokens": 20,
-    "completion_tokens": 45,
-    "total_tokens": 65
+    "inputTokens": 20,
+    "outputTokens": 45,
+    "totalTokens": 65
   }
 }`} />
                   </div>
@@ -304,6 +305,9 @@ export default function Docs() {
               <CodeBlock language="http" code={`Authorization: Bearer eng_your_api_key_here`} />
               <Callout>
                 Never expose your API key in frontend code, mobile apps, or public repositories. Always proxy requests through your own backend server. Rotate keys immediately if compromised — you can do this in the Dashboard.
+              </Callout>
+              <Callout icon={Zap}>
+                <strong className="text-white/80">Fixed (Jul 2026):</strong> a gateway misconfiguration was rejecting valid <code className="font-mono text-[11px]">eng_</code> keys with a <code className="font-mono text-[11px]">401 Unauthorized</code> before they ever reached the API. This is resolved — calling <code className="font-mono text-[11px]">/chat</code> directly with <code className="font-mono text-[11px]">Authorization: Bearer eng_...</code> now works as documented. If you added a workaround (retry logic, a proxy, etc.) for these 401s, it's safe to remove it.
               </Callout>
               <div className="mt-5 rounded-xl border border-white/10 overflow-hidden">
                 <div className="px-4 py-3 bg-white/[0.03] border-b border-white/10">
@@ -362,9 +366,21 @@ export default function Docs() {
                   The model ID used to generate this response.
                 </Param>
                 <Param name="usage" type="object">
-                  Token usage — <code className="font-mono text-[11px]">prompt_tokens</code>, <code className="font-mono text-[11px]">completion_tokens</code>, <code className="font-mono text-[11px]">total_tokens</code>.
+                  Token usage — <code className="font-mono text-[11px]">inputTokens</code>, <code className="font-mono text-[11px]">outputTokens</code>, <code className="font-mono text-[11px]">totalTokens</code>. Field names are camelCase.
+                </Param>
+                <Param name="searchInfo" type="object">
+                  Present only when the model performed a live web search to answer the prompt. Contains the <code className="font-mono text-[11px]">query</code> used and an array of <code className="font-mono text-[11px]">sources</code> (<code className="font-mono text-[11px]">title</code>, <code className="font-mono text-[11px]">url</code>, <code className="font-mono text-[11px]">snippet</code>).
+                </Param>
+                <Param name="timeInfo" type="object">
+                  Present only when the prompt asked about the current date/time. Contains <code className="font-mono text-[11px]">ianaZone</code> and a human-readable <code className="font-mono text-[11px]">label</code> for the resolved location.
+                </Param>
+                <Param name="conversationId" type="string">
+                  Identifier for the conversation this exchange was saved under. Omitted for guest/anonymous requests.
                 </Param>
               </div>
+              <Callout>
+                Generated images are returned inline as a markdown image with a base64 JPEG data URI in <code className="font-mono text-[11px]">message.content</code>. Raster images include a small Engagera watermark in the bottom-right corner.
+              </Callout>
 
               <h3 id="chat-examples" className="text-sm font-semibold mb-1 scroll-mt-20 text-white/80">Code examples</h3>
               <Tabs tabs={[

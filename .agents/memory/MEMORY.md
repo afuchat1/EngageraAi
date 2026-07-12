@@ -19,3 +19,5 @@
 - [Engagera product decisions](engagera-product-decisions.md) — Playground page removed entirely (single chat interface only); chat fn already honors a developer-supplied `system` message when an eng_ API key is used, overriding the built-in Engagera persona
 - [react-markdown strips data: image URIs](react-markdown-data-uri-images.md) — default urlTransform only allows http(s)/irc(s)/mailto/xmpp; base64 images silently fail to render unless overridden
 - [Engagera message metadata](engagera-message-metadata.md) — sources/timeInfo persisted in `engagera_messages.metadata` jsonb column so refresh doesn't lose search sources/clock widgets; previously only transient React state
+- [Engagera image watermark](engagera-image-watermark.md) — ImageScript composites logo onto raster AI images in Deno edge fn; fails open; SVG fallback unwatermarked
+- [Engagera chat gateway auth](engagera-chat-gateway-auth.md) — chat fn must always deploy with --no-verify-jwt or eng_ keys mass-401 at the gateway; usage fields are camelCase

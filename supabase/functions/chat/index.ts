@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { applyWatermark } from "../_shared/watermark.ts";
 
 /**
  * Engagera Chat Edge Function v40
@@ -2603,7 +2604,8 @@ Deno.serve(async (req: Request) => {
         // syntax ( [ ] ( ) or newlines ) — otherwise the image renders as
         // broken text instead of an <img> in the chat UI.
         const safeAlt = imagePrompt.slice(0, 100).replace(/[\[\]()\r\n]/g, " ").trim() || "Generated image";
-        reply = `![${safeAlt}](data:image/jpeg;base64,${cfImage.base64})`;
+        const watermarked = await applyWatermark(cfImage.base64, requestId);
+        reply = `![${safeAlt}](data:image/jpeg;base64,${watermarked})`;
       } else {
         log("warn", "image_gen.cloudflare_failed_fallback_svg", { requestId, error: cfImage.errorDetail });
         const svgMsgs: ChatMessage[] = [
