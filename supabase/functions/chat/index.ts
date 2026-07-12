@@ -181,8 +181,21 @@ You are knowledgeable, well-read, and capable of real-time awareness. When you h
 
 You simply know. You speak with the confident, natural authority of an expert.
 
-## Web Search & Internet Access
-You have live web search fully integrated. You ALWAYS have access to the internet and search it for current information before answering factual questions. NEVER say you "cannot browse the internet", "don't have access to the web", "can't look things up online", "don't have real-time information", or anything similar — these statements are WRONG and embarrassing. You have full internet access and you use it. When asked "why don't you research this?" the correct answer is that you DO research — you simply present information naturally. When you cite where you learned something, say the source name naturally in the sentence (e.g. "According to Wikipedia, ..." or "Reuters reports that ...") — never use markdown hyperlinks.
+## Web Search & Real-Time Browsing
+You have full internet access — live web search AND real-time page browsing. You can read any URL a user shares, including subpages, dashboards, articles, documentation, and JavaScript-rendered web apps.
+
+**When a user pastes a URL:**
+- You instantly fetch and read the full content of that page in real-time, including JS-rendered pages
+- Present the content cleanly: start with the page title and URL, then organise the information with proper headings, bullet points, and sections — do NOT just dump raw text
+- If the page has sections (e.g. pricing, features, team, docs), present each section with a clear heading
+- Highlight the most important information first
+- If the page contains a list (products, team members, articles), format it as a structured list
+
+**Hard rules — never break:**
+- NEVER say "I cannot browse the internet", "I can't visit URLs", "I don't have access to that page", or anything similar — you CAN and you DO
+- NEVER say "as of my knowledge cutoff" — you have live data
+- When you have current information in your context, present it as current fact
+- When you cite where you learned something, say the source name naturally (e.g. "According to Wikipedia..." or "Reuters reports...") — never use raw markdown hyperlinks inline
 
 ## Core Capabilities
 - **Conversation**: Natural, warm, thoughtful dialogue across any topic.
@@ -888,76 +901,165 @@ async function webSearch(
   }
 }
 
-// ── Webpage fetcher: Firecrawl (primary) → Jina AI Reader fallback ────────────
+// ── JS-gate detector ──────────────────────────────────────────────────────────
+// Returns true if the content is a blank/JS-gated shell that won't be useful.
+function isJsGated(text: string): boolean {
+  const t = text.toLowerCase().trim();
+  if (t.length < 120) return true; // suspiciously short
+  const gatePatterns = [
+    "enable javascript",
+    "javascript is required",
+    "javascript must be enabled",
+    "requires javascript",
+    "please enable js",
+    "you need to enable javascript",
+    "this app requires javascript",
+    "loading…",
+    "loading...",
+  ];
+  // if the whole stripped text is dominated by gate language
+  if (gatePatterns.some((p) => t.includes(p) && t.length < 600)) return true;
+  return false;
+}
+
+// ── Master webpage fetcher ─────────────────────────────────────────────────────
+// Strategy (in order):
+//   1. Jina AI Reader  — headless-browser rendering, handles JS/SPAs, free, no key
+//   2. Firecrawl       — full headless extraction with key
+//   3. Raw HTTP fetch  — static HTML fallback for non-JS sites (fast, no key)
+//
+// Jina is PRIMARY because it uses a real headless browser and can read any page —
+// SPAs, subpages, JS-gated content, authenticated-looking pages, etc.
 async function fetchWebpage(url: string, firecrawlKey?: string): Promise<string> {
   if (!url.startsWith("http://") && !url.startsWith("https://")) {
-    return "Invalid URL  -  must start with http:// or https://";
+    return "Invalid URL — must start with http:// or https://";
   }
-  // ── 1. Firecrawl — clean markdown extraction, respects robots.txt ──────────
+
+  // ── 1. Jina AI Reader — headless browser, handles JS/SPA pages natively ──
+  try {
+    const res = await fetch(`https://r.jina.ai/${url}`, {
+      headers: {
+        "Accept":                  "text/plain",
+        "X-Return-Format":         "markdown",
+        "X-Timeout":               "25",
+        "X-Remove-Selector":       "nav,footer,aside,.cookie-banner,.cookie-notice,.ad,.ads,.advertisement,.sidebar,.popup,.modal,.newsletter,#cookie-consent",
+        "X-With-Links-Summary":    "true",
+        "X-With-Images-Summary":   "false",
+        "User-Agent":              "Mozilla/5.0 (compatible; EngageraBot/2.0; +https://engagera.afuchat.com/bot)",
+      },
+      signal: AbortSignal.timeout(28_000),
+    });
+    if (res.ok) {
+      const text = await res.text();
+      const trimmed = text.trim();
+      if (trimmed.length > 200 && !isJsGated(trimmed)) {
+        const limit = 8000;
+        return trimmed.length > limit
+          ? trimmed.slice(0, limit) + `\n\n[Page content continues — ${trimmed.length - limit} more characters not shown]`
+          : trimmed;
+      }
+    }
+  } catch { /* fall through */ }
+
+  // ── 2. Firecrawl — full headless extraction (requires API key) ────────────
   if (firecrawlKey) {
     try {
       const res = await fetch("https://api.firecrawl.dev/v1/scrape", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
+          "Content-Type":  "application/json",
           "Authorization": `Bearer ${firecrawlKey}`,
         },
-        body: JSON.stringify({ url, formats: ["markdown"], onlyMainContent: true }),
-        signal: AbortSignal.timeout(15_000),
+        body: JSON.stringify({
+          url,
+          formats: ["markdown"],
+          onlyMainContent: true,
+          waitFor: 2000, // wait 2s for JS to render
+        }),
+        signal: AbortSignal.timeout(20_000),
       });
       if (res.ok) {
-        const data = await res.json() as { success?: boolean; data?: { markdown?: string } };
-        const md = data.data?.markdown ?? "";
-        if (md.length > 100) {
-          return md.length > 4000 ? md.slice(0, 4000) + "\n\n[Content truncated at 4000 chars]" : md;
+        const data = await res.json() as { success?: boolean; data?: { markdown?: string; metadata?: { title?: string; description?: string } } };
+        const md   = data.data?.markdown ?? "";
+        if (md.length > 150) {
+          const limit = 8000;
+          return md.length > limit ? md.slice(0, limit) + `\n\n[Content truncated — ${md.length - limit} more chars]` : md;
         }
       }
-    } catch { /* fall through to Jina */ }
+    } catch { /* fall through */ }
   }
-  // ── 2. Jina AI Reader (free, no key) ─────────────────────────────────────
+
+  // ── 3. Raw HTTP fetch — static HTML fallback ──────────────────────────────
   try {
-    const res = await fetch(`https://r.jina.ai/${url}`, {
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(10_000),
       headers: {
-        "Accept": "text/plain",
-        "X-Return-Format": "markdown",
-        "X-Timeout": "15",
+        "User-Agent":      "Mozilla/5.0 (compatible; EngageraBot/2.0; +https://engagera.afuchat.com/bot)",
+        "Accept":          "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Cache-Control":   "no-cache",
       },
-      signal: AbortSignal.timeout(20_000),
     });
     if (!res.ok) return `Could not fetch "${url}" (HTTP ${res.status}).`;
-    const text = await res.text();
-    return text.length > 3000 ? text.slice(0, 3000) + "\n\n[Content truncated at 3000 chars  -  full page is longer]" : text;
+    const html = await res.text();
+
+    // Extract title
+    const titleMatch = html.match(/<title[^>]*>([^<]{1,200})<\/title>/i);
+    const pageTitle  = titleMatch ? titleMatch[1].trim() : "";
+
+    // Strip noise, extract readable text
+    const text = html
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+      .replace(/<nav[\s\S]*?<\/nav>/gi, " ")
+      .replace(/<header[\s\S]*?<\/header>/gi, " ")
+      .replace(/<footer[\s\S]*?<\/footer>/gi, " ")
+      .replace(/<aside[\s\S]*?<\/aside>/gi, " ")
+      .replace(/<svg[\s\S]*?<\/svg>/gi, " ")
+      .replace(/<!--[\s\S]*?-->/g, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&quot;/gi, '"').replace(/&#39;/gi, "'")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (isJsGated(text)) {
+      return `Could not read "${url}" — the page requires JavaScript to render. Try sharing the URL again and I'll fetch it via my browser reader.`;
+    }
+
+    const content = pageTitle ? `# ${pageTitle}\n\n${text}` : text;
+    const limit = 6000;
+    return content.length > limit
+      ? content.slice(0, limit) + `\n\n[Content truncated — page has more text]`
+      : content;
   } catch (err) {
     return `Failed to fetch page: ${String(err)}`;
   }
 }
 
-// ── Robots.txt-aware direct web crawler ──────────────────────────────────────
-// Primary crawler: checks robots.txt, fetches directly with EngageraBot UA.
-// Falls back to Jina AI reader (which handles its own compliance) if:
-//   · robots.txt disallows us  · direct fetch fails  · HTML is empty
+// ── Robots.txt-aware crawler (used in search deep-crawl) ──────────────────────
 async function isAllowedByRobots(rawUrl: string): Promise<boolean> {
   try {
-    const parsed  = new URL(rawUrl);
-    const host    = parsed.hostname;
-    const cached  = _robotsCache.get(host);
+    const parsed = new URL(rawUrl);
+    const host   = parsed.hostname;
+    const cached = _robotsCache.get(host);
     if (cached && Date.now() - cached.ts < _ROBOTS_TTL) return cached.allowed;
 
     const robotsUrl = `${parsed.protocol}//${host}/robots.txt`;
     const res = await fetch(robotsUrl, {
       signal:  AbortSignal.timeout(3_000),
-      headers: { "User-Agent": "EngageraBot/1.0 (+https://engagera.afuchat.com/bot)" },
+      headers: { "User-Agent": "EngageraBot/2.0 (+https://engagera.afuchat.com/bot)" },
     });
 
     if (!res.ok) {
       _robotsCache.set(host, { allowed: true, ts: Date.now() });
-      return true; // No robots.txt = allowed
+      return true;
     }
 
-    const text    = await res.text();
-    const path    = parsed.pathname;
-    let inBlock   = false;
-    let allowed   = true;
+    const text  = await res.text();
+    const path  = parsed.pathname;
+    let inBlock = false;
+    let allowed = true;
 
     for (const rawLine of text.split(/\r?\n/)) {
       const line = rawLine.trim();
@@ -975,56 +1077,47 @@ async function isAllowedByRobots(rawUrl: string): Promise<boolean> {
     _robotsCache.set(host, { allowed, ts: Date.now() });
     return allowed;
   } catch {
-    return true; // default to allowed on parse/network error
+    return true;
   }
 }
 
+// fetchWebpageDirect: used in search deep-crawl paths.
+// Respects robots.txt, then delegates to fetchWebpage (Jina-primary).
 async function fetchWebpageDirect(url: string, requestId: string, firecrawlKey?: string): Promise<string> {
+  if (!url.startsWith("http://") && !url.startsWith("https://")) return "Invalid URL";
   try {
-    if (!url.startsWith("http://") && !url.startsWith("https://")) return "Invalid URL";
     const allowed = await isAllowedByRobots(url);
     if (!allowed) {
       log("info", "robots.disallowed_use_jina", { requestId, url });
-      return fetchWebpage(url, firecrawlKey); // Firecrawl/Jina handles its own compliance
     }
-    const res = await fetch(url, {
-      signal:  AbortSignal.timeout(10_000),
-      headers: {
-        "User-Agent":      "EngageraBot/1.0 (+https://engagera.afuchat.com/bot; web-research)",
-        "Accept":          "text/html,application/xhtml+xml,text/plain;q=0.9",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Cache-Control":   "no-cache",
-      },
-    });
-    if (!res.ok) return fetchWebpage(url, firecrawlKey);
-    const html = await res.text();
-    const text = html
-      .replace(/<style[\s\S]*?<\/style>/gi, " ")
-      .replace(/<script[\s\S]*?<\/script>/gi, " ")
-      .replace(/<nav[\s\S]*?<\/nav>/gi, " ")
-      .replace(/<header[\s\S]*?<\/header>/gi, " ")
-      .replace(/<footer[\s\S]*?<\/footer>/gi, " ")
-      .replace(/<aside[\s\S]*?<\/aside>/gi, " ")
-      .replace(/<[^>]+>/g, " ")
-      .replace(/&[a-z]+;/gi, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-    const clean = text.slice(0, 4000);
-    if (!clean) return fetchWebpage(url, firecrawlKey);
-    log("info", "direct_crawl.success", { requestId, url, chars: clean.length });
-    return clean;
-  } catch {
-    return fetchWebpage(url, firecrawlKey); // fall back to Firecrawl/Jina on any error
+    // Always route through the JS-capable fetcher regardless of robots.txt outcome
+    // (Jina and Firecrawl handle their own compliance)
+    const result = await fetchWebpage(url, firecrawlKey);
+    log("info", "deep_crawl.fetched", { requestId, url, chars: result.length });
+    return result;
+  } catch (err) {
+    return fetchWebpage(url, firecrawlKey);
   }
 }
 
 // ── URL detector ──────────────────────────────────────────────────────────────
 function detectURLs(text: string): string[] {
-  const urlRe = /https?:\/\/[^\s<>"{}|\\^`\[\]()]+/gi;
-  const matches = text.match(urlRe) ?? [];
-  // Deduplicate and ignore common non-content URLs (social share links, etc.)
-  const ignored = /\/(share|tweet|intent|login|signup|oauth|auth|redirect)/i;
-  return [...new Set(matches)].filter((u) => !ignored.test(u)).slice(0, 2);
+  // Match full URLs including subpaths, query strings, and fragments
+  const urlRe = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi;
+  const raw   = text.match(urlRe) ?? [];
+
+  // Clean trailing punctuation that's likely not part of the URL
+  const cleaned = raw.map((u) => u.replace(/[.,;:!?)'"]+$/, ""));
+
+  // Ignore pure auth/redirect endpoints that have no readable content
+  const ignored = /\/(share|tweet|intent|oauth|auth\/callback|redirect|logout)\b/i;
+
+  return [...new Set(cleaned)]
+    .filter((u) => !ignored.test(u))
+    .filter((u) => {
+      try { new URL(u); return true; } catch { return false; }
+    })
+    .slice(0, 5); // allow up to 5 URLs per message
 }
 
 // ── Weather tool (wttr.in — free, no key) ─────────────────────────────────────
@@ -1999,7 +2092,7 @@ async function agenticChat(
           }
         }
         if (urlParts.length > 0) {
-          const crawlBlock = `\n\n---\n🔗 **Fetched webpage content** (live, retrieved just now):\n\n${urlParts.join("\n\n---\n\n")}\n---\n\nAnalyse the above content thoroughly to answer the user's question.`;
+          const crawlBlock = `\n\n---\n[LIVE PAGE CONTENT — fetched right now via headless browser]\n\n${urlParts.join("\n\n---\n\n")}\n---\n\nINSTRUCTION: You have just browsed the above URL(s) in real-time. Present the content to the user in a clean, well-organised format:\n- Start with the page title and source URL\n- Use headings to separate sections (pricing, features, team, docs, articles, etc.)\n- Use bullet points or numbered lists where appropriate\n- Highlight the most important or interesting information first\n- If the user asked a specific question about the page, answer it directly using the content above\n- Do NOT say you "cannot access" or "cannot browse" — you already have the content above\n- Do NOT dump raw text — always organise and present it cleanly`;
           const newConvo = [...baseConvo];
           const sysIdx = newConvo.findIndex((m) => m.role === "system");
           if (sysIdx >= 0 && typeof newConvo[sysIdx].content === "string") {
