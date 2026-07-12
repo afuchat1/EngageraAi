@@ -1902,9 +1902,12 @@ const NO_SEARCH_PATTERNS: RegExp[] = [
   /^(hi\b|hello\b|hey\b|thanks|thank you|good (morning|afternoon|evening|night)|how are you|what can you do|can you help|sup\b|yo\b)/i,
   // Grammar / spelling / translation
   /^(translate|grammar|spell|proofread|check grammar|fix grammar|correct (this|my))/i,
-  // Identity / AI persona questions  -  answered by system prompt
+  // Identity / AI persona questions  -  answered by system prompt, NEVER by web search
   /\b(what is your name|what('s| is) your name|who are you|what are you|how old are you|where (are you from|do you come from)|who (made|built|created|trained) you|when were you (made|created|built)|what version|what model are you|are you (an )?ai|are you (a )?bot|are you human|your name|do you have (a )?name)\b/i,
-  // Note: afuchat / afuai queries are NOT skipped — let web search handle them
+  // Ownership / training / founder questions — must be answered from identity, not web search
+  /\b(who (is your|are your|trained your|built your|owns? your|created your|developed your)|who (is behind|founded|created|owns?|built|made|developed) (you|this|engagera|afuai|afuchat)|who (is|are) (the )?(founder|creator|owner|developer|team|parent company)|what (company|team|organisation|organization) (made|built|trained|created|owns?|is behind) (you|this|engagera|afuai|afuchat)|your (founder|creator|owner|parent company|training|origins|background))\b/i,
+  // Direct AfuAI / AfuChat / Engagera identity questions — always answered from system prompt
+  /\b(what is afuai|who is afuai|what is afuchat|who is afuchat|afuai team|afuchat technologies|parent company|who owns engagera|what is engagera|who (made|built|created|trained|founded|owns?) engagera)\b/i,
   // Personal/opinion/feeling questions directed at the AI
   /^(do you (like|love|hate|enjoy|have|feel|think|know|want|prefer|believe)|what do you (think|feel|prefer|like|love)|can you feel|are you (happy|sad|conscious|sentient|alive))/i,
   // Conversational continuations
@@ -2162,33 +2165,9 @@ async function agenticChat(
         }
       }
 
-      // ── Domain-crawl fallback when search returns 0 results ──────────────────
-      // Some brands (e.g. AfuChat) are not indexed by DuckDuckGo yet.
-      // When the query mentions a known brand, crawl the official site directly.
-      if (searchResult.sources.length === 0) {
-        const knownDomains: Array<{ keywords: string[]; url: string; name: string }> = [
-          { keywords: ["afuchat", "afu chat"], url: "https://afuchat.com", name: "AfuChat" },
-          { keywords: ["engagera"], url: "https://engagera.afuchat.com", name: "Engagera" },
-          { keywords: ["afuai", "afu ai"], url: "https://afuchat.com", name: "AfuAI" },
-        ];
-        const queryLower = query.toLowerCase();
-        for (const { keywords, url, name } of knownDomains) {
-          if (keywords.some((kw) => queryLower.includes(kw))) {
-            log("info", "domain_crawl_fallback.start", { requestId, url });
-            try {
-              const content = await fetchWebpageDirect(url, requestId, firecrawlKey);
-              if (content.length > 200 && !content.startsWith("Could not") && !content.startsWith("Failed")) {
-                searchResult = {
-                  text: `Direct website crawl of ${url} (retrieved just now):\n\n${content.slice(0, 2500)}`,
-                  sources: [{ title: `${name}  -  Official Website`, url, snippet: content.slice(0, 300) }],
-                };
-                log("info", "domain_crawl_fallback.done", { requestId, url, bytes: content.length });
-              }
-            } catch { /* non-fatal */ }
-            break;
-          }
-        }
-      }
+      // Domain-crawl fallback removed: AfuChat / AfuAI / Engagera identity
+      // questions are blocked in NO_SEARCH_PATTERNS and answered from the
+      // system-prompt identity — no web crawl needed or desired.
 
       const hasResults = searchResult.sources.length > 0 ||
         (!searchResult.text.startsWith("No results") && !searchResult.text.startsWith("Search unavailable") && !searchResult.text.startsWith("Search failed"));
