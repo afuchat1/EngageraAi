@@ -1136,6 +1136,141 @@ async function fetchCurrencyRate(q: CurrencyQuery, requestId: string): Promise<s
   return null;
 }
 
+// ── Movie recommendations (TMDB — real metadata, requires TMDB_API_KEY) ───────
+const TMDB_GENRE_MAP: Record<string, number> = {
+  action: 28, adventure: 12, animation: 16, animated: 16, comedy: 35, funny: 35,
+  crime: 80, documentary: 99, drama: 18, family: 10751, kids: 10751,
+  fantasy: 14, history: 36, historical: 36, horror: 27, scary: 27, spooky: 27,
+  music: 10402, musical: 10402, mystery: 9648, romance: 10749, romantic: 10749,
+  "sci-fi": 878, scifi: 878, "science fiction": 878, thriller: 53,
+  war: 10752, western: 37, superhero: 28,
+};
+const TMDB_MOOD_MAP: Record<string, number[]> = {
+  sad: [18], "feel-good": [35, 10751], "feel good": [35, 10751], happy: [35, 10751],
+  laugh: [35], cry: [18], scared: [27], "on the edge": [53, 27], relax: [35, 16],
+  chill: [35, 16], intense: [53, 80], inspiring: [18, 36], nostalgic: [10751, 16],
+};
+
+interface MovieQuery { genreIds: number[]; similarTo?: string; yearFrom?: number; yearTo?: number; raw: string }
+
+function detectMovieQuery(text: string): MovieQuery | null {
+  const t = text.toLowerCase();
+  const mentionsMovie = /\b(movie|film|flick|to watch|watch tonight|watch this weekend)\b/i.test(t);
+  const asksForSuggestion = /\b(recommend|suggest|what should i watch|any good|looking for|feel like watching|in the mood for|something to watch|good (movie|film)s?)\b/i.test(t);
+  if (!mentionsMovie && !asksForSuggestion) return null;
+  if (!mentionsMovie && !/\bwatch\b/i.test(t)) return null;
+
+  const genreIds = new Set<number>();
+  for (const [kw, id] of Object.entries(TMDB_GENRE_MAP)) {
+    if (new RegExp(`\\b${kw.replace(/[- ]/g, "[- ]")}\\b`, "i").test(t)) genreIds.add(id);
+  }
+  for (const [kw, ids] of Object.entries(TMDB_MOOD_MAP)) {
+    if (t.includes(kw)) ids.forEach((id) => genreIds.add(id));
+  }
+
+  // "similar to <title>" / "like <title>"
+  let similarTo: string | undefined;
+  const simMatch = t.match(/(?:similar to|like|in the style of)\s+["“]?([a-z0-9][a-z0-9 :'!.,-]{1,60}?)["”]?(?:\?|$|\.|,| but| movie| film)/i);
+  if (simMatch?.[1]) similarTo = simMatch[1].trim();
+
+  // Decade / year hints
+  let yearFrom: number | undefined, yearTo: number | undefined;
+  const decadeMatch = t.match(/\b(19|20)(\d0)s\b/);
+  if (decadeMatch) {
+    const start = parseInt(`${decadeMatch[1]}${decadeMatch[2]}`, 10);
+    yearFrom = start; yearTo = start + 9;
+  }
+  const yearMatch = t.match(/\b(19|20)\d{2}\b/);
+  if (!decadeMatch && yearMatch) { yearFrom = parseInt(yearMatch[0], 10); yearTo = yearFrom; }
+
+  return { genreIds: [...genreIds], similarTo, yearFrom, yearTo, raw: text };
+}
+
+interface MovieResult { title: string; year: string; rating: number; overview: string; posterUrl: string | null; tmdbUrl: string }
+
+async function fetchMovieRecommendations(q: MovieQuery, apiKey: string, requestId: string): Promise<MovieResult[] | null> {
+  const TMDB_BASE = "https://api.themoviedb.org/3";
+  const IMG_BASE  = "https://image.tmdb.org/t/p/w342";
+  try {
+    // deno-lint-ignore no-explicit-any
+    let candidates: any[] = [];
+
+    if (q.similarTo) {
+      const searchRes = await fetch(
+        `${TMDB_BASE}/search/movie?api_key=${apiKey}&query=${encodeURIComponent(q.similarTo)}`,
+        { signal: AbortSignal.timeout(6_000) },
+      );
+      if (searchRes.ok) {
+        const searchData = await searchRes.json();
+        const match = searchData.results?.[0];
+        if (match) {
+          const recRes = await fetch(
+            `${TMDB_BASE}/movie/${match.id}/recommendations?api_key=${apiKey}&page=1`,
+            { signal: AbortSignal.timeout(6_000) },
+          );
+          if (recRes.ok) {
+            const recData = await recRes.json();
+            candidates = recData.results ?? [];
+          }
+        }
+      }
+    }
+
+    if (candidates.length === 0) {
+      const params = new URLSearchParams({
+        api_key: apiKey,
+        sort_by: "popularity.desc",
+        "vote_count.gte": "150",
+        include_adult: "false",
+        language: "en-US",
+      });
+      if (q.genreIds.length > 0) params.set("with_genres", q.genreIds.join(","));
+      if (q.yearFrom) params.set("primary_release_date.gte", `${q.yearFrom}-01-01`);
+      if (q.yearTo)   params.set("primary_release_date.lte", `${q.yearTo}-12-31`);
+      const discRes = await fetch(`${TMDB_BASE}/discover/movie?${params.toString()}`, { signal: AbortSignal.timeout(6_000) });
+      if (!discRes.ok) { log("warn", "movies.discover_failed", { requestId, status: discRes.status }); return null; }
+      const discData = await discRes.json();
+      candidates = discData.results ?? [];
+    }
+
+    if (candidates.length === 0) return null;
+
+    return candidates.slice(0, 6).map((m) => ({
+      title: m.title ?? m.original_title ?? "Untitled",
+      year: (m.release_date ?? "").slice(0, 4) || "N/A",
+      rating: Math.round((m.vote_average ?? 0) * 10) / 10,
+      overview: (m.overview ?? "").slice(0, 220),
+      posterUrl: m.poster_path ? `${IMG_BASE}${m.poster_path}` : null,
+      tmdbUrl: `https://www.themoviedb.org/movie/${m.id}`,
+    }));
+  } catch (err) {
+    log("warn", "movies.fetch_failed", { requestId, error: String(err) });
+    return null;
+  }
+}
+
+function formatMovieBlock(movies: MovieResult[]): string {
+  const lines = movies.map((m, i) => {
+    const poster = m.posterUrl ? `![${m.title} poster](${m.posterUrl})\n` : "";
+    return `${i + 1}. ${poster}**${m.title}** (${m.year}) — Rating ${m.rating}/10\n${m.overview || "No synopsis available."}\n[More on TMDB](${m.tmdbUrl})`;
+  }).join("\n\n");
+  return [
+    "",
+    "---",
+    `🎬 **Live movie data from TMDB** (The Movie Database, retrieved just now):`,
+    "",
+    lines,
+    "",
+    "---",
+    "",
+    "INSTRUCTIONS: Recommend 3-5 of the movies above that best fit what the user asked for. " +
+    "Use the exact titles, years, and ratings given — do not invent or alter any metadata. " +
+    "Keep each recommendation's poster markdown image exactly as given so it renders. " +
+    "Write a short, natural one-or-two-sentence reason per pick tailored to the user's request; you may lightly paraphrase the overview but don't contradict it. " +
+    "If none of the movies above truly fit, say so honestly rather than forcing a match.",
+  ].join("\n");
+}
+
 // ── Cross-session user context loader ────────────────────────────────────────
 async function loadUserContext(
   db: ReturnType<typeof createClient>,
@@ -1851,6 +1986,31 @@ async function agenticChat(
           return { reply: cResult.content, inputTokens: cResult.inputTokens, outputTokens: cResult.outputTokens,
             provider: cResult.provider, providerModel: cResult.model, ...(crawledUrls.length && { crawledUrls }) };
         }
+      }
+    }
+  }
+
+  // ── Tool: Movie recommendations (TMDB — real metadata, requires TMDB_API_KEY) ─
+  if (lastUserText) {
+    const movieQ = detectMovieQuery(lastUserText);
+    const tmdbKey = Deno.env.get("TMDB_API_KEY");
+    if (movieQ && tmdbKey) {
+      const movies = await fetchMovieRecommendations(movieQ, tmdbKey, requestId);
+      if (movies && movies.length > 0) {
+        const movieBlock = formatMovieBlock(movies);
+        const mConvo = [...baseConvo];
+        const msysIdx = mConvo.findIndex((m) => m.role === "system");
+        if (msysIdx >= 0 && typeof mConvo[msysIdx].content === "string") {
+          mConvo[msysIdx] = { ...mConvo[msysIdx], content: (mConvo[msysIdx].content as string) + movieBlock };
+        } else { mConvo.unshift({ role: "system", content: movieBlock }); }
+        const mResult = await callWithFallback(chain, keys, mConvo, 1536, requestId);
+        if (mResult.ok) {
+          log("info", "movies.tool.success", { requestId, count: movies.length, similarTo: movieQ.similarTo, genres: movieQ.genreIds });
+          return { reply: mResult.content, inputTokens: mResult.inputTokens, outputTokens: mResult.outputTokens,
+            provider: mResult.provider, providerModel: mResult.model, ...(crawledUrls.length && { crawledUrls }) };
+        }
+      } else {
+        log("warn", "movies.tool.no_results", { requestId, similarTo: movieQ.similarTo, genres: movieQ.genreIds });
       }
     }
   }
