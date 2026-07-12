@@ -2036,28 +2036,56 @@ function buildSearchQuery(userText: string, conversationContext?: string): strin
   return q;
 }
 
-// ── Default: search for EVERYTHING except the narrow skip list above ───────────
+// ── Search trigger: ONLY search when the user's message explicitly calls for it ─
+// The model answers from its own knowledge by default.
+// Web search is reserved for: explicit requests, live/current data, news, prices, scores.
 function needsWebSearch(messages: ChatMessage[]): string | null {
   const last = [...messages].reverse().find((m) => m.role === "user");
   if (!last) return null;
   const text = typeof last.content === "string" ? last.content : "";
-  if (!text || text.length < 6) return null;
+  if (!text || text.length < 4) return null;
 
-  const trimmed = text.trim();
+  const t = text.trim().toLowerCase();
 
-  // Skip only for the narrow list of pure code/math/creative tasks
+  // ── Hard no-search: identity, creative, code, math, conversation ─────────────
   for (const re of NO_SEARCH_PATTERNS) {
-    if (re.test(trimmed)) return null;
+    if (re.test(text.trim())) return null;
   }
-
-  // Skip if it's a pure code block (likely debugging/review, not factual)
   if ((text.match(/```/g) ?? []).length >= 2) return null;
 
-  // Skip very short imperative commands that are clearly about editing text
-  if (trimmed.length < 25 && /^(summarise|summarize|rewrite|rephrase|shorter|longer|expand|continue|more|less)\b/i.test(trimmed)) return null;
+  // ── Explicit search request by the user ──────────────────────────────────────
+  const explicitSearch = [
+    /\b(search|look up|look it up|google|bing|find online|check online|search (the )?(web|internet|online)|search for|research)\b/i,
+    /\b(what('s| is) (happening|going on)|latest (news|update|info|information|report|development)|breaking news|recent news|current news)\b/i,
+    /\b(today'?s? (news|update|score|price|rate|result)|this (week|month)'?s? (news|update|result))\b/i,
+  ];
+  if (explicitSearch.some((re) => re.test(text))) return text;
 
-  // Everything else → search for real-world grounding
-  return text;
+  // ── Live / time-sensitive data the model cannot know ─────────────────────────
+  const liveData = [
+    // Prices and markets
+    /\b(current (price|cost|rate|value)|price of|how much (is|does|do|cost)|stock price|share price|crypto price|bitcoin price|ethereum price|exchange rate|usd to|gbp to|eur to|ngn to)\b/i,
+    // Scores and sports
+    /\b((today'?s?|live|current|final|match|game) (score|result|fixture|standing)|who won (the )?(game|match|race|election)|premier league|bundesliga|la liga|nba|nfl|nhl|cricket score)\b/i,
+    // Elections, polls, referendums — real-time outcomes
+    /\b(election result|vote result|poll result|referendum result)\b/i,
+    // Trending / viral
+    /\b(trending (now|today|right now)|what'?s? trending|going viral|viral (now|today))\b/i,
+    // Explicit "right now / live" qualifiers on factual questions
+    /\b(right now|as of (today|now|this moment)|at (this|the) moment|currently happening|live (update|score|data|feed))\b/i,
+    // Obituaries / recent deaths
+    /\b(just died|recently died|passed away recently|death of .{3,40} (today|this week|recently))\b/i,
+  ];
+  if (liveData.some((re) => re.test(text))) return text;
+
+  // ── Specific named-entity lookups that likely need fresh data ─────────────────
+  // e.g. "Who is [very recent person]?" — but only when paired with recency signals
+  const recencySignals = /\b(new|newly|recently|just (launched|released|announced|appointed|elected)|latest version|2025|2026)\b/i;
+  const entityLookup   = /\b(who is|what is|tell me about|info (on|about)|details (on|about))\b/i;
+  if (recencySignals.test(t) && entityLookup.test(t)) return text;
+
+  // Everything else: model answers from its own knowledge. No search.
+  return null;
 }
 
 // ── Agentic chat: URL crawl + pre-search + multi-provider call ───────────────

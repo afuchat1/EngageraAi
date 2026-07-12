@@ -94,35 +94,40 @@ function Favicon({ url, size = 16 }: { url: string; size?: number }) {
   );
 }
 
-// ── Inline favicon cluster (appears at end of last paragraph) ─────────────────
-function InlineFaviconCluster({ sources }: { sources: Source[] }) {
-  if (!sources.length) return null;
-  const shown = sources.slice(0, 4);
-  const extra = sources.length - shown.length;
+// ── Source pill: favicon + bold site name, fully clickable, no raw URL shown ───
+function SourcePill({ source }: { source: Source }) {
+  const name = extractSiteName(source);
   return (
-    <span
-      className="inline-flex items-center gap-0.5 ml-1.5 align-middle relative"
-      style={{ top: -1 }}
+    <a
+      href={source.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.05] border border-white/[0.08] hover:bg-white/[0.09] hover:border-white/20 transition-all group no-underline"
+      title={name}
     >
-      <span className="flex items-center">
-        {shown.map((s, i) => (
-          <span
-            key={i}
-            className="inline-flex items-center justify-center w-[18px] h-[18px] rounded-full border-2 border-black bg-white/10 overflow-hidden"
-            style={{ marginLeft: i > 0 ? -5 : 0, zIndex: shown.length - i }}
-          >
-            <Favicon url={s.url} size={12} />
-          </span>
-        ))}
+      <span className="w-3.5 h-3.5 shrink-0 flex items-center justify-center overflow-hidden rounded-full">
+        <Favicon url={source.url} size={14} />
       </span>
-      {extra > 0 && (
-        <span className="text-[10px] text-white/30 ml-0.5">+{extra}</span>
-      )}
-    </span>
+      <span className="text-[11px] font-semibold text-white/55 group-hover:text-white/85 transition-colors truncate max-w-[120px]">
+        {name}
+      </span>
+    </a>
   );
 }
 
-// ── Source domain popup (shows on "Sources" click) ────────────────────────────
+// ── Source strip (shown below message content when search ran) ────────────────
+function InlineFaviconCluster({ sources }: { sources: Source[] }) {
+  if (!sources.length) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {sources.slice(0, 6).map((s, i) => (
+        <SourcePill key={i} source={s} />
+      ))}
+    </div>
+  );
+}
+
+// ── Sources popup (opened from action bar) ─────────────────────────────────────
 function SourcesPopup({ sources, onClose }: { sources: Source[]; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -136,26 +141,29 @@ function SourcesPopup({ sources, onClose }: { sources: Source[]; onClose: () => 
   return (
     <div
       ref={ref}
-      className="absolute bottom-full right-0 mb-2 z-50 bg-[#111] border border-white/10 rounded-2xl p-3 shadow-xl min-w-[180px]"
+      className="absolute bottom-full right-0 mb-2 z-50 bg-[#111] border border-white/10 rounded-2xl p-3 shadow-xl min-w-[200px] max-w-[280px]"
     >
-      <p className="text-[10px] text-white/30 mb-2 font-medium uppercase tracking-widest">Sources</p>
-      <div className="flex flex-col gap-2">
-        {sources.slice(0, 8).map((s, i) => (
-          <a
-            key={i}
-            href={s.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 group"
-          >
-            <span className="w-5 h-5 rounded-full border border-white/10 bg-white/5 flex items-center justify-center overflow-hidden shrink-0">
-              <Favicon url={s.url} size={12} />
-            </span>
-            <span className="text-xs text-white/50 group-hover:text-white/80 transition-colors truncate">
-              {getDomain(s.url)}
-            </span>
-          </a>
-        ))}
+      <p className="text-[10px] text-white/25 mb-2.5 font-semibold uppercase tracking-widest">Sources</p>
+      <div className="flex flex-col gap-1.5">
+        {sources.slice(0, 8).map((s, i) => {
+          const name = extractSiteName(s);
+          return (
+            <a
+              key={i}
+              href={s.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2.5 px-2 py-1.5 rounded-xl hover:bg-white/[0.05] transition-colors group"
+            >
+              <span className="w-5 h-5 rounded-full border border-white/10 bg-white/[0.04] flex items-center justify-center overflow-hidden shrink-0">
+                <Favicon url={s.url} size={12} />
+              </span>
+              <span className="text-xs font-semibold text-white/55 group-hover:text-white/85 transition-colors truncate">
+                {name}
+              </span>
+            </a>
+          );
+        })}
       </div>
     </div>
   );
