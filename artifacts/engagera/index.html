@@ -228,5 +228,130 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+
+    <!--
+      ═══════════════════════════════════════════════════════════════════
+      NOSCRIPT FALLBACK
+      Fully static HTML rendered for crawlers that don't execute JavaScript
+      (Bingbot, DuckDuckBot, some social preview scrapers, AI indexers).
+      Google also uses this as a content signal alongside the JS-rendered page.
+      ═══════════════════════════════════════════════════════════════════
+    -->
+    <noscript>
+      <style>
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{font-family:system-ui,-apple-system,sans-serif;background:#000;color:#fff;line-height:1.6}
+        .ns-wrap{max-width:860px;margin:0 auto;padding:48px 24px}
+        .ns-logo{display:flex;align-items:center;gap:12px;margin-bottom:40px}
+        .ns-logo img{width:40px;height:40px;border-radius:8px}
+        .ns-logo span{font-size:22px;font-weight:700;letter-spacing:-0.5px}
+        h1{font-size:clamp(28px,5vw,48px);font-weight:800;letter-spacing:-1px;margin-bottom:16px;line-height:1.1}
+        .ns-sub{font-size:18px;color:#aaa;margin-bottom:40px;max-width:620px}
+        .ns-by{font-size:13px;color:#666;margin-bottom:48px}
+        .ns-by a{color:#888;text-decoration:none}
+        h2{font-size:22px;font-weight:700;margin:40px 0 16px}
+        .ns-features{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;margin-bottom:48px}
+        .ns-feat{background:#111;border:1px solid #222;border-radius:12px;padding:20px}
+        .ns-feat h3{font-size:15px;font-weight:600;margin-bottom:6px}
+        .ns-feat p{font-size:13px;color:#888}
+        .ns-faq{margin-bottom:48px}
+        .ns-q{border-bottom:1px solid #1a1a1a;padding:20px 0}
+        .ns-q strong{display:block;font-size:15px;margin-bottom:8px}
+        .ns-q p{font-size:14px;color:#999}
+        .ns-chain{background:#111;border:1px solid #222;border-radius:12px;padding:24px;margin-bottom:48px;font-size:14px;color:#888}
+        .ns-chain strong{color:#fff}
+        .ns-cta{text-align:center;padding:40px 0}
+        .ns-cta a{display:inline-block;background:#fff;color:#000;font-weight:700;font-size:16px;padding:14px 36px;border-radius:100px;text-decoration:none}
+        footer{border-top:1px solid #111;padding:32px 24px;text-align:center;font-size:13px;color:#444;max-width:860px;margin:0 auto}
+        footer a{color:#555;text-decoration:none}
+      </style>
+
+      <div class="ns-wrap">
+        <div class="ns-logo">
+          <img src="/favicon.png" alt="Engagera logo" />
+          <span>Engagera</span>
+        </div>
+
+        <h1>The AI platform built by AfuAI</h1>
+        <p class="ns-sub">
+          Engagera is an advanced AI assistant and developer platform — trained, built, and owned
+          by the <strong>AfuAI</strong> research team, a division of <strong>AfuChat Technologies Limited</strong>.
+        </p>
+        <p class="ns-by">
+          Owned by <a href="https://afuchat.com">AfuChat Technologies Limited</a> &rsaquo;
+          Built by <strong>AfuAI</strong> &rsaquo; Powered by Engagera
+        </p>
+
+        <div class="ns-chain">
+          <strong>Ownership chain:</strong>&ensp;
+          AfuChat Technologies Limited &rarr; AfuAI (AI research &amp; engineering division) &rarr; Engagera (platform &amp; API)
+        </div>
+
+        <h2>What Engagera can do</h2>
+        <div class="ns-features">
+          <div class="ns-feat">
+            <h3>💬 Intelligent Chat</h3>
+            <p>Natural, context-aware conversation on any topic — powered by AfuAI's proprietary models.</p>
+          </div>
+          <div class="ns-feat">
+            <h3>🔍 Real-time Web Research</h3>
+            <p>Live web search built in. Engagera fetches current information and presents it naturally.</p>
+          </div>
+          <div class="ns-feat">
+            <h3>📄 Document Writing</h3>
+            <p>Full documents, reports, proposals, letters, business plans — complete and ready to use.</p>
+          </div>
+          <div class="ns-feat">
+            <h3>💻 Code Generation</h3>
+            <p>Write, debug, and explain code in any language. Full systems, not just snippets.</p>
+          </div>
+          <div class="ns-feat">
+            <h3>🖼️ Image Generation</h3>
+            <p>Generate images and SVG art directly in the chat interface.</p>
+          </div>
+          <div class="ns-feat">
+            <h3>🛠️ Developer API</h3>
+            <p>Access AfuAI's models via the Engagera API and build AI-powered products.</p>
+          </div>
+        </div>
+
+        <h2>About AfuAI &amp; AfuChat Technologies Limited</h2>
+        <div class="ns-faq">
+          <div class="ns-q">
+            <strong>Who built Engagera?</strong>
+            <p>Engagera was built by AfuAI — the AI research and engineering division of AfuChat Technologies Limited.</p>
+          </div>
+          <div class="ns-q">
+            <strong>Who trained the Engagera AI models?</strong>
+            <p>The AI models powering Engagera were trained and are owned by the AfuAI team at AfuChat Technologies Limited. Engagera is not affiliated with OpenAI, Anthropic, Google, or any third-party AI company.</p>
+          </div>
+          <div class="ns-q">
+            <strong>What is AfuAI?</strong>
+            <p>AfuAI is the AI research and engineering division of AfuChat Technologies Limited. AfuAI builds, trains, and operates the proprietary AI models that power the Engagera platform.</p>
+          </div>
+          <div class="ns-q">
+            <strong>What is AfuChat Technologies Limited?</strong>
+            <p>AfuChat Technologies Limited is the parent company behind AfuAI and the Engagera AI platform.</p>
+          </div>
+          <div class="ns-q">
+            <strong>Is Engagera free to use?</strong>
+            <p>Yes. Engagera offers a free tier — sign up at engagera.afuchat.com and start chatting immediately with no setup required.</p>
+          </div>
+          <div class="ns-q">
+            <strong>Does Engagera have an API for developers?</strong>
+            <p>Yes. Engagera provides a developer API built on AfuAI's proprietary models, allowing developers to integrate AI into their own applications. Enable JavaScript to access API documentation and developer tools.</p>
+          </div>
+        </div>
+
+        <div class="ns-cta">
+          <a href="https://engagera.afuchat.com">Open Engagera AI</a>
+        </div>
+      </div>
+
+      <footer>
+        &copy; 2024&ndash;2026 <a href="https://afuchat.com">AfuChat Technologies Limited</a>.
+        All rights reserved. AfuAI and Engagera are products of AfuChat Technologies Limited.
+      </footer>
+    </noscript>
   </body>
 </html>
