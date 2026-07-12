@@ -6,7 +6,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   Copy, Check, ImageOff, Film,
   ThumbsUp, ThumbsDown, Volume2, VolumeX,
-  Share2, Globe, FileDown,
+  Share2, Globe, FileDown, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import type { TimeInfo } from "@/hooks/useEdgeChatCompletion";
 
@@ -548,8 +548,6 @@ function detectMediaTitles(content: string): string[] {
 }
 
 function MediaCardsRow({ titles }: { titles: string[] }) {
-  // Initialise from cache immediately — titles already pre-fetched will show
-  // their image on first render with no spinner at all.
   const [cards, setCards] = useState<MediaCard[]>(() =>
     titles.map(t => {
       const cached = thumbCache.get(t.toLowerCase());
@@ -559,28 +557,43 @@ function MediaCardsRow({ titles }: { titles: string[] }) {
     })
   );
 
-  // Sync when titles list grows (more detected while streaming) or when an
-  // in-flight promise resolves after the component has already mounted.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [canLeft, setCanLeft] = useState(false);
+  const [canRight, setCanRight] = useState(false);
+
+  const syncArrows = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanLeft(el.scrollLeft > 4);
+    setCanRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 4);
+  };
+
+  useEffect(() => {
+    syncArrows();
+    const el = scrollRef.current;
+    el?.addEventListener("scroll", syncArrows, { passive: true });
+    return () => el?.removeEventListener("scroll", syncArrows);
+  }, [cards.length]);
+
+  const pan = (dir: "l" | "r") =>
+    scrollRef.current?.scrollBy({ left: dir === "r" ? 300 : -300, behavior: "smooth" });
+
   const titlesKey = titles.join("||");
   useEffect(() => {
     setCards(prev => {
-      // Add any new titles not yet in state
-      const prevTitles = new Set(prev.map(c => c.title.toLowerCase()));
+      const seen = new Set(prev.map(c => c.title.toLowerCase()));
       const next = [...prev];
       for (const t of titles) {
-        if (!prevTitles.has(t.toLowerCase())) {
-          const cached = thumbCache.get(t.toLowerCase());
-          next.push(cached
-            ? { title: t, fetching: false, thumbnail: cached.thumb, year: cached.year }
-            : { title: t, fetching: true, thumbnail: null });
-        }
+        if (seen.has(t.toLowerCase())) continue;
+        const cached = thumbCache.get(t.toLowerCase());
+        next.push(cached
+          ? { title: t, fetching: false, thumbnail: cached.thumb, year: cached.year }
+          : { title: t, fetching: true, thumbnail: null });
       }
       return next;
     });
-
-    // Subscribe to any still-loading promises
-    titles.forEach((title) => {
-      if (thumbCache.has(title.toLowerCase())) return; // already resolved
+    titles.forEach(title => {
+      if (thumbCache.has(title.toLowerCase())) return;
       fetchWikiThumb(title).then(result => {
         setCards(prev =>
           prev.map(c =>
@@ -595,23 +608,71 @@ function MediaCardsRow({ titles }: { titles: string[] }) {
   }, [titlesKey]);
 
   return (
-    <div className="flex gap-3 overflow-x-auto pb-2 my-4 -mx-1 px-1" style={{ scrollbarWidth: "none" }}>
-      {cards.map((card, i) => (
-        <div key={card.title + i} className="shrink-0 w-28 rounded-xl overflow-hidden border border-white/10 bg-white/[0.03]">
-          <div className="w-28 h-40 relative bg-white/[0.05]">
-            {card.fetching
-              ? <div className="w-full h-full flex items-center justify-center"><div className="w-5 h-5 border border-white/20 border-t-white/60 rounded-full animate-spin" /></div>
-              : card.thumbnail
-                ? <img src={card.thumbnail} alt={card.title} className="w-full h-full object-cover" />
-                : <div className="w-full h-full flex items-center justify-center"><Film className="w-6 h-6 text-white/15" /></div>}
-            <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-black/70 to-transparent pointer-events-none" />
+    <div className="relative my-5 group/carousel">
+      {/* Left arrow */}
+      <button
+        onClick={() => pan("l")}
+        className={`absolute left-0 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full bg-black/80 border border-white/10 flex items-center justify-center text-white/70 hover:text-white hover:bg-black transition-all duration-150 ${canLeft ? "opacity-0 group-hover/carousel:opacity-100" : "opacity-0 pointer-events-none"}`}
+      >
+        <ChevronLeft className="w-4 h-4" />
+      </button>
+
+      {/* Scroll container */}
+      <div
+        ref={scrollRef}
+        className="flex gap-2.5 overflow-x-auto select-none"
+        style={{ scrollbarWidth: "none", scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch" } as React.CSSProperties}
+      >
+        {cards.map((card, i) => (
+          <div
+            key={card.title + i}
+            className="shrink-0 relative rounded-xl overflow-hidden bg-white/[0.04] cursor-default"
+            style={{ width: 115, height: 168, scrollSnapAlign: "start", flexShrink: 0 }}
+          >
+            {/* Image / loading / fallback */}
+            {card.fetching ? (
+              <div className="absolute inset-0 flex items-center justify-center bg-white/[0.04]">
+                <div className="w-5 h-5 border border-white/15 border-t-white/55 rounded-full animate-spin" />
+              </div>
+            ) : card.thumbnail ? (
+              <img
+                src={card.thumbnail}
+                alt={card.title}
+                className="absolute inset-0 w-full h-full object-cover"
+                onError={() =>
+                  setCards(prev =>
+                    prev.map((c, j) => j === i ? { ...c, thumbnail: null } : c)
+                  )
+                }
+              />
+            ) : (
+              <div
+                className="absolute inset-0 flex items-center justify-center"
+                style={{ background: "linear-gradient(145deg,#1c1c2e 0%,#16213e 60%,#0f3460 100%)" }}
+              >
+                <Film className="w-7 h-7 text-white/15" />
+              </div>
+            )}
+
+            {/* Gradient overlay */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/10 to-transparent pointer-events-none" />
+
+            {/* Title + year */}
+            <div className="absolute bottom-0 left-0 right-0 px-2 pb-2 pt-6">
+              <p className="text-[10px] font-semibold leading-snug text-white line-clamp-2">{card.title}</p>
+              {card.year && <p className="text-[9px] text-white/45 mt-0.5">{card.year}</p>}
+            </div>
           </div>
-          <div className="p-2">
-            <p className="text-[10px] font-medium leading-tight text-white/75 line-clamp-2">{card.title}</p>
-            {card.year && <p className="text-[10px] text-white/30 mt-0.5">{card.year}</p>}
-          </div>
-        </div>
-      ))}
+        ))}
+      </div>
+
+      {/* Right arrow */}
+      <button
+        onClick={() => pan("r")}
+        className={`absolute right-0 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full bg-black/80 border border-white/10 flex items-center justify-center text-white/70 hover:text-white hover:bg-black transition-all duration-150 ${canRight ? "opacity-0 group-hover/carousel:opacity-100" : "opacity-0 pointer-events-none"}`}
+      >
+        <ChevronRight className="w-4 h-4" />
+      </button>
     </div>
   );
 }
@@ -630,105 +691,86 @@ export function MessageContent({ content, sources, timeInfo }: MessageContentPro
   const mediaTitles = hasInlineImages ? [] : detectMediaTitles(content);
   const hasSources = sources && sources.length > 0;
 
-  // Count paragraphs to find the last one for inline favicon injection
-  const paragraphCount = (content.split("\n\n").length) || 1;
-  let paragraphIdx = 0;
-
   return (
     <div className="text-[0.875rem] leading-relaxed text-white/90 min-w-0 overflow-hidden">
 
-      {/* ── Real-time clock widget (time queries) ── */}
+      {/* Clock widget */}
       {timeInfo && <ClockWidget timeInfo={timeInfo} />}
 
-      {/* Media cards above text */}
+      {/* Movie / show discovery carousel */}
       {mediaTitles.length >= 2 && <MediaCardsRow titles={mediaTitles} />}
 
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        // react-markdown's default URL sanitizer only allows http(s)/irc(s)/
-        // mailto/xmpp — it silently strips `data:` URIs, which is how
-        // AI-generated images are embedded (`![alt](data:image/jpeg;base64,...)`).
-        // Without this override, generated images always render as a blank
-        // <img> with no src. Allow data:image/* explicitly; defer everything
-        // else to the default sanitizer.
         urlTransform={(url) => (/^data:image\//i.test(url) ? url : defaultUrlTransform(url))}
         components={{
-          p: ({ children }) => {
-            paragraphIdx++;
-            const isLast = paragraphIdx === paragraphCount;
+          // ── Paragraphs — clean, no inline chips ──────────────────────────────
+          p: ({ children }) => (
+            <p className="mb-3 last:mb-0 leading-[1.75] text-white/88">{children}</p>
+          ),
 
-            // ── Inline source badges: detect which sources are mentioned in this paragraph ──
-            // Match source names against paragraph text so we can show favicon badges inline.
-            const paraText = childrenToText(children).toLowerCase();
-            const mentionedSources = hasSources
-              ? sources!.filter(s => {
-                  const name = extractSiteName(s).toLowerCase();
-                  return name.length > 2 && paraText.includes(name);
-                })
-              : [];
-
-            return (
-              <div className="mb-3 last:mb-0">
-                {/* Source attribution chips — appear when source name is mentioned in paragraph */}
-                {mentionedSources.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mb-1.5">
-                    {mentionedSources.map((s, i) => (
-                      <a
-                        key={i}
-                        href={s.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/[0.06] border border-white/[0.08] text-white/55 text-[11px] hover:bg-white/[0.1] hover:text-white/75 transition-all no-underline"
-                      >
-                        <Favicon url={s.url} size={11} />
-                        <span>{extractSiteName(s)}</span>
-                      </a>
-                    ))}
-                  </div>
-                )}
-                <div className="leading-[1.75] text-white/88">
-                  {children}
-                  {/* Trailing favicon cluster at end of last paragraph */}
-                  {isLast && hasSources && <InlineFaviconCluster sources={sources!} />}
-                </div>
-              </div>
-            );
-          },
+          // ── Headings ──────────────────────────────────────────────────────────
           h1: ({ children }) => <h1 className="text-base font-bold mb-3 mt-5 first:mt-0 text-white border-b border-white/10 pb-1.5">{children}</h1>,
-          h2: ({ children }) => <h2 className="text-sm font-semibold mb-2 mt-4 first:mt-0 text-white">{children}</h2>,
-          h3: ({ children }) => <h3 className="text-sm font-medium mb-2 mt-3 first:mt-0 text-white/90">{children}</h3>,
-          ul: ({ children }) => <ul className="mb-3 space-y-1.5 pl-0 list-none">{children}</ul>,
-          ol: ({ children }) => <ol className="mb-3 space-y-1.5 pl-0 list-none" style={{ counterReset: "list-counter" }}>{children}</ol>,
+          h2: ({ children }) => <h2 className="text-[0.9rem] font-semibold mb-2 mt-4 first:mt-0 text-white">{children}</h2>,
+          h3: ({ children }) => <h3 className="text-sm font-medium mb-1.5 mt-3 first:mt-0 text-white/90">{children}</h3>,
+          h4: ({ children }) => <h4 className="text-sm font-medium mb-1 mt-2 first:mt-0 text-white/75">{children}</h4>,
+
+          // ── Lists ─────────────────────────────────────────────────────────────
+          ul: ({ children }) => <ul className="mb-3 space-y-1 pl-0 list-none">{children}</ul>,
+          ol: ({ children }) => <ol className="mb-3 space-y-1 pl-0 list-none">{children}</ol>,
           li: ({ children, ...props }) => {
             const node = (props as any).node;
-            const isOrdered = node?.parentNode?.tagName === "ol" || node?.parent?.tagName === "ol";
+            // react-markdown mdast: parent list node carries `ordered: boolean`
+            const ordered: boolean = node?.parent?.ordered ?? node?.parentNode?.ordered ?? false;
+            const index: number = node?.parent?.children
+              ? (node.parent.children as unknown[]).indexOf(node)
+              : -1;
             return (
-              <li className="flex gap-2.5 text-white/85 leading-relaxed">
-                {isOrdered ? <span className="text-white/30 font-mono text-xs mt-0.5 shrink-0">•</span> : <span className="text-white/30 mt-2 shrink-0 h-1.5 w-1.5 rounded-full bg-current" />}
-                <span>{children}</span>
+              <li className="flex gap-2.5 text-white/85 leading-relaxed items-baseline">
+                {ordered
+                  ? <span className="text-white/35 font-mono text-[11px] shrink-0 min-w-[18px] text-right select-none">
+                      {index >= 0 ? `${index + 1}.` : "•"}
+                    </span>
+                  : <span className="mt-[9px] shrink-0 h-[5px] w-[5px] rounded-full bg-white/25 select-none" />
+                }
+                <span className="flex-1 min-w-0">{children}</span>
               </li>
             );
           },
+
+          // ── Inline ────────────────────────────────────────────────────────────
           strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
           em: ({ children }) => <em className="italic text-white/70">{children}</em>,
           a: ({ href, children }) => (
-            <a href={href} target="_blank" rel="noopener noreferrer" className="text-white/80 underline underline-offset-2 decoration-white/25 hover:text-white hover:decoration-white transition-all">
+            <a href={href} target="_blank" rel="noopener noreferrer"
+              className="text-white/75 underline underline-offset-2 decoration-white/20 hover:text-white hover:decoration-white/60 transition-all">
               {children}
             </a>
           ),
+          del: ({ children }) => <del className="line-through text-white/35">{children}</del>,
+
+          // ── Block elements ────────────────────────────────────────────────────
           blockquote: ({ children }) => (
-            <blockquote className="border-l-2 border-white/20 pl-4 my-3 text-white/55 italic text-sm py-1 bg-white/[0.02] rounded-r-lg">{children}</blockquote>
+            <blockquote className="border-l-2 border-white/20 pl-4 my-3 text-white/50 italic text-sm py-0.5 bg-white/[0.02] rounded-r-lg">
+              {children}
+            </blockquote>
           ),
-          hr: () => <hr className="border-white/10 my-5" />,
+          hr: () => <hr className="border-white/[0.08] my-5" />,
           pre: ({ children }) => <>{children}</>,
+
+          // ── Media ─────────────────────────────────────────────────────────────
           img: ({ src, alt }) => src ? <ImageBlock src={src} alt={alt} /> : null,
+
+          // ── Code ──────────────────────────────────────────────────────────────
           code: ({ className, children }) => {
             const match = /language-(\w+)/.exec(className || "");
             const code = String(children).replace(/\n$/, "");
             if (match?.[1] === "svg") return <SvgBlock code={code} />;
             if (match || code.includes("\n")) return <CodeBlock language={match?.[1] ?? ""} code={code} />;
-            return <code className="text-[0.8em] bg-white/[0.08] text-white/85 px-1.5 py-0.5 rounded-md font-mono border border-white/10">{children}</code>;
+            return <code className="text-[0.8em] bg-white/[0.07] text-white/85 px-1.5 py-0.5 rounded-md font-mono border border-white/[0.09]">{children}</code>;
           },
+
+          // ── Tables ────────────────────────────────────────────────────────────
           table: ({ children }) => (
             <div className="overflow-x-auto my-4 rounded-xl border border-white/10">
               <table className="w-full text-xs border-collapse">{children}</table>
@@ -736,15 +778,22 @@ export function MessageContent({ content, sources, timeInfo }: MessageContentPro
           ),
           thead: ({ children }) => <thead className="bg-white/[0.04]">{children}</thead>,
           tbody: ({ children }) => <tbody>{children}</tbody>,
-          tr: ({ children }) => <tr className="border-b border-white/[0.06] last:border-0">{children}</tr>,
-          th: ({ children }) => <th className="text-left px-3 py-2.5 font-semibold text-white/75 text-xs">{children}</th>,
+          tr: ({ children }) => <tr className="border-b border-white/[0.05] last:border-0">{children}</tr>,
+          th: ({ children }) => <th className="text-left px-3 py-2.5 font-semibold text-white/70 text-[11px] uppercase tracking-wide">{children}</th>,
           td: ({ children }) => <td className="px-3 py-2 text-white/60 border-l border-white/[0.04] first:border-l-0">{children}</td>,
         }}
       >
         {content}
       </ReactMarkdown>
 
-      {/* Action bar — always shown below AI messages */}
+      {/* Source favicon strip — only when sources exist, shown once below content */}
+      {hasSources && (
+        <div className="mt-2 mb-1">
+          <InlineFaviconCluster sources={sources!} />
+        </div>
+      )}
+
+      {/* Action bar */}
       <MessageActions content={content} sources={sources} />
     </div>
   );
