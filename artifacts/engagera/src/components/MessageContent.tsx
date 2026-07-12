@@ -400,15 +400,47 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
 }
 
 // ── Image block ───────────────────────────────────────────────────────────────
+const IMAGE_LOAD_MAX_RETRIES = 3;
+
 function ImageBlock({ src, alt }: { src: string; alt?: string }) {
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
   const [expanded, setExpanded] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // data: URIs are embedded bytes with no network round-trip — never worth
+  // retrying and never expected to fail. Only http(s) URLs (e.g. a poster
+  // the backend couldn't inline) get transient-failure retries.
+  const isDataUri = /^data:/i.test(src);
+
+  useEffect(() => {
+    setStatus("loading");
+    setAttempt(0);
+  }, [src]);
+
+  useEffect(() => () => { if (retryTimer.current) clearTimeout(retryTimer.current); }, []);
+
+  const handleError = () => {
+    if (!isDataUri && attempt < IMAGE_LOAD_MAX_RETRIES) {
+      retryTimer.current = setTimeout(() => {
+        setAttempt((a) => a + 1);
+        setStatus("loading");
+      }, 500 * (attempt + 1));
+    } else {
+      setStatus("error");
+    }
+  };
+
+  // Cache-bust each retry so the browser doesn't just replay the same
+  // failed network response from a warm cache entry.
+  const attemptSrc = isDataUri || attempt === 0 ? src : `${src}${src.includes("?") ? "&" : "?"}_retry=${attempt}`;
+
   return (
     <div className="my-3">
       {status === "loading" && (
         <div className="w-64 h-48 rounded-xl border border-white/10 bg-[#111] flex flex-col items-center justify-center gap-3">
           <div className="flex gap-1.5">{[0, 150, 300].map(d => <span key={d} className="h-1.5 w-1.5 rounded-full bg-white/30 animate-bounce" style={{ animationDelay: `${d}ms` }} />)}</div>
-          <span className="text-xs text-white/35">Generating…</span>
+          <span className="text-xs text-white/35">{attempt > 0 ? "Retrying…" : "Loading…"}</span>
         </div>
       )}
       {status === "error" && (
@@ -417,7 +449,7 @@ function ImageBlock({ src, alt }: { src: string; alt?: string }) {
         </div>
       )}
       {(status === "loading" || status === "loaded") && (
-        <img src={src} alt={alt || "Image"} onLoad={() => setStatus("loaded")} onError={() => setStatus("error")}
+        <img key={attempt} src={attemptSrc} alt={alt || "Image"} onLoad={() => setStatus("loaded")} onError={handleError}
           style={{ display: status === "loaded" ? undefined : "none" }}
           className={`rounded-xl object-cover cursor-pointer ${expanded ? "max-w-full w-full" : "max-w-sm"}`}
           onClick={() => setExpanded(v => !v)} />
@@ -515,8 +547,17 @@ function MediaCardsRow({ titles }: { titles: string[] }) {
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
+// A markdown image (![alt](url)) means a tool already embedded real,
+// verified media (e.g. TMDB posters) directly in the message. In that case
+// skip the heuristic title-guessing card row below — it fetches thumbnails
+// from Wikipedia by regex-matched title, which has no relation to the actual
+// movie/show and has been observed to show the wrong poster and a wrong
+// "year" (e.g. a person's birth year scraped from a biography page).
+const MARKDOWN_IMAGE_RE = /!\[[^\]]*\]\([^)]+\)/;
+
 export function MessageContent({ content, sources, timeInfo }: MessageContentProps) {
-  const mediaTitles = detectMediaTitles(content);
+  const hasInlineImages = MARKDOWN_IMAGE_RE.test(content);
+  const mediaTitles = hasInlineImages ? [] : detectMediaTitles(content);
   const hasSources = sources && sources.length > 0;
 
   // Count paragraphs to find the last one for inline favicon injection

@@ -1155,8 +1155,8 @@ interface MovieQuery { genreIds: number[]; similarTo?: string; yearFrom?: number
 
 function detectMovieQuery(text: string): MovieQuery | null {
   const t = text.toLowerCase();
-  const mentionsMovie = /\b(movie|film|flick|to watch|watch tonight|watch this weekend)\b/i.test(t);
-  const asksForSuggestion = /\b(recommend|suggest|what should i watch|any good|looking for|feel like watching|in the mood for|something to watch|good (movie|film)s?)\b/i.test(t);
+  const mentionsMovie = /\b(movies?|films?|flicks?|to watch|watch tonight|watch this weekend)\b/i.test(t);
+  const asksForSuggestion = /\b(recommend(ations?)?|suggest(ions?)?|what should i watch|any good|looking for|feel like watching|in the mood for|something to watch|good (movie|film)s?|based on (my|your knowledge of my)\b.*(interests?|preferences?))\b/i.test(t);
   if (!mentionsMovie && !asksForSuggestion) return null;
   if (!mentionsMovie && !/\bwatch\b/i.test(t)) return null;
 
@@ -1186,11 +1186,11 @@ function detectMovieQuery(text: string): MovieQuery | null {
   return { genreIds: [...genreIds], similarTo, yearFrom, yearTo, raw: text };
 }
 
-interface MovieResult { title: string; year: string; rating: number; overview: string; posterUrl: string | null; tmdbUrl: string }
+interface MovieResult { title: string; year: string; rating: number; overview: string; cdnUrl: string | null; dataUri: string | null; tmdbUrl: string }
 
 async function fetchMovieRecommendations(q: MovieQuery, apiKey: string, requestId: string): Promise<MovieResult[] | null> {
   const TMDB_BASE = "https://api.themoviedb.org/3";
-  const IMG_BASE  = "https://image.tmdb.org/t/p/w342";
+  const IMG_BASE  = "https://image.tmdb.org/t/p/w185";
   try {
     // deno-lint-ignore no-explicit-any
     let candidates: any[] = [];
@@ -1235,12 +1235,28 @@ async function fetchMovieRecommendations(q: MovieQuery, apiKey: string, requestI
 
     if (candidates.length === 0) return null;
 
-    return candidates.slice(0, 6).map((m) => ({
+    const picked = candidates.slice(0, 6);
+
+    // Inline posters as base64 data URIs (same pattern used for AI-generated
+    // images) so they render reliably in the chat client regardless of
+    // whether the user's network/device can reach image.tmdb.org directly.
+    // A poster that fails to fetch just falls back to no image — never a
+    // broken/dead <img> tag in the final message.
+    // NOTE: the data URI is swapped in AFTER the model call (see
+    // formatMovieBlock/agenticChat) — it is never sent to the LLM itself,
+    // since base64 image bytes add nothing for a text model and would blow
+    // out the request's context size.
+    const posterDataUris = await Promise.allSettled(
+      picked.map((m) => (m.poster_path ? posterToDataUri(`${IMG_BASE}${m.poster_path}`, requestId) : Promise.resolve(null))),
+    );
+
+    return picked.map((m, i) => ({
       title: m.title ?? m.original_title ?? "Untitled",
       year: (m.release_date ?? "").slice(0, 4) || "N/A",
       rating: Math.round((m.vote_average ?? 0) * 10) / 10,
       overview: (m.overview ?? "").slice(0, 220),
-      posterUrl: m.poster_path ? `${IMG_BASE}${m.poster_path}` : null,
+      cdnUrl: m.poster_path ? `${IMG_BASE}${m.poster_path}` : null,
+      dataUri: posterDataUris[i].status === "fulfilled" ? (posterDataUris[i] as PromiseFulfilledResult<string | null>).value : null,
       tmdbUrl: `https://www.themoviedb.org/movie/${m.id}`,
     }));
   } catch (err) {
@@ -1249,9 +1265,37 @@ async function fetchMovieRecommendations(q: MovieQuery, apiKey: string, requestI
   }
 }
 
+/** Fetch a TMDB poster and inline it as a base64 data URI so the chat client
+ * never depends on reaching image.tmdb.org over the user's own network.
+ * Fails open (returns null) on any error — the movie card just renders
+ * without a poster rather than a broken image. */
+async function posterToDataUri(url: string, requestId: string): Promise<string | null> {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(6_000) });
+    if (!res.ok) return null;
+    const contentType = res.headers.get("content-type") || "image/jpeg";
+    const buf = new Uint8Array(await res.arrayBuffer());
+    if (buf.length === 0 || buf.length > 400_000) return null; // sanity bound
+    let binary = "";
+    const chunk = 8192;
+    for (let i = 0; i < buf.length; i += chunk) {
+      binary += String.fromCharCode(...buf.subarray(i, i + chunk));
+    }
+    return `data:${contentType};base64,${btoa(binary)}`;
+  } catch (err) {
+    log("warn", "movies.poster_fetch_failed", { requestId, url, error: String(err) });
+    return null;
+  }
+}
+
 function formatMovieBlock(movies: MovieResult[]): string {
+  // Use the short TMDB CDN URL here (not the base64 data URI) — this text
+  // block goes straight into the model's context, and a handful of ~200KB
+  // base64 images would blow out the request size / token budget. The CDN
+  // URL gets swapped for the reliable data URI after the model responds
+  // (see the movie-tool call site in agenticChat).
   const lines = movies.map((m, i) => {
-    const poster = m.posterUrl ? `![${m.title} poster](${m.posterUrl})\n` : "";
+    const poster = m.cdnUrl ? `![${m.title} poster](${m.cdnUrl})\n` : "";
     return `${i + 1}. ${poster}**${m.title}** (${m.year}) — Rating ${m.rating}/10\n${m.overview || "No synopsis available."}\n[More on TMDB](${m.tmdbUrl})`;
   }).join("\n\n");
   return [
@@ -2005,8 +2049,15 @@ async function agenticChat(
         } else { mConvo.unshift({ role: "system", content: movieBlock }); }
         const mResult = await callWithFallback(chain, keys, mConvo, 1536, requestId);
         if (mResult.ok) {
-          log("info", "movies.tool.success", { requestId, count: movies.length, similarTo: movieQ.similarTo, genres: movieQ.genreIds });
-          return { reply: mResult.content, inputTokens: mResult.inputTokens, outputTokens: mResult.outputTokens,
+          // Swap the short CDN URLs the model saw for reliable base64 data
+          // URIs before returning to the client — this is what makes the
+          // posters immune to the client's own network reaching TMDB's CDN.
+          let finalReply = mResult.content;
+          for (const m of movies) {
+            if (m.cdnUrl && m.dataUri) finalReply = finalReply.split(m.cdnUrl).join(m.dataUri);
+          }
+          log("info", "movies.tool.success", { requestId, count: movies.length, similarTo: movieQ.similarTo, genres: movieQ.genreIds, postersInlined: movies.filter((m) => m.dataUri).length });
+          return { reply: finalReply, inputTokens: mResult.inputTokens, outputTokens: mResult.outputTokens,
             provider: mResult.provider, providerModel: mResult.model, ...(crawledUrls.length && { crawledUrls }) };
         }
       } else {
