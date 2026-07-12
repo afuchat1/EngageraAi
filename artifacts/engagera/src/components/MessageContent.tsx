@@ -462,6 +462,39 @@ function ImageBlock({ src, alt }: { src: string; alt?: string }) {
 // ── Media card horizontal scroll ──────────────────────────────────────────────
 interface MediaCard { title: string; year?: string; thumbnail?: string | null; fetching: boolean; }
 
+// ── Module-level thumbnail cache (persists across renders/re-mounts) ──────────
+// Key: lowercase title. Value: resolved thumbnail URL or null (not found).
+const thumbCache = new Map<string, { thumb: string | null; year?: string }>();
+// In-flight promises so concurrent renders don't trigger duplicate requests.
+const thumbInFlight = new Map<string, Promise<{ thumb: string | null; year?: string }>>();
+
+type WikiSummary = { thumbnail?: { source: string }; description?: string };
+
+function fetchWikiThumb(title: string): Promise<{ thumb: string | null; year?: string }> {
+  const key = title.toLowerCase();
+  if (thumbCache.has(key)) return Promise.resolve(thumbCache.get(key)!);
+  if (thumbInFlight.has(key)) return thumbInFlight.get(key)!;
+
+  const slug = encodeURIComponent(title.replace(/\s+/g, "_"));
+  const get = (suffix: string) =>
+    fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${slug}${suffix}`, {
+      signal: AbortSignal.timeout(5000),
+    }).then<WikiSummary>(r => (r.ok ? r.json() : Promise.reject()));
+
+  // Race all three variants simultaneously — resolve as soon as any succeeds.
+  const p = Promise.any([get("_film"), get(""), get("_TV_series")])
+    .then(data => ({ thumb: data.thumbnail?.source ?? null, year: data.description?.match(/\d{4}/)?.[0] }))
+    .catch(() => ({ thumb: null }))
+    .then(result => {
+      thumbCache.set(key, result);
+      thumbInFlight.delete(key);
+      return result;
+    });
+
+  thumbInFlight.set(key, p);
+  return p;
+}
+
 const MEDIA_SKIP = /^(Step|Part|Section|Chapter|Option|Note|Example|Important|Warning|Tip|Reason|First|Second|Third|Then|Next|Finally|Also|However|The following|Note that|Keep in mind|Remember|Consider|Additionally|Furthermore|Moreover)\s/i;
 
 function detectMediaTitles(content: string): string[] {
@@ -504,6 +537,8 @@ function detectMediaTitles(content: string): string[] {
       !MEDIA_SKIP.test(title) &&
       !seen.has(title.toLowerCase())
     ) {
+      // Kick off the Wikipedia fetch immediately — before the card row even renders.
+      fetchWikiThumb(title);
       titles.push(title);
       seen.add(title.toLowerCase());
     }
@@ -513,27 +548,62 @@ function detectMediaTitles(content: string): string[] {
 }
 
 function MediaCardsRow({ titles }: { titles: string[] }) {
-  const [cards, setCards] = useState<MediaCard[]>(titles.map(t => ({ title: t, fetching: true, thumbnail: null })));
+  // Initialise from cache immediately — titles already pre-fetched will show
+  // their image on first render with no spinner at all.
+  const [cards, setCards] = useState<MediaCard[]>(() =>
+    titles.map(t => {
+      const cached = thumbCache.get(t.toLowerCase());
+      return cached
+        ? { title: t, fetching: false, thumbnail: cached.thumb, year: cached.year }
+        : { title: t, fetching: true, thumbnail: null };
+    })
+  );
+
+  // Sync when titles list grows (more detected while streaming) or when an
+  // in-flight promise resolves after the component has already mounted.
+  const titlesKey = titles.join("||");
   useEffect(() => {
-    titles.forEach((title, idx) => {
-      const slug = encodeURIComponent(title.replace(/\s+/g, "_"));
-      const tryFetch = (url: string) => fetch(url, { signal: AbortSignal.timeout(6000) }).then(r => r.ok ? r.json() : Promise.reject());
-      tryFetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${slug}_film`)
-        .catch(() => tryFetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${slug}`))
-        .catch(() => tryFetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${slug}_TV_series`))
-        .then(data => setCards(prev => prev.map((c, i) => i === idx ? { ...c, fetching: false, thumbnail: data.thumbnail?.source ?? null, year: data.description?.match(/\d{4}/)?.[0] } : c)))
-        .catch(() => setCards(prev => prev.map((c, i) => i === idx ? { ...c, fetching: false } : c)));
+    setCards(prev => {
+      // Add any new titles not yet in state
+      const prevTitles = new Set(prev.map(c => c.title.toLowerCase()));
+      const next = [...prev];
+      for (const t of titles) {
+        if (!prevTitles.has(t.toLowerCase())) {
+          const cached = thumbCache.get(t.toLowerCase());
+          next.push(cached
+            ? { title: t, fetching: false, thumbnail: cached.thumb, year: cached.year }
+            : { title: t, fetching: true, thumbnail: null });
+        }
+      }
+      return next;
+    });
+
+    // Subscribe to any still-loading promises
+    titles.forEach((title) => {
+      if (thumbCache.has(title.toLowerCase())) return; // already resolved
+      fetchWikiThumb(title).then(result => {
+        setCards(prev =>
+          prev.map(c =>
+            c.title.toLowerCase() === title.toLowerCase()
+              ? { ...c, fetching: false, thumbnail: result.thumb, year: result.year }
+              : c
+          )
+        );
+      });
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [titlesKey]);
+
   return (
     <div className="flex gap-3 overflow-x-auto pb-2 my-4 -mx-1 px-1" style={{ scrollbarWidth: "none" }}>
       {cards.map((card, i) => (
-        <div key={i} className="shrink-0 w-28 rounded-xl overflow-hidden border border-white/10 bg-white/[0.03]">
+        <div key={card.title + i} className="shrink-0 w-28 rounded-xl overflow-hidden border border-white/10 bg-white/[0.03]">
           <div className="w-28 h-40 relative bg-white/[0.05]">
-            {card.fetching ? <div className="w-full h-full flex items-center justify-center"><div className="w-5 h-5 border border-white/20 border-t-white/60 rounded-full animate-spin" /></div>
-              : card.thumbnail ? <img src={card.thumbnail} alt={card.title} className="w-full h-full object-cover" loading="lazy" />
-              : <div className="w-full h-full flex items-center justify-center"><Film className="w-6 h-6 text-white/15" /></div>}
+            {card.fetching
+              ? <div className="w-full h-full flex items-center justify-center"><div className="w-5 h-5 border border-white/20 border-t-white/60 rounded-full animate-spin" /></div>
+              : card.thumbnail
+                ? <img src={card.thumbnail} alt={card.title} className="w-full h-full object-cover" />
+                : <div className="w-full h-full flex items-center justify-center"><Film className="w-6 h-6 text-white/15" /></div>}
             <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-black/70 to-transparent pointer-events-none" />
           </div>
           <div className="p-2">
