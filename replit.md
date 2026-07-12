@@ -1,44 +1,49 @@
-# [Project name]
+# Engagera
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Engagera is an AI chat assistant web app (multi-model chat, usage tracking, API keys, admin/reviewer tooling) ported from Vercel into this Replit pnpm workspace.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/engagera run dev` — run the web app
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from `lib/api-spec/openapi.yaml` (used only to keep generated React Query hook names stable; see Architecture decisions)
 
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Frontend: React 19 + Vite + wouter, Tailwind, shadcn/radix UI
+- Backend/auth/data: **Supabase** (Postgres, Auth, Edge Functions) — external, not part of this workspace
+- API codegen: Orval (from `lib/api-spec/openapi.yaml`) generates typed React Query hooks purely for developer ergonomics
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/engagera/` — the only artifact. All app code, pages, and routes live here.
+- `lib/api-spec/openapi.yaml` — documents the shape of the Supabase Edge Function endpoints the frontend calls (models, api-keys, usage, dashboard, chat, conversations, admin, reviewer, dataset-export). Purely descriptive — nothing here is served by this workspace.
+- `artifacts/engagera/src/App.tsx` — the `setUrlMapper` call here is the single source of truth for how every `/api/*` path is rewritten to a real Supabase Edge Function URL (`${SUPABASE_URL}/functions/v1/...`). Anyone adding a new endpoint must add a mapping here.
+- `artifacts/engagera/src/lib/supabase.ts` — Supabase client + public URL/anon key (safe to commit; scoped by Supabase RLS).
+- `attached_assets/` — image assets referenced via the `@assets` Vite alias.
+- `lib/db/` — scaffold Drizzle/Postgres package, intentionally left empty/unused. This app does not use a local database.
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- **No Express API server.** The original Vercel deployment had a thin Express proxy in front of Supabase; it added no logic of its own (every route just forwarded to a Supabase Edge Function, or in two dead-code cases — `devChat`/`stt` — duplicated logic Supabase already had). Per explicit instruction, the app now calls Supabase Edge Functions directly from the browser via `setUrlMapper`/`setFallbackBearerToken`/`setGuestSessionId` in `@workspace/api-client-react`. There is intentionally no `artifacts/api-server`.
+- **Supabase is the only backend.** Auth, database, and all business logic (chat, usage, admin, reviewer, dataset export, speech-to-text) live in Supabase Edge Functions, outside this repo. Do not migrate this data/logic into the workspace's `lib/db` Drizzle package.
+- **OpenAPI spec is descriptive-only here.** Normally `lib/api-spec/openapi.yaml` gates a real backend; in this app it exists solely so Orval can generate nicely-typed React Query hooks (`@workspace/api-client-react`) for calling Supabase — there is no server implementing these routes in this workspace.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+Chat with multiple AI models (auto-routing between lite/pro/vision), guest mode with a message limit, sign-up/sign-in, per-user usage dashboard, API key management, and an admin area (dataset review, model registry, analytics, storage) gated by role.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Do not migrate Supabase (auth/DB/Edge Functions) into the workspace's local Postgres/Drizzle package — Supabase must remain the source of truth for data and auth.
+- Do not add any local API server — all backend calls must go directly to Supabase.
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- The `/api/*` paths used by generated hooks are never actually requested from this workspace's origin — `setUrlMapper` in `App.tsx` intercepts them client-side and rewrites to Supabase before `fetch` runs. If a network call for `/api/...` unexpectedly hits this app's own dev server, it's because a new endpoint was called without adding a mapping.
+- `usePhoneVoice.ts` calls the Supabase `stt` Edge Function directly with a hardcoded URL (bypassing `customFetch`) — keep it in sync with `SUPABASE_URL` if the Supabase project ever changes.
 
 ## Pointers
 
