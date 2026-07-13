@@ -1,7 +1,7 @@
 import { useState } from "react";
 import PublicLayout from "@/components/layout/PublicLayout";
 import { Copy, Check, ChevronDown, ChevronRight, Terminal, Key, Zap, BookOpen, AlertCircle, Layers, Menu, X } from "lucide-react";
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/supabase";
+import { SUPABASE_URL } from "@/lib/supabase";
 
 const BASE_URL = `${SUPABASE_URL}/functions/v1`;
 
@@ -265,8 +265,7 @@ export default function Docs() {
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm mb-1.5">Make your first request</p>
                     <CodeBlock language="bash" code={`curl -X POST "${BASE_URL}/chat" \\
-  -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \\
-  -H "x-engagera-api-key: YOUR_API_KEY" \\
+  -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "engagera-pro",
@@ -301,15 +300,11 @@ export default function Docs() {
             {/* Authentication */}
             <Section id="authentication" title="Authentication" icon={Key}>
               <p className="text-white/60 text-sm leading-relaxed mb-5">
-                Every request to <code className="font-mono text-xs bg-white/10 px-1 py-0.5 rounded">/chat</code> needs <strong className="text-white/70">two</strong> headers: our public anon key in <code className="font-mono text-xs bg-white/10 px-1 py-0.5 rounded">Authorization</code> (required by the gateway in front of the API), and your personal key in <code className="font-mono text-xs bg-white/10 px-1 py-0.5 rounded">x-engagera-api-key</code>.
+                All API requests must include your API key as a Bearer token in the <code className="font-mono text-xs bg-white/10 px-1 py-0.5 rounded">Authorization</code> header.
               </p>
-              <CodeBlock language="http" code={`Authorization: Bearer ${SUPABASE_ANON_KEY}
-x-engagera-api-key: eng_your_api_key_here`} />
+              <CodeBlock language="http" code={`Authorization: Bearer eng_your_api_key_here`} />
               <Callout>
-                Never expose your personal <code className="font-mono text-[11px]">eng_</code> key in frontend code, mobile apps, or public repositories. Always proxy requests through your own backend server. Rotate keys immediately if compromised — you can do this in the Dashboard.
-              </Callout>
-              <Callout icon={AlertCircle}>
-                <strong className="text-white/80">Known issue:</strong> sending only <code className="font-mono text-[11px]">Authorization: Bearer eng_...</code> (without the anon key above) returns a <code className="font-mono text-[11px]">401 Invalid JWT</code> — the gateway in front of the API rejects it before your key is ever checked. Always send both headers as shown above.
+                Never expose your API key in frontend code, mobile apps, or public repositories. Always proxy requests through your own backend server. Rotate keys immediately if compromised — you can do this in the Dashboard.
               </Callout>
               <div className="mt-5 rounded-xl border border-white/10 overflow-hidden">
                 <div className="px-4 py-3 bg-white/[0.03] border-b border-white/10">
@@ -390,8 +385,7 @@ x-engagera-api-key: eng_your_api_key_here`} />
                   label: "curl",
                   content: (
                     <CodeBlock language="bash" code={`curl -X POST "${BASE_URL}/chat" \\
-  -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \\
-  -H "x-engagera-api-key: YOUR_API_KEY" \\
+  -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "engagera-pro",
@@ -408,8 +402,7 @@ x-engagera-api-key: eng_your_api_key_here`} />
                     <CodeBlock language="javascript" code={`const response = await fetch("${BASE_URL}/chat", {
   method: "POST",
   headers: {
-    "Authorization": "Bearer ${SUPABASE_ANON_KEY}",
-    "x-engagera-api-key": "YOUR_API_KEY",
+    "Authorization": "Bearer YOUR_API_KEY",
     "Content-Type": "application/json",
   },
   body: JSON.stringify({
@@ -432,8 +425,7 @@ console.log(data.message.content);`} />
 response = requests.post(
     "${BASE_URL}/chat",
     headers={
-        "Authorization": "Bearer ${SUPABASE_ANON_KEY}",
-        "x-engagera-api-key": "YOUR_API_KEY",
+        "Authorization": "Bearer YOUR_API_KEY",
         "Content-Type": "application/json",
     },
     json={
@@ -574,10 +566,6 @@ const BASE = "${BASE_URL}";
 interface Message { role: "user" | "assistant" | "system"; content: string; }
 interface ChatOptions { model?: string; }
 
-// Public anon key required by the gateway in front of the API — safe to
-// hardcode, it is not your secret key.
-const ANON_KEY = "${SUPABASE_ANON_KEY}";
-
 export async function chat(
   apiKey: string,
   messages: Message[],
@@ -586,8 +574,7 @@ export async function chat(
   const res = await fetch(\`\${BASE}/chat\`, {
     method: "POST",
     headers: {
-      "Authorization": \`Bearer \${ANON_KEY}\`,
-      "x-engagera-api-key": apiKey,
+      "Authorization": \`Bearer \${apiKey}\`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -616,10 +603,6 @@ from typing import Optional
 
 BASE = "${BASE_URL}"
 
-# Public anon key required by the gateway in front of the API — safe to
-# hardcode, it is not your secret key.
-ANON_KEY = "${SUPABASE_ANON_KEY}"
-
 def chat(
     api_key: str,
     messages: list[dict],
@@ -629,8 +612,7 @@ def chat(
     res = requests.post(
         f"{BASE}/chat",
         headers={
-            "Authorization": f"Bearer {ANON_KEY}",
-            "x-engagera-api-key": api_key,
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         },
         json=payload,
