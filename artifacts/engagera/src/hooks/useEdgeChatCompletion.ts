@@ -21,6 +21,7 @@ export interface SearchSource {
   title: string;
   url: string;
   snippet: string;
+  image?: string;  // og:image / twitter:image extracted from the crawled page
 }
 
 export interface SearchInfo {
@@ -43,6 +44,7 @@ export interface ChatResponse {
   guestMessageLimit?: number;
   searchInfo?: SearchInfo;
   crawledUrls?: string[];
+  crawledSources?: SearchSource[];  // rich source objects with og:image for user-pasted URLs
   timeInfo?: TimeInfo;
 }
 

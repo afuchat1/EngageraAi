@@ -75,37 +75,52 @@ function Favicon({ url, size = 16 }: { url: string; size?: number }) {
 
 function SourceCard({ source, index }: { source: SearchSource; index: number }) {
   const siteName = getSiteName(source);
+  const [imgFailed, setImgFailed] = useState(false);
 
   return (
     <a
       href={source.url}
       target="_blank"
       rel="noopener noreferrer"
-      className="group flex flex-col gap-2 min-w-[200px] max-w-[220px] shrink-0 rounded-2xl border border-white/[0.07] bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/[0.13] transition-all p-3 cursor-pointer"
+      className="group flex flex-col gap-0 min-w-[200px] max-w-[220px] shrink-0 rounded-2xl border border-white/[0.07] bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/[0.13] transition-all overflow-hidden cursor-pointer"
     >
-      <div className="flex items-center gap-2 min-w-0">
-        <Favicon url={source.url} size={18} />
-        <span className="text-[11px] text-muted-foreground/70 truncate font-medium flex-1 min-w-0">
-          {siteName}
-        </span>
-        <ExternalLink className="h-3 w-3 text-muted-foreground/20 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
-      </div>
-
-      <p className="text-[12px] font-semibold text-foreground/90 leading-snug line-clamp-2">
-        {source.title}
-      </p>
-
-      {source.snippet && (
-        <p className="text-[11px] text-muted-foreground/55 leading-snug line-clamp-2">
-          {source.snippet}
-        </p>
+      {/* Real og:image banner when available */}
+      {source.image && !imgFailed && (
+        <div className="w-full h-[90px] overflow-hidden bg-white/[0.03] shrink-0">
+          <img
+            src={source.image}
+            alt=""
+            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+            onError={() => setImgFailed(true)}
+          />
+        </div>
       )}
 
-      <div className="flex items-center gap-1.5 mt-auto pt-1">
-        <Favicon url={source.url} size={13} />
-        <span className="text-[10px] text-muted-foreground/40 truncate font-mono">
-          {getDomain(source.url)}
-        </span>
+      <div className="flex flex-col gap-2 p-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <Favicon url={source.url} size={18} />
+          <span className="text-[11px] text-muted-foreground/70 truncate font-medium flex-1 min-w-0">
+            {siteName}
+          </span>
+          <ExternalLink className="h-3 w-3 text-muted-foreground/20 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+        </div>
+
+        <p className="text-[12px] font-semibold text-foreground/90 leading-snug line-clamp-2">
+          {source.title}
+        </p>
+
+        {source.snippet && (
+          <p className="text-[11px] text-muted-foreground/55 leading-snug line-clamp-2">
+            {source.snippet}
+          </p>
+        )}
+
+        <div className="flex items-center gap-1.5 mt-auto pt-1">
+          <Favicon url={source.url} size={13} />
+          <span className="text-[10px] text-muted-foreground/40 truncate font-mono">
+            {getDomain(source.url)}
+          </span>
+        </div>
       </div>
     </a>
   );

@@ -16,6 +16,7 @@ export interface Source {
   title: string;
   url: string;
   snippet?: string;
+  image?: string;  // og:image / twitter:image from the crawled page
 }
 
 interface MessageContentProps {
@@ -199,8 +200,18 @@ function SourcesSheet({ sources, onClose }: { sources: Source[]; onClose: () => 
                 onClick={onClose}
                 className="flex items-center gap-3 px-2.5 py-2.5 rounded-2xl hover:bg-white/[0.05] active:bg-white/[0.08] transition-colors group"
               >
-                <span className="w-8 h-8 rounded-full border border-white/10 bg-white/[0.04] flex items-center justify-center overflow-hidden shrink-0">
-                  <Favicon url={s.url} size={16} />
+                {/* Real og:image when available, else favicon */}
+                <span className="w-10 h-10 rounded-xl border border-white/10 bg-white/[0.04] flex items-center justify-center overflow-hidden shrink-0">
+                  {s.image ? (
+                    <img
+                      src={s.image}
+                      alt=""
+                      className="w-full h-full object-cover"
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; (e.currentTarget.nextSibling as HTMLElement | null)?.removeAttribute("style"); }}
+                    />
+                  ) : (
+                    <Favicon url={s.url} size={20} />
+                  )}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-[13px] font-semibold text-white/85 group-hover:text-white truncate transition-colors">
@@ -746,10 +757,59 @@ function MediaCardsRow({ titles }: { titles: string[] }) {
 // "year" (e.g. a person's birth year scraped from a biography page).
 const MARKDOWN_IMAGE_RE = /!\[[^\]]*\]\([^)]+\)/;
 
+// ── Source image cards — horizontal scroll of real og:images from crawled pages
+function SourceImageCards({ sources }: { sources: Source[] }) {
+  const withImages = sources.filter(s => s.image);
+  if (withImages.length === 0) return null;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [canLeft, setCanLeft]   = useState(false);
+  const [canRight, setCanRight] = useState(false);
+  const sync = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanLeft(el.scrollLeft > 4);
+    setCanRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 4);
+  };
+  useEffect(() => {
+    sync();
+    const el = scrollRef.current;
+    el?.addEventListener("scroll", sync, { passive: true });
+    return () => el?.removeEventListener("scroll", sync);
+  }, []);
+  const pan = (dir: "l" | "r") =>
+    scrollRef.current?.scrollBy({ left: dir === "r" ? 300 : -300, behavior: "smooth" });
+
+  return (
+    <div className="relative my-5 group/srcrow">
+      <button onClick={() => pan("l")} className={`absolute left-0 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full bg-black/80 border border-white/10 flex items-center justify-center text-white/70 hover:text-white hover:bg-black transition-all duration-150 ${canLeft ? "opacity-0 group-hover/srcrow:opacity-100" : "opacity-0 pointer-events-none"}`}><ChevronLeft className="w-4 h-4" /></button>
+      <div ref={scrollRef} className="flex gap-2.5 overflow-x-auto select-none" style={{ scrollbarWidth: "none", scrollSnapType: "x mandatory" } as React.CSSProperties}>
+        {withImages.map((s, i) => (
+          <a key={i} href={s.url} target="_blank" rel="noopener noreferrer"
+            className="shrink-0 relative rounded-xl overflow-hidden bg-white/[0.04] cursor-pointer group/srccard hover:ring-1 hover:ring-white/20 transition-all"
+            style={{ width: 140, height: 100, scrollSnapAlign: "start" }}
+          >
+            <img src={s.image!} alt={s.title} className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover/srccard:scale-105"
+              onError={(e) => { (e.currentTarget.parentElement as HTMLElement).style.display = "none"; }}
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent pointer-events-none" />
+            <div className="absolute bottom-0 left-0 right-0 px-2 pb-2 pt-4 flex items-end gap-1.5">
+              <Favicon url={s.url} size={11} />
+              <p className="text-[9px] font-semibold leading-snug text-white/90 line-clamp-2 truncate">{extractSiteName(s)}</p>
+            </div>
+          </a>
+        ))}
+      </div>
+      <button onClick={() => pan("r")} className={`absolute right-0 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full bg-black/80 border border-white/10 flex items-center justify-center text-white/70 hover:text-white hover:bg-black transition-all duration-150 ${canRight ? "opacity-0 group-hover/srcrow:opacity-100" : "opacity-0 pointer-events-none"}`}><ChevronRight className="w-4 h-4" /></button>
+    </div>
+  );
+}
+
 export function MessageContent({ content, sources, timeInfo }: MessageContentProps) {
   const hasInlineImages = MARKDOWN_IMAGE_RE.test(content);
-  const mediaTitles = hasInlineImages ? [] : detectMediaTitles(content);
   const hasSources = sources && sources.length > 0;
+  // Only show Wikipedia media cards when there are no real web sources — otherwise
+  // detectMediaTitles fires on summarised page content and shows blank placeholders.
+  const mediaTitles = hasInlineImages || hasSources ? [] : detectMediaTitles(content);
 
   return (
     <div className="text-[0.875rem] leading-relaxed text-white/90 min-w-0 overflow-hidden">
@@ -757,7 +817,10 @@ export function MessageContent({ content, sources, timeInfo }: MessageContentPro
       {/* Clock widget */}
       {timeInfo && <ClockWidget timeInfo={timeInfo} />}
 
-      {/* Movie / show discovery carousel */}
+      {/* Real og:images from crawled sources — shown instead of Wikipedia guesses */}
+      {hasSources && <SourceImageCards sources={sources!} />}
+
+      {/* Movie / show discovery carousel — only when no web sources */}
       {mediaTitles.length >= 2 && <MediaCardsRow titles={mediaTitles} />}
 
       <ReactMarkdown

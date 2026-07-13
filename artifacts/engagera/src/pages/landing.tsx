@@ -81,11 +81,13 @@ export default function Landing() {
     try {
       const response = await callEdgeChat({ messages: apiMessages, model: msgModel, conversationId });
 
-      const sources = response.searchInfo?.sources;
+      const rawSources = response.crawledSources?.length
+        ? response.crawledSources
+        : response.searchInfo?.sources;
       const assistantMsg: DisplayMessage = {
         role: "assistant",
         content: response.message.content,
-        sources: sources?.length ? sources as Source[] : undefined,
+        sources: rawSources?.length ? rawSources as Source[] : undefined,
         timeInfo: response.timeInfo,
       };
       setMessages([...newMessages, assistantMsg]);

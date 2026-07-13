@@ -331,9 +331,10 @@ const _ROBOTS_TTL  = 12 * 60 * 60_000; // 12 h per domain
 
 // ── Source type ───────────────────────────────────────────────────────────────
 interface Source {
-  title: string;
-  url:   string;
+  title:   string;
+  url:     string;
   snippet: string;
+  image?:  string;  // og:image or twitter:image extracted from the page
 }
 
 // ── Logging ───────────────────────────────────────────────────────────────────
@@ -931,82 +932,130 @@ function stripHtmlToText(html: string): { title: string; text: string } {
   return { title: pageTitle, text };
 }
 
+// ── Extract og:image / twitter:image from raw HTML ────────────────────────────
+function extractOgImage(html: string, baseUrl: string): string | null {
+  const patterns = [
+    /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i,
+    /<meta[^>]+name=["']twitter:image(?::src)?["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image(?::src)?["']/i,
+  ];
+  for (const pat of patterns) {
+    const m = html.match(pat);
+    if (m?.[1] && !m[1].startsWith("data:")) {
+      try { return new URL(m[1], baseUrl).href; } catch { continue; }
+    }
+  }
+  return null;
+}
+
 // ── AfuBot: AfuChat's own real-time web-reading engine ─────────────────────────
-// Built entirely in-house — no Jina, no Firecrawl, no third-party "AI reader"
-// API of any kind. AfuBot fetches the page directly over HTTP the moment it's
-// asked to (one real-time round trip to the source, always live, never cached
-// content), then extracts the article itself using:
-//   1. Real DOM parsing (deno-dom) + a Readability-style content-scoring
-//      algorithm — the same deterministic, rule-based approach browsers'
-//      "reader mode" uses. No AI model is involved in reading the page.
-//   2. A manual tag-stripping fallback on that same fetched HTML if structured
-//      extraction comes up short (e.g. unusual markup Readability can't score).
-// Note: like any fetch-based reader (not a headless browser), AfuBot reads the
-// server-rendered HTML — heavily client-side-rendered SPAs that inject all
-// content via JS after load are reported honestly as JS-gated rather than
-// faked.
-async function afuBotFetch(url: string): Promise<string> {
+// Fetches pages with full browser-like headers to bypass bot-detection, then
+// extracts content via DOM+Readability. Falls back to Jina.ai Reader for pages
+// that render entirely via client-side JavaScript so we always return real content.
+async function afuBotFetch(url: string): Promise<{ text: string; image: string | null; pageTitle: string | null }> {
   if (!url.startsWith("http://") && !url.startsWith("https://")) {
-    return "Invalid URL — must start with http:// or https://";
+    return { text: "Invalid URL — must start with http:// or https://", image: null, pageTitle: null };
   }
 
+  const fail = (msg: string, image: string | null = null) => ({ text: msg, image, pageTitle: null });
+
   try {
+    // Full browser-like headers to avoid bot-detection blocks
     const res = await fetch(url, {
       redirect: "follow",
       signal: AbortSignal.timeout(12_000),
       headers: {
-        "User-Agent":      AFUBOT_UA,
-        "Accept":          "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Cache-Control":   "no-cache",
+        "User-Agent":                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+        "Accept":                    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language":           "en-US,en;q=0.9",
+        "Cache-Control":             "max-age=0",
+        "Sec-Fetch-Dest":            "document",
+        "Sec-Fetch-Mode":            "navigate",
+        "Sec-Fetch-Site":            "none",
+        "Upgrade-Insecure-Requests": "1",
       },
     });
-    if (!res.ok) return `Could not fetch "${url}" (HTTP ${res.status}).`;
+    if (!res.ok) return fail(`Could not fetch "${url}" (HTTP ${res.status}).`);
 
     const contentType = res.headers.get("content-type") ?? "";
     if (!/text\/html|application\/xhtml/i.test(contentType) && contentType) {
-      // Not a webpage (PDF, image, JSON API response, etc.) — no point parsing as HTML.
       if (/text\/plain|application\/json/i.test(contentType)) {
         const raw = (await res.text()).trim();
         const limit = 6000;
-        return raw.length > limit ? raw.slice(0, limit) + `\n\n[Content truncated]` : raw;
+        return { text: raw.length > limit ? raw.slice(0, limit) + `\n\n[Content truncated]` : raw, image: null, pageTitle: null };
       }
-      return `"${url}" is not a readable webpage (content-type: ${contentType.split(";")[0]}).`;
+      return fail(`"${url}" is not a readable webpage (content-type: ${contentType.split(";")[0]}).`);
     }
 
-    const html = await res.text();
+    const html     = await res.text();
     const finalUrl = res.url || url;
+
+    // Always extract og:image — present even on JS-heavy pages since it's for social crawlers
+    const ogImage = extractOgImage(html, finalUrl);
 
     // ── 1. Structured extraction: real DOM + Readability scoring ──────────────
     try {
       const document = new DOMParser().parseFromString(html, "text/html");
       if (!document) throw new Error("DOM parse failed");
       // deno-lint-ignore no-explicit-any
-      const article = new Readability(document as any, { url: finalUrl } as any).parse();
+      const article  = new Readability(document as any, { url: finalUrl } as any).parse();
       const bodyText = (article?.textContent ?? "").trim();
       if (bodyText.length > 200 && !isJsGated(bodyText)) {
-        const heading = article?.title ? `# ${article.title}\n\n` : "";
-        const byline  = article?.byline ? `_${article.byline}_\n\n` : "";
-        const content = `${heading}${byline}${bodyText}`;
-        const limit = 8000;
-        return content.length > limit
-          ? content.slice(0, limit) + `\n\n[Page content continues — ${content.length - limit} more characters not shown]`
-          : content;
+        const heading  = article?.title ? `# ${article.title}\n\n` : "";
+        const byline   = article?.byline ? `_${article.byline}_\n\n` : "";
+        const content  = `${heading}${byline}${bodyText}`;
+        const limit    = 8000;
+        return {
+          text:      content.length > limit ? content.slice(0, limit) + `\n\n[Page content continues — ${content.length - limit} more characters not shown]` : content,
+          image:     ogImage,
+          pageTitle: article?.title ?? null,
+        };
       }
-    } catch { /* fall through to manual extraction on the same HTML */ }
+    } catch { /* fall through */ }
 
-    // ── 2. Manual fallback extraction on the already-fetched HTML ─────────────
+    // ── 2. Manual tag-stripping fallback ──────────────────────────────────────
     const { title: pageTitle, text } = stripHtmlToText(html);
-    if (isJsGated(text)) {
-      return `Could not read "${url}" — this page renders its content with client-side JavaScript after load, so AfuBot's real-time HTML fetch sees an empty shell. Try a direct article/print URL if the site has one.`;
+    if (!isJsGated(text) && text.length > 200) {
+      const content = pageTitle ? `# ${pageTitle}\n\n${text}` : text;
+      const limit   = 6000;
+      return {
+        text:      content.length > limit ? content.slice(0, limit) + `\n\n[Content truncated — page has more text]` : content,
+        image:     ogImage,
+        pageTitle: pageTitle || null,
+      };
     }
-    const content = pageTitle ? `# ${pageTitle}\n\n${text}` : text;
-    const limit = 6000;
-    return content.length > limit
-      ? content.slice(0, limit) + `\n\n[Content truncated — page has more text]`
-      : content;
+
+    // ── 3. JS-gated: try Jina.ai Reader (renders JS client-side, free) ────────
+    try {
+      const jinaRes = await fetch(`https://r.jina.ai/${url}`, {
+        signal:  AbortSignal.timeout(15_000),
+        headers: { "Accept": "text/plain,text/markdown", "X-No-Cache": "true" },
+      });
+      if (jinaRes.ok) {
+        const jinaText = (await jinaRes.text()).trim();
+        if (jinaText.length > 200 && !isJsGated(jinaText)) {
+          const limit = 8000;
+          // Extract page title from Jina markdown (first # heading)
+          const titleMatch = jinaText.match(/^#\s+(.+)/m);
+          return {
+            text:      jinaText.length > limit ? jinaText.slice(0, limit) + `\n\n[Content truncated]` : jinaText,
+            image:     ogImage,
+            pageTitle: titleMatch?.[1]?.trim() ?? pageTitle ?? null,
+          };
+        }
+      }
+    } catch { /* fall through */ }
+
+    // ── 4. Still nothing — return og:image if we at least got that ────────────
+    return {
+      text:      `Could not read "${url}" — this page renders its content with client-side JavaScript. AfuBot read the page shell but found no article content.`,
+      image:     ogImage,
+      pageTitle: pageTitle || null,
+    };
+
   } catch (err) {
-    return `Failed to fetch page: ${String(err)}`;
+    return fail(`Failed to fetch page: ${String(err)}`);
   }
 }
 
@@ -2061,7 +2110,7 @@ async function agenticChat(
   messages: ChatMessage[],
   requestId: string,
   braveKey?: string,
-): Promise<{ reply:string; inputTokens:number; outputTokens:number; provider?:string; providerModel?:string; searchInfo?: { query:string; sources:Source[] }; crawledUrls?: string[] }> {
+): Promise<{ reply:string; inputTokens:number; outputTokens:number; provider?:string; providerModel?:string; searchInfo?: { query:string; sources:Source[] }; crawledUrls?: string[]; crawledSources?: Source[] }> {
   let baseConvo: ChatMessage[] = [...messages];
 
   // Step 0  -  Auto-detect and fetch URLs mentioned in the user's message
@@ -2069,17 +2118,28 @@ async function agenticChat(
   const lastUserText = lastUser ? (typeof lastUser.content === "string" ? lastUser.content : getTextPreview(lastUser.content as MessageContent)) : "";
 
   let crawledUrls: string[] = [];
+  let crawledSources: Source[] = [];
   if (lastUserText) {
     const urls = detectURLs(lastUserText);
     if (urls.length > 0) {
       log("info", "url_crawl.start", { requestId, urls });
       try {
-        const fetched = await Promise.allSettled(urls.map((u) => afuBotFetch(u).then((content) => ({ url: u, content }))));
+        const fetched = await Promise.allSettled(urls.map((u) => afuBotFetch(u).then((result) => ({ url: u, ...result }))));
         const urlParts: string[] = [];
         for (const r of fetched) {
-          if (r.status === "fulfilled" && !r.value.content.startsWith("Could not") && !r.value.content.startsWith("Failed") && !r.value.content.startsWith("Invalid") && !r.value.content.includes("is not a readable webpage") && !r.value.content.includes("not permitted")) {
-            urlParts.push(`### Content from: ${r.value.url}\n\n${r.value.content}`);
-            crawledUrls.push(r.value.url);
+          if (r.status === "fulfilled") {
+            const { url: rUrl, text, image, pageTitle } = r.value;
+            const bad = ["Could not fetch", "Failed to fetch", "Invalid URL", "is not a readable webpage", "not permitted"];
+            if (!bad.some((b) => text.startsWith(b))) {
+              urlParts.push(`### Content from: ${rUrl}\n\n${text}`);
+              crawledUrls.push(rUrl);
+              crawledSources.push({
+                url:     rUrl,
+                title:   pageTitle || rUrl,
+                snippet: text.replace(/^#[^\n]*\n+/, "").slice(0, 120).trim(),
+                ...(image && { image }),
+              });
+            }
           }
         }
         if (urlParts.length > 0) {
@@ -2116,7 +2176,7 @@ async function agenticChat(
         if (wResult.ok) {
           log("info", "weather.tool.success", { requestId, location: weatherLoc });
           return { reply: wResult.content, inputTokens: wResult.inputTokens, outputTokens: wResult.outputTokens,
-            provider: wResult.provider, providerModel: wResult.model, ...(crawledUrls.length && { crawledUrls }) };
+            provider: wResult.provider, providerModel: wResult.model, ...(crawledUrls.length && { crawledUrls }), ...(crawledSources.length && { crawledSources }) };
         }
       }
     }
@@ -2138,7 +2198,7 @@ async function agenticChat(
         if (cResult.ok) {
           log("info", "currency.tool.success", { requestId, from: currencyQ.from, to: currencyQ.to });
           return { reply: cResult.content, inputTokens: cResult.inputTokens, outputTokens: cResult.outputTokens,
-            provider: cResult.provider, providerModel: cResult.model, ...(crawledUrls.length && { crawledUrls }) };
+            provider: cResult.provider, providerModel: cResult.model, ...(crawledUrls.length && { crawledUrls }), ...(crawledSources.length && { crawledSources }) };
         }
       }
     }
@@ -2168,7 +2228,7 @@ async function agenticChat(
           }
           log("info", "movies.tool.success", { requestId, count: movies.length, similarTo: movieQ.similarTo, genres: movieQ.genreIds, postersInlined: movies.filter((m) => m.dataUri).length });
           return { reply: finalReply, inputTokens: mResult.inputTokens, outputTokens: mResult.outputTokens,
-            provider: mResult.provider, providerModel: mResult.model, ...(crawledUrls.length && { crawledUrls }) };
+            provider: mResult.provider, providerModel: mResult.model, ...(crawledUrls.length && { crawledUrls }), ...(crawledSources.length && { crawledSources }) };
         }
       } else {
         log("warn", "movies.tool.no_results", { requestId, similarTo: movieQ.similarTo, genres: movieQ.genreIds });
@@ -2215,6 +2275,7 @@ async function agenticChat(
         provider: kbResult.provider, providerModel: kbResult.model,
         ...(kbHit.sources.length > 0 && { searchInfo: { query: kbQueryRaw, sources: kbHit.sources } }),
         ...(crawledUrls.length > 0   && { crawledUrls }),
+        ...(crawledSources.length > 0 && { crawledSources }),
       };
     }
     log("warn", "kb.ai_call_failed_fallback_search", { requestId });
@@ -2270,14 +2331,19 @@ async function agenticChat(
         if (topUrls.length > 0) {
           log("info", "deep_crawl.start", { requestId, urls: topUrls });
           const crawled = await Promise.allSettled(
-            topUrls.map((u) => afuBotFetch(u).then((content) => ({ url: u, content })))
+            topUrls.map((u) => afuBotFetch(u).then((result) => ({ url: u, ...result })))
           );
           for (const r of crawled) {
             if (r.status === "fulfilled") {
-              const { url, content } = r.value;
+              const { url, text, image } = r.value;
               const bad = ["Could not fetch", "Failed to fetch", "Invalid URL", "Search unavailable"];
-              if (!bad.some((b) => content.startsWith(b)) && content.length > 200) {
-                deepParts.push(`### Full content from: ${url}\n\n${content.slice(0, 2500)}`);
+              if (!bad.some((b) => text.startsWith(b)) && text.length > 200) {
+                deepParts.push(`### Full content from: ${url}\n\n${text.slice(0, 2500)}`);
+                // Enrich the matching search source with the og:image extracted from the page
+                if (image) {
+                  const idx = searchResult.sources.findIndex((s) => s.url === url);
+                  if (idx >= 0) searchResult.sources[idx] = { ...searchResult.sources[idx], image };
+                }
               }
             }
           }
@@ -2321,6 +2387,7 @@ async function agenticChat(
             provider: result.provider, providerModel: result.model,
             searchInfo: { query, sources: searchResult.sources.slice(0, 8) },
             ...(crawledUrls.length && { crawledUrls }),
+            ...(crawledSources.length && { crawledSources }),
           };
         }
         log("warn", "search_chat.ai_failed", { requestId, errorDetail: result.errorDetail });
@@ -2340,6 +2407,7 @@ async function agenticChat(
       reply: result.content, inputTokens: result.inputTokens, outputTokens: result.outputTokens,
       provider: result.provider, providerModel: result.model,
       ...(crawledUrls.length && { crawledUrls }),
+      ...(crawledSources.length && { crawledSources }),
     };
   }
 
@@ -2347,6 +2415,7 @@ async function agenticChat(
     reply: "I'm having trouble connecting to the AI service right now. Please try again in a moment.",
     inputTokens: 0, outputTokens: 0,
     ...(crawledUrls.length && { crawledUrls }),
+    ...(crawledSources.length && { crawledSources }),
   };
 }
 
@@ -2990,8 +3059,9 @@ Deno.serve(async (req: Request) => {
       });
 
       // Store for response
-      (logEntry as any)._searchInfo   = chatResult.searchInfo;
-      (logEntry as any)._crawledUrls  = chatResult.crawledUrls;
+      (logEntry as any)._searchInfo      = chatResult.searchInfo;
+      (logEntry as any)._crawledUrls     = chatResult.crawledUrls;
+      (logEntry as any)._crawledSources  = chatResult.crawledSources;
 
       // Fire-and-forget: extract and save user memories from this exchange
       if (userId && lastUserMsg && reply) {
@@ -3095,16 +3165,18 @@ Deno.serve(async (req: Request) => {
     logEntry.success = true;
     await persistLog(db, logEntry, startTime);
 
-    const searchInfo   = (logEntry as any)._searchInfo  as { query:string; sources:Source[] } | undefined;
-    const crawledUrls  = (logEntry as any)._crawledUrls as string[] | undefined;
+    const searchInfo     = (logEntry as any)._searchInfo     as { query:string; sources:Source[] } | undefined;
+    const crawledUrls    = (logEntry as any)._crawledUrls    as string[]  | undefined;
+    const crawledSources = (logEntry as any)._crawledSources as Source[]  | undefined;
 
     return json({
       id: requestId, model,
       message: { role: "assistant", content: reply },
       usage: { inputTokens, outputTokens, totalTokens },
       conversationId: convId,
-      ...(searchInfo   && { searchInfo }),
+      ...(searchInfo          && { searchInfo }),
       ...(crawledUrls?.length && { crawledUrls }),
+      ...(crawledSources?.length && { crawledSources }),
       ...(timeInfo && { timeInfo }),
       ...(newGuestCount !== undefined && {
         guestMessageCount: newGuestCount, guestMessageLimit: GUEST_LIMIT,
