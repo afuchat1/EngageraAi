@@ -7,6 +7,7 @@
  *      subsequent async speak() calls without silently failing.
  */
 import { useState, useRef, useCallback, useEffect } from "react";
+import { supabase, SUPABASE_ANON_KEY } from "@/lib/supabase";
 
 export type PhoneState =
   | "idle"
@@ -111,9 +112,14 @@ export function usePhoneVoice({ onSend }: Options) {
   const transcribeAudio = useCallback(async (blob: Blob): Promise<string | null> => {
     if (blob.size < 500) return null;
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token ?? SUPABASE_ANON_KEY;
       const res = await fetch(STT_URL, {
         method:  "POST",
-        headers: { "Content-Type": blob.type || "audio/webm" },
+        headers: {
+          "Content-Type": blob.type || "audio/webm",
+          "Authorization": `Bearer ${token}`,
+        },
         body:    blob,
       });
       if (res.status === 503) {
