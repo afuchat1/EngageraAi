@@ -1,0 +1,2 @@
+- [Supabase Edge Function deploy via Management API](supabase-edge-function-deploy-api.md) — multipart curl format for multi-file functions; deno-dom over linkedom to avoid a native-binary bundler trap.
+- [AfuBot crawler accuracy/fidelity rules](afubot-crawler-fidelity.md) — why URL-detection bugs cause confident hallucinated "fetched" narration, and the prompt rules that prevent blending real crawl data with invented facts.

@@ -3,10 +3,12 @@ import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Copy, Check, ImageOff, Film,
   ThumbsUp, ThumbsDown, Volume2, VolumeX,
-  Share2, Globe, FileDown, ChevronLeft, ChevronRight,
+  Share2, Globe, FileDown, ChevronLeft, ChevronRight, X,
 } from "lucide-react";
 import type { TimeInfo } from "@/hooks/useEdgeChatCompletion";
 
@@ -127,45 +129,95 @@ function InlineFaviconCluster({ sources }: { sources: Source[] }) {
   );
 }
 
-// ── Sources popup (opened from action bar) ─────────────────────────────────────
-function SourcesPopup({ sources, onClose }: { sources: Source[]; onClose: () => void }) {
-  const ref = useRef<HTMLDivElement>(null);
+// ── Sources bottom sheet (opened from the action bar) ───────────────────────────
+// Full list of sources for a message. Each row is a favicon + bold site name +
+// a one-line snippet, and clicking it opens the exact crawled article URL —
+// never a bare/raw link rendered as text.
+function SourcesSheet({ sources, onClose }: { sources: Source[]; onClose: () => void }) {
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
   }, [onClose]);
 
-  return (
-    <div
-      ref={ref}
-      className="absolute bottom-full right-0 mb-2 z-50 bg-[#111] border border-white/10 rounded-2xl p-3 shadow-xl min-w-[200px] max-w-[280px]"
-    >
-      <p className="text-[10px] text-white/25 mb-2.5 font-semibold uppercase tracking-widest">Sources</p>
-      <div className="flex flex-col gap-1.5">
-        {sources.slice(0, 8).map((s, i) => {
-          const name = extractSiteName(s);
-          return (
-            <a
-              key={i}
-              href={s.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2.5 px-2 py-1.5 rounded-xl hover:bg-white/[0.05] transition-colors group"
-            >
-              <span className="w-5 h-5 rounded-full border border-white/10 bg-white/[0.04] flex items-center justify-center overflow-hidden shrink-0">
-                <Favicon url={s.url} size={12} />
-              </span>
-              <span className="text-xs font-semibold text-white/55 group-hover:text-white/85 transition-colors truncate">
-                {name}
-              </span>
-            </a>
-          );
-        })}
-      </div>
-    </div>
+  return createPortal(
+    <AnimatePresence>
+      <motion.div
+        key="sources-sheet-backdrop"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.18 }}
+        className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <motion.div
+        key="sources-sheet"
+        initial={{ y: "100%" }}
+        animate={{ y: 0 }}
+        exit={{ y: "100%" }}
+        transition={{ type: "spring", damping: 32, stiffness: 340 }}
+        drag="y"
+        dragConstraints={{ top: 0, bottom: 0 }}
+        dragElastic={{ top: 0, bottom: 0.6 }}
+        onDragEnd={(_, info) => { if (info.offset.y > 90) onClose(); }}
+        className="fixed bottom-0 left-0 right-0 z-[101] mx-auto w-full max-w-lg bg-[#111214] border-t border-white/10 rounded-t-3xl shadow-2xl max-h-[75vh] flex flex-col"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Sources"
+      >
+        <div className="flex justify-center pt-2.5 pb-1 shrink-0 cursor-grab active:cursor-grabbing">
+          <div className="w-9 h-1 rounded-full bg-white/20" />
+        </div>
+        <div className="flex items-center justify-between px-5 pb-3 pt-1 shrink-0 border-b border-white/[0.06]">
+          <div>
+            <p className="text-sm font-semibold text-white/90">Sources</p>
+            <p className="text-[11px] text-white/35">{sources.length} page{sources.length === 1 ? "" : "s"} read by AfuBot</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-full text-white/40 hover:text-white/80 hover:bg-white/[0.08] transition-colors"
+            aria-label="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="overflow-y-auto px-2.5 py-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          {sources.map((s, i) => {
+            const name = extractSiteName(s);
+            return (
+              <a
+                key={i}
+                href={s.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={onClose}
+                className="flex items-center gap-3 px-2.5 py-2.5 rounded-2xl hover:bg-white/[0.05] active:bg-white/[0.08] transition-colors group"
+              >
+                <span className="w-8 h-8 rounded-full border border-white/10 bg-white/[0.04] flex items-center justify-center overflow-hidden shrink-0">
+                  <Favicon url={s.url} size={16} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13px] font-semibold text-white/85 group-hover:text-white truncate transition-colors">
+                    {name}
+                  </span>
+                  {s.snippet && (
+                    <span className="block text-[11px] text-white/35 truncate">{s.snippet}</span>
+                  )}
+                </span>
+                <ChevronRight className="w-4 h-4 text-white/20 shrink-0 group-hover:text-white/40 transition-colors" />
+              </a>
+            );
+          })}
+        </div>
+      </motion.div>
+    </AnimatePresence>,
+    document.body,
   );
 }
 
@@ -262,7 +314,7 @@ function MessageActions({ content, sources }: { content: string; sources?: Sourc
             <span className="text-[11px] font-medium ml-0.5">Sources</span>
           </button>
           {sourcesOpen && (
-            <SourcesPopup sources={sources} onClose={() => setSourcesOpen(false)} />
+            <SourcesSheet sources={sources} onClose={() => setSourcesOpen(false)} />
           )}
         </div>
       )}
