@@ -20,6 +20,7 @@ import Usage from "./pages/usage";
 import Docs from "./pages/docs";
 import Settings from "./pages/settings";
 import AdminOverview from "./pages/admin/overview";
+import AdminPlatform from "./pages/admin/platform";
 import AdminDataset from "./pages/admin/dataset";
 import AdminReviewer from "./pages/admin/reviewer";
 import AdminModels from "./pages/admin/models";
@@ -109,6 +110,7 @@ function Router() {
       <Route path="/usage"><ProtectedRoute component={Usage} /></Route>
       <Route path="/settings"><ProtectedRoute component={Settings} /></Route>
       <Route path="/admin"><AdminRoute component={AdminOverview} /></Route>
+      <Route path="/admin/platform"><AdminRoute component={AdminPlatform} /></Route>
       <Route path="/admin/dataset"><AdminRoute component={AdminDataset} /></Route>
       <Route path="/admin/reviewer"><AdminRoute component={AdminReviewer} /></Route>
       <Route path="/admin/models"><AdminRoute component={AdminModels} /></Route>

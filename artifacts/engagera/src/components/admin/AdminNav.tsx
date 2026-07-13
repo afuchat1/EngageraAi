@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 
 const TABS = [
   { href: "/admin", label: "Overview" },
+  { href: "/admin/platform", label: "Platform" },
   { href: "/admin/dataset", label: "Dataset" },
   { href: "/admin/reviewer", label: "Reviewer" },
   { href: "/admin/models", label: "Models & Training" },

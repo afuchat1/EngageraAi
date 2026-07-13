@@ -173,6 +173,86 @@ export function useTrainingJobs() {
   });
 }
 
+// ── Platform: API keys & users (full admin control) ─────────────────────────
+
+export interface PlatformApiKey {
+  id: number;
+  name: string;
+  prefix: string;
+  ownerId: string;
+  ownerEmail: string;
+  isActive: boolean;
+  isPaused: boolean;
+  pausedUntil: string | null;
+  totalRequests: number;
+  requests30d: number;
+  tokensLifetime: number;
+  tokens30d: number;
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
+export interface PlatformUser {
+  userId: string;
+  email: string;
+  totalKeys: number;
+  activeKeys: number;
+  pausedKeys: number;
+  oldestKeyAt: string;
+  tokensLifetime: number;
+  tokens30d: number;
+}
+
+export function usePlatformApiKeys() {
+  return useQuery({
+    queryKey: ["admin", "platform-api-keys"],
+    queryFn: () => customFetch<{ keys: PlatformApiKey[] }>("/api/admin/platform-api-keys"),
+    retry: false,
+    refetchInterval: 30_000,
+  });
+}
+
+export function usePlatformUsers() {
+  return useQuery({
+    queryKey: ["admin", "platform-users"],
+    queryFn: () => customFetch<{ users: PlatformUser[] }>("/api/admin/platform-users"),
+    retry: false,
+  });
+}
+
+export function usePauseApiKey() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, minutes }: { id: number; minutes: number }) =>
+      customFetch<{ success: boolean; pausedUntil: string }>(`/api/admin/platform-api-keys/${id}/pause`, {
+        method: "POST",
+        body: JSON.stringify({ minutes }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "platform-api-keys"] }),
+  });
+}
+
+export function useUnpauseApiKey() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) =>
+      customFetch<{ success: boolean }>(`/api/admin/platform-api-keys/${id}/unpause`, { method: "POST" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "platform-api-keys"] }),
+  });
+}
+
+export function useSetApiKeyActive() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, active }: { id: number; active: boolean }) =>
+      customFetch<{ success: boolean; isActive: boolean }>(
+        `/api/admin/platform-api-keys/${id}/${active ? "reactivate" : "revoke"}`,
+        { method: "POST" },
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "platform-api-keys"] }),
+  });
+}
+
 export function useRunReviewer() {
   const qc = useQueryClient();
   return useMutation({

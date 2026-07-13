@@ -2581,6 +2581,7 @@ Deno.serve(async (req: Request) => {
     let userId: string | undefined;
     let guestSessionId: string | undefined;
     let apiKeyId: number | undefined;
+    let keyPausedUntil: string | undefined;
 
     // Resolve an Engagera developer API key (eng_...) to a userId + apiKeyId.
     // Returns false if the key is not found or revoked (caller should 401).
@@ -2589,7 +2590,7 @@ Deno.serve(async (req: Request) => {
       const hash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
       const { data: keyRow, error: keyErr } = await db
         .from("engagera_api_keys")
-        .select("id, user_id, is_active")
+        .select("id, user_id, is_active, paused_until")
         .eq("key_hash", hash)
         .maybeSingle();
       if (keyErr) {
@@ -2597,6 +2598,10 @@ Deno.serve(async (req: Request) => {
         return false;
       }
       if (!keyRow || !keyRow.is_active) return false;
+      if (keyRow.paused_until && new Date(keyRow.paused_until as string) > new Date()) {
+        keyPausedUntil = keyRow.paused_until as string;
+        return false;
+      }
       userId   = keyRow.user_id as string;
       apiKeyId = keyRow.id as number;
       return true;
@@ -2608,10 +2613,14 @@ Deno.serve(async (req: Request) => {
     const customKey = req.headers.get("x-engagera-api-key");
     if (customKey?.startsWith("eng_")) {
       const ok = await resolveEngKey(customKey);
-      if (!ok) return json({ error: "Invalid or revoked API key" }, 401);
+      if (!ok) {
+        if (keyPausedUntil) return json({ error: "API key is temporarily paused", pausedUntil: keyPausedUntil }, 403);
+        return json({ error: "Invalid or revoked API key" }, 401);
+      }
     } else {
       // Path 2: direct call — either a Supabase session JWT or an eng_ key
-      // sent as Bearer (only works when deployed with --no-verify-jwt).
+      // sent as Bearer (works directly now that the gateway's JWT check is
+      // disabled for this function — see supabase/config for verify_jwt).
       const authHeader = req.headers.get("authorization");
       if (authHeader?.startsWith("Bearer ")) {
         const token   = authHeader.slice(7);
@@ -2619,7 +2628,10 @@ Deno.serve(async (req: Request) => {
         if (token && token !== anonKey) {
           if (token.startsWith("eng_")) {
             const ok = await resolveEngKey(token);
-            if (!ok) return json({ error: "Invalid or revoked API key" }, 401);
+            if (!ok) {
+              if (keyPausedUntil) return json({ error: "API key is temporarily paused", pausedUntil: keyPausedUntil }, 403);
+              return json({ error: "Invalid or revoked API key" }, 401);
+            }
           } else {
             // Supabase session JWT
             const { data, error: authErr } = await db.auth.getUser(token);

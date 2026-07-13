@@ -14,6 +14,29 @@ function adminDb() {
   );
 }
 
+// Resolve a set of auth user IDs to emails via the Admin API (auth.users is
+// not exposed through PostgREST). Fine at current platform scale — pulls the
+// full user list once per request and filters in memory.
+async function lookupEmails(
+  db: ReturnType<typeof createClient>,
+  userIds: string[],
+): Promise<Map<string, string>> {
+  const wanted = new Set(userIds);
+  const emailById = new Map<string, string>();
+  let page = 1;
+  const perPage = 1000;
+  while (emailById.size < wanted.size) {
+    const { data, error } = await db.auth.admin.listUsers({ page, perPage });
+    if (error || !data?.users?.length) break;
+    for (const u of data.users) {
+      if (wanted.has(u.id)) emailById.set(u.id, u.email ?? "(no email)");
+    }
+    if (data.users.length < perPage) break;
+    page++;
+  }
+  return emailById;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return cors();
 
@@ -159,6 +182,136 @@ Deno.serve(async (req: Request) => {
     const { data, error } = await db.storage.from("datasets").createSignedUrl(storagePath, 300);
     if (error) return json({ error: error.message }, 500);
     return json({ url: data.signedUrl });
+  }
+
+  // ── Platform API keys: /admin/platform-api-keys ─────────────────────────
+  // Every API key on the platform, across every user, with owner email and
+  // lifetime + 30d token/request burn. Admin-only, unlike /api-keys (self-serve).
+  if (path === "platform-api-keys") {
+    const [{ data: keys, error: keysErr }, { data: allUsage }] = await Promise.all([
+      db.from("engagera_api_keys")
+        .select("id, user_id, name, prefix, is_active, paused_until, total_requests, last_used_at, created_at")
+        .order("created_at", { ascending: false }),
+      db.from("engagera_usage_records").select("api_key_id, total_tokens, created_at"),
+    ]);
+    if (keysErr) return json({ error: keysErr.message }, 500);
+
+    const since30d = new Date();
+    since30d.setDate(since30d.getDate() - 30);
+
+    const tokensByKey: Record<number, { lifetime: number; last30d: number; requests30d: number }> = {};
+    for (const r of (allUsage ?? []) as { api_key_id: number | null; total_tokens: number; created_at: string }[]) {
+      if (r.api_key_id == null) continue;
+      const bucket = (tokensByKey[r.api_key_id] ??= { lifetime: 0, last30d: 0, requests30d: 0 });
+      bucket.lifetime += r.total_tokens ?? 0;
+      if (new Date(r.created_at) >= since30d) {
+        bucket.last30d += r.total_tokens ?? 0;
+        bucket.requests30d++;
+      }
+    }
+
+    const userIds = Array.from(new Set((keys ?? []).map((k) => k.user_id as string)));
+    const emailById = await lookupEmails(db, userIds);
+
+    const now = new Date();
+    return json({
+      keys: (keys ?? []).map((k) => {
+        const usage = tokensByKey[k.id as number] ?? { lifetime: 0, last30d: 0, requests30d: 0 };
+        const pausedUntil = k.paused_until as string | null;
+        const isPaused = !!pausedUntil && new Date(pausedUntil) > now;
+        return {
+          id: k.id,
+          name: k.name,
+          prefix: k.prefix,
+          ownerId: k.user_id,
+          ownerEmail: emailById.get(k.user_id as string) ?? "unknown",
+          isActive: k.is_active,
+          isPaused,
+          pausedUntil: isPaused ? pausedUntil : null,
+          totalRequests: k.total_requests,
+          requests30d: usage.requests30d,
+          tokensLifetime: usage.lifetime,
+          tokens30d: usage.last30d,
+          lastUsedAt: k.last_used_at,
+          createdAt: k.created_at,
+        };
+      }),
+    });
+  }
+
+  // ── Platform users: /admin/platform-users ───────────────────────────────
+  // One row per user who owns at least one API key, with aggregate burn.
+  if (path === "platform-users") {
+    const [{ data: keys, error: keysErr }, { data: allUsage }] = await Promise.all([
+      db.from("engagera_api_keys").select("id, user_id, is_active, paused_until, created_at"),
+      db.from("engagera_usage_records").select("user_id, total_tokens, created_at"),
+    ]);
+    if (keysErr) return json({ error: keysErr.message }, 500);
+
+    const since30d = new Date();
+    since30d.setDate(since30d.getDate() - 30);
+    const now = new Date();
+
+    const usageByUser: Record<string, { lifetime: number; last30d: number }> = {};
+    for (const r of (allUsage ?? []) as { user_id: string; total_tokens: number; created_at: string }[]) {
+      const bucket = (usageByUser[r.user_id] ??= { lifetime: 0, last30d: 0 });
+      bucket.lifetime += r.total_tokens ?? 0;
+      if (new Date(r.created_at) >= since30d) bucket.last30d += r.total_tokens ?? 0;
+    }
+
+    const byUser: Record<string, { totalKeys: number; activeKeys: number; pausedKeys: number; oldestKeyAt: string }> = {};
+    for (const k of (keys ?? []) as { user_id: string; is_active: boolean; paused_until: string | null; created_at: string }[]) {
+      const bucket = (byUser[k.user_id] ??= { totalKeys: 0, activeKeys: 0, pausedKeys: 0, oldestKeyAt: k.created_at });
+      bucket.totalKeys++;
+      if (k.is_active) bucket.activeKeys++;
+      if (k.paused_until && new Date(k.paused_until) > now) bucket.pausedKeys++;
+      if (k.created_at < bucket.oldestKeyAt) bucket.oldestKeyAt = k.created_at;
+    }
+
+    const userIds = Object.keys(byUser);
+    const emailById = await lookupEmails(db, userIds);
+
+    return json({
+      users: userIds.map((id) => ({
+        userId: id,
+        email: emailById.get(id) ?? "unknown",
+        ...byUser[id],
+        tokensLifetime: usageByUser[id]?.lifetime ?? 0,
+        tokens30d: usageByUser[id]?.last30d ?? 0,
+      })).sort((a, b) => b.tokensLifetime - a.tokensLifetime),
+    });
+  }
+
+  // ── Pause an API key: POST /admin/platform-api-keys/:id/pause ───────────
+  if (req.method === "POST" && /^platform-api-keys\/\d+\/pause$/.test(path)) {
+    const id = Number(path.split("/")[1]);
+    const body = await req.json().catch(() => ({}));
+    const minutes = Number(body.minutes);
+    if (!Number.isFinite(minutes) || minutes <= 0) {
+      return json({ error: "minutes must be a positive number" }, 400);
+    }
+    const pausedUntil = new Date(Date.now() + minutes * 60_000).toISOString();
+    const { error } = await db.from("engagera_api_keys").update({ paused_until: pausedUntil }).eq("id", id);
+    if (error) return json({ error: error.message }, 500);
+    return json({ success: true, pausedUntil });
+  }
+
+  // ── Unpause an API key: POST /admin/platform-api-keys/:id/unpause ───────
+  if (req.method === "POST" && /^platform-api-keys\/\d+\/unpause$/.test(path)) {
+    const id = Number(path.split("/")[1]);
+    const { error } = await db.from("engagera_api_keys").update({ paused_until: null }).eq("id", id);
+    if (error) return json({ error: error.message }, 500);
+    return json({ success: true });
+  }
+
+  // ── Revoke/reactivate an API key: POST /admin/platform-api-keys/:id/{revoke|reactivate}
+  if (req.method === "POST" && /^platform-api-keys\/\d+\/(revoke|reactivate)$/.test(path)) {
+    const segs = path.split("/");
+    const id = Number(segs[1]);
+    const isActive = segs[2] === "reactivate";
+    const { error } = await db.from("engagera_api_keys").update({ is_active: isActive }).eq("id", id);
+    if (error) return json({ error: error.message }, 500);
+    return json({ success: true, isActive });
   }
 
   // ── System health: /admin/system-health ─────────────────────────────────
