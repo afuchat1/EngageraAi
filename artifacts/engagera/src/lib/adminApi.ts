@@ -212,6 +212,23 @@ export function usePlatformApiKeys() {
   });
 }
 
+export interface PlatformUsageDay {
+  date: string;
+  tokens: number;
+  requests: number;
+}
+
+export function usePlatformUsageDaily(days = 30) {
+  return useQuery({
+    queryKey: ["admin", "platform-usage-daily", days],
+    queryFn: () =>
+      customFetch<{ series: PlatformUsageDay[]; totalTokens: number; totalRequests: number }>(
+        `/api/admin/platform-usage-daily?days=${days}`,
+      ),
+    retry: false,
+  });
+}
+
 export function usePlatformUsers() {
   return useQuery({
     queryKey: ["admin", "platform-users"],

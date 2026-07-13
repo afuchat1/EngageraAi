@@ -4,6 +4,7 @@ import { AdminNav } from "@/components/admin/AdminNav";
 import {
   usePlatformApiKeys,
   usePlatformUsers,
+  usePlatformUsageDaily,
   usePauseApiKey,
   useUnpauseApiKey,
   useSetApiKeyActive,
@@ -11,6 +12,10 @@ import {
   type PlatformUser,
 } from "@/lib/adminApi";
 import { Pause, Play, Ban, RotateCcw, Users, KeyRound, X } from "lucide-react";
+import {
+  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
+} from "recharts";
+import { format, parseISO } from "date-fns";
 
 function formatTokens(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -151,21 +156,42 @@ function ApiKeyRow({ k }: { k: PlatformApiKey }) {
   );
 }
 
+const USAGE_RANGES = [
+  { label: "30d", days: 30 },
+  { label: "90d", days: 90 },
+];
+
+function UsageChartTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-[#111] rounded-xl px-3 py-2.5 shadow-2xl text-xs">
+      <p className="text-white/40 font-mono mb-1.5 uppercase tracking-wider text-[10px]">{label}</p>
+      <p className="text-white font-medium">{payload[0].value.toLocaleString()} tokens</p>
+      <p className="text-white/40 mt-0.5">{payload[0].payload.requests.toLocaleString()} requests · all developers combined</p>
+    </div>
+  );
+}
+
 export default function AdminPlatform() {
   const { data: keysData, isLoading: keysLoading } = usePlatformApiKeys();
   const { data: usersData, isLoading: usersLoading } = usePlatformUsers();
+  const [usageDays, setUsageDays] = useState(30);
+  const { data: usageDaily, isLoading: usageLoading } = usePlatformUsageDaily(usageDays);
   const [tab, setTab] = useState<"keys" | "users">("keys");
   const [search, setSearch] = useState("");
 
   const keys = keysData?.keys ?? [];
   const users = usersData?.users ?? [];
+  const chartData = (usageDaily?.series ?? []).map((d) => ({
+    ...d,
+    date: format(parseISO(d.date), "MMM dd"),
+  }));
 
   const filteredKeys = keys.filter(
     (k: PlatformApiKey) => !search || k.name.toLowerCase().includes(search.toLowerCase()) || k.ownerEmail.toLowerCase().includes(search.toLowerCase()),
   );
   const filteredUsers = users.filter((u: PlatformUser) => !search || u.email.toLowerCase().includes(search.toLowerCase()));
 
-  const totalTokens30d = keys.reduce((s: number, k: PlatformApiKey) => s + k.tokens30d, 0);
   const activeCount = keys.filter((k: PlatformApiKey) => k.isActive && !k.isPaused).length;
   const pausedCount = keys.filter((k: PlatformApiKey) => k.isPaused).length;
 
@@ -181,8 +207,55 @@ export default function AdminPlatform() {
       </div>
 
       <div className="rounded-2xl bg-white/[0.03] p-5 mb-8">
-        <p className="text-[10px] font-mono uppercase tracking-widest text-white/35 mb-2">Tokens Burned (30d, across all keys)</p>
-        <p className="text-3xl font-light">{keysLoading ? "—" : totalTokens30d.toLocaleString()}</p>
+        <div className="flex items-center justify-between mb-1 flex-wrap gap-3">
+          <div>
+            <p className="text-[10px] font-mono uppercase tracking-widest text-white/35 mb-2">
+              Combined Token Usage — every developer, all keys
+            </p>
+            <p className="text-3xl font-light">
+              {usageLoading ? "—" : (usageDaily?.totalTokens ?? 0).toLocaleString()}
+              <span className="text-sm text-white/30 font-mono ml-2">/ {usageDays}d</span>
+            </p>
+          </div>
+          <div className="flex items-center gap-1 rounded-xl bg-white/[0.04] p-1">
+            {USAGE_RANGES.map((r) => (
+              <button
+                key={r.days}
+                onClick={() => setUsageDays(r.days)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${usageDays === r.days ? "bg-white text-black" : "text-white/50 hover:text-white"}`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="h-56 w-full mt-4">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={chartData} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
+              <defs>
+                <linearGradient id="platformTokGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#fff" stopOpacity={0.15} />
+                  <stop offset="95%" stopColor="#fff" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+              <XAxis
+                dataKey="date" stroke="rgba(255,255,255,0.3)" fontSize={10}
+                tickLine={false} axisLine={false} dy={8}
+                interval="preserveStartEnd"
+              />
+              <YAxis
+                stroke="rgba(255,255,255,0.3)" fontSize={10} tickLine={false} axisLine={false}
+                tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v)}
+              />
+              <Tooltip content={<UsageChartTooltip />} />
+              <Area
+                type="monotone" dataKey="tokens" stroke="#ffffff" strokeWidth={1.5}
+                fillOpacity={1} fill="url(#platformTokGrad)" animationDuration={500}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
       <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">

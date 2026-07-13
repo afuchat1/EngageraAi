@@ -282,6 +282,43 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  // ── Platform-wide daily usage: /admin/platform-usage-daily ──────────────
+  // Combined tokens/requests across every developer's usage, not per-key —
+  // the platform-wide total the admin dashboard chart plots over time.
+  if (path === "platform-usage-daily") {
+    const days = Math.min(Number(url.searchParams.get("days") ?? "30"), 90);
+    const since = new Date();
+    since.setDate(since.getDate() - (days - 1));
+    since.setHours(0, 0, 0, 0);
+
+    const { data, error } = await db
+      .from("engagera_usage_records")
+      .select("total_tokens, created_at")
+      .gte("created_at", since.toISOString());
+    if (error) return json({ error: error.message }, 500);
+
+    const byDay: Record<string, { tokens: number; requests: number }> = {};
+    for (const r of (data ?? []) as { total_tokens: number; created_at: string }[]) {
+      const day = r.created_at.slice(0, 10);
+      const bucket = (byDay[day] ??= { tokens: 0, requests: 0 });
+      bucket.tokens += r.total_tokens ?? 0;
+      bucket.requests++;
+    }
+
+    const series = Array.from({ length: days }, (_, i) => {
+      const d = new Date(since);
+      d.setDate(d.getDate() + i);
+      const key = d.toISOString().slice(0, 10);
+      return { date: key, tokens: byDay[key]?.tokens ?? 0, requests: byDay[key]?.requests ?? 0 };
+    });
+
+    return json({
+      series,
+      totalTokens: series.reduce((s, d) => s + d.tokens, 0),
+      totalRequests: series.reduce((s, d) => s + d.requests, 0),
+    });
+  }
+
   // ── Pause an API key: POST /admin/platform-api-keys/:id/pause ───────────
   if (req.method === "POST" && /^platform-api-keys\/\d+\/pause$/.test(path)) {
     const id = Number(path.split("/")[1]);
