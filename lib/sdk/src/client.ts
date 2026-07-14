@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Engagera SDK — Main Client
+// @afuchat/sdk — Main Client
 // ---------------------------------------------------------------------------
 
 import { HttpClient } from "./http.js";
@@ -8,29 +8,36 @@ import { AfuBot } from "./resources/afubot.js";
 import type { EngageraClientOptions } from "./types.js";
 
 /**
- * The Engagera SDK client. Create one instance per application.
+ * The AfuChat SDK client. Create one instance per application.
  *
  * @example
  * ```ts
- * import Engagera from "@engagera/sdk";
+ * import Engagera from "@afuchat/sdk";
  *
  * const client = new Engagera({ apiKey: "eng_..." });
  *
- * // AfuBot web search
+ * // AfuBot web search (synchronous crawler)
  * const result = await client.afubot.search("latest AI breakthroughs");
  * console.log(result.answer);
+ * console.log(result.sources); // crawled pages with images & snippets
  *
- * // Streaming search
- * for await (const event of client.afubot.stream("tech news today")) {
+ * // Chat with streaming
+ * for await (const event of client.chat.stream({
+ *   messages: [{ role: "user", content: "Summarise today's tech news" }],
+ * })) {
  *   if (event.type === "text") process.stdout.write(event.text);
  * }
  * ```
  */
 export class Engagera {
-  /** AfuBot — Engagera's live web-search AI. Build search engines with this. */
+  /**
+   * AfuBot — Engagera's web crawler / spider.
+   * Fetches live pages, extracts structured data, returns cited sources.
+   * Synchronous — not a stream.
+   */
   readonly afubot: AfuBot;
 
-  /** Generic chat completions with optional web-search augmentation. */
+  /** Chat completions with optional AfuBot web-search augmentation. Supports streaming. */
   readonly chat: Chat;
 
   constructor(options: EngageraClientOptions) {

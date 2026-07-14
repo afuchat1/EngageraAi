@@ -152,11 +152,13 @@ export default function Docs() {
     { href: "#quickstart", label: "Quick Start" },
     { href: "#authentication", label: "Authentication" },
     { href: "#models", label: "Models" },
+    { href: "#afubot", label: "AfuBot" },
     { href: "#chat", label: "Chat Completion" },
+    { href: "#streaming", label: "Streaming" },
     { href: "#api-keys-endpoint", label: "API Keys" },
     { href: "#usage-endpoint", label: "Usage" },
     { href: "#errors", label: "Errors" },
-    { href: "#sdks", label: "SDKs" },
+    { href: "#sdks", label: "SDK (@afuchat/sdk)" },
   ];
 
   return (
@@ -193,14 +195,22 @@ export default function Docs() {
               <TocLink href="#quickstart">Quick Start</TocLink>
               <TocLink href="#authentication">Authentication</TocLink>
               <TocLink href="#models">Models</TocLink>
+              <TocLink href="#afubot">AfuBot</TocLink>
+              <TocLink href="#afubot-search" sub>search()</TocLink>
+              <TocLink href="#afubot-response" sub>Response</TocLink>
               <TocLink href="#chat">Chat Completion</TocLink>
               <TocLink href="#chat" sub>Request body</TocLink>
               <TocLink href="#chat-response" sub>Response</TocLink>
               <TocLink href="#chat-examples" sub>Examples</TocLink>
+              <TocLink href="#streaming">Streaming (SSE)</TocLink>
+              <TocLink href="#streaming-events" sub>Event types</TocLink>
               <TocLink href="#api-keys-endpoint">API Keys</TocLink>
               <TocLink href="#usage-endpoint">Usage</TocLink>
               <TocLink href="#errors">Error Codes</TocLink>
-              <TocLink href="#sdks">SDKs</TocLink>
+              <TocLink href="#sdks">SDK · @afuchat/sdk</TocLink>
+              <TocLink href="#sdk-install" sub>Installation</TocLink>
+              <TocLink href="#sdk-afubot" sub>AfuBot</TocLink>
+              <TocLink href="#sdk-chat" sub>Chat</TocLink>
             </nav>
           </aside>
 
@@ -551,97 +561,347 @@ print(data["message"]["content"])`} />
               </div>
             </Section>
 
-            {/* SDKs */}
-            <Section id="sdks" title="SDKs & Helpers" icon={BookOpen}>
-              <p className="text-white/60 text-sm leading-relaxed mb-6">
-                Official SDKs are coming soon. In the meantime, here are copy-paste helper modules to get started immediately.
+            {/* AfuBot */}
+            <Section id="afubot" title="AfuBot — Web Crawler" icon={Layers}>
+              <p className="text-white/60 text-sm leading-relaxed mb-4">
+                AfuBot is Engagera's web crawler and spider. It fetches live pages, extracts structured data (titles, og:images, snippets), and synthesises a cited natural-language answer — all synchronously. AfuBot is not a streaming interface; it crawls and returns in one response.
               </p>
-              <Tabs tabs={[
-                {
-                  label: "JavaScript / TypeScript",
-                  content: (
-                    <CodeBlock language="typescript" code={`// engagera.ts — drop this file into any Node.js or browser project
-const BASE = "${BASE_URL}";
+              <div className="grid sm:grid-cols-3 gap-3 mb-6">
+                {[
+                  { title: "Live crawling", body: "Fetches pages in real-time, not from a cached index." },
+                  { title: "og:image extraction", body: "Pulls preview images from every crawled page automatically." },
+                  { title: "Cited answers", body: "Every answer links back to the exact sources crawled." },
+                ].map(({ title, body }) => (
+                  <div key={title} className="p-4 border border-white/10 rounded-xl bg-white/[0.02]">
+                    <p className="text-sm font-semibold mb-1">{title}</p>
+                    <p className="text-xs text-white/45 leading-relaxed">{body}</p>
+                  </div>
+                ))}
+              </div>
 
-interface Message { role: "user" | "assistant" | "system"; content: string; }
-interface ChatOptions { model?: string; }
+              <div id="afubot-search" className="scroll-mt-20">
+                <div className="flex items-center gap-3 mb-3">
+                  <Badge variant="post">POST</Badge>
+                  <code className="text-sm font-mono text-white/70">/chat</code>
+                  <span className="text-xs text-white/30 border border-white/10 rounded px-1.5 py-0.5">stream: false</span>
+                </div>
+                <p className="text-white/55 text-sm mb-4">
+                  Send a search query. AfuBot crawls the web and returns a synthesised answer with cited sources. Uses the same <code className="font-mono text-xs bg-white/10 px-1 py-0.5 rounded">/chat</code> endpoint — AfuBot activates automatically when the query requires live web data.
+                </p>
+                <Tabs tabs={[
+                  {
+                    label: "curl",
+                    content: <CodeBlock language="bash" code={`curl -X POST "${BASE_URL}/chat" \\
+  -H "x-engagera-api-key: eng_YOUR_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "messages": [{ "role": "user", "content": "Latest SpaceX launch results" }],
+    "model": "engagera-pro",
+    "stream": false
+  }'`} />
+                  },
+                  {
+                    label: "TypeScript",
+                    content: <CodeBlock language="typescript" code={`// Using @afuchat/sdk (recommended)
+import Engagera from "@afuchat/sdk";
+const client = new Engagera({ apiKey: "eng_..." });
 
-export async function chat(
-  apiKey: string,
-  messages: Message[],
-  options: ChatOptions = {}
-) {
-  const res = await fetch(\`\${BASE}/chat\`, {
-    method: "POST",
-    headers: {
-      "Authorization": \`Bearer \${apiKey}\`,
-      "Content-Type": "application/json",
+const result = await client.afubot.search("Latest SpaceX launch results");
+console.log(result.answer);
+result.sources.forEach(s => console.log(s.title, s.url, s.image));`} />
+                  },
+                  {
+                    label: "Python",
+                    content: <CodeBlock language="python" code={`import requests
+
+res = requests.post(
+    "${BASE_URL}/chat",
+    headers={
+        "x-engagera-api-key": "eng_YOUR_KEY",
+        "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      messages,
-      model: options.model ?? "engagera-pro",
-    }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error ?? \`HTTP \${res.status}\`);
+    json={
+        "messages": [{"role": "user", "content": "Latest SpaceX launch results"}],
+        "model": "engagera-pro",
+        "stream": False,
+    },
+)
+data = res.json()
+print(data["message"]["content"])
+for source in data.get("crawledSources", []):
+    print(source["title"], source["url"])`} />
+                  },
+                ]} />
+              </div>
+
+              <div id="afubot-response" className="scroll-mt-20 mt-6">
+                <h3 className="text-sm font-semibold mb-3 text-white/80">AfuBot response fields</h3>
+                <div className="border border-white/10 rounded-xl overflow-hidden">
+                  <Param name="message.content" type="string">The synthesised answer incorporating content from crawled pages.</Param>
+                  <Param name="crawledSources" type="Source[]">
+                    Array of pages AfuBot crawled. Each source has <code className="font-mono text-[11px]">url</code>, <code className="font-mono text-[11px]">title</code>, <code className="font-mono text-[11px]">image</code> (og:image), and <code className="font-mono text-[11px]">snippet</code>.
+                  </Param>
+                  <Param name="searchInfo" type="object">
+                    Contains the internal <code className="font-mono text-[11px]">query</code> AfuBot used and a <code className="font-mono text-[11px]">sources</code> array (may overlap with crawledSources).
+                  </Param>
+                  <Param name="timeInfo" type="object">Present when the query is time-sensitive. Contains <code className="font-mono text-[11px]">ianaZone</code> and <code className="font-mono text-[11px]">label</code>.</Param>
+                </div>
+              </div>
+            </Section>
+
+            {/* Streaming */}
+            <Section id="streaming" title="Streaming (SSE)" icon={Zap}>
+              <p className="text-white/60 text-sm leading-relaxed mb-4">
+                Set <code className="font-mono text-xs bg-white/10 px-1 py-0.5 rounded">stream: true</code> in the request body to receive a <code className="font-mono text-xs bg-white/10 px-1 py-0.5 rounded">text/event-stream</code> response. Tokens arrive as they are generated. AfuBot crawling happens first, then the model streams its answer.
+              </p>
+              <Callout icon={AlertCircle}>
+                Streaming is a <strong className="text-white/70">chat-layer feature</strong>. AfuBot itself is synchronous — it crawls first, then the AI streams its answer over SSE.
+              </Callout>
+
+              <div id="streaming-events" className="scroll-mt-20 mt-5">
+                <h3 className="text-sm font-semibold mb-3 text-white/80">Event types</h3>
+                <div className="border border-white/10 rounded-xl overflow-hidden mb-5">
+                  {[
+                    { event: "meta", payload: '{ "type": "meta", "searchInfo": { "query": "...", "sources": [...] }, "crawledSources": [...] }', desc: "Emitted once AfuBot has finished crawling. Contains all sources with og:images." },
+                    { event: "text", payload: '{ "type": "text", "text": "token" }', desc: "One or more tokens from the model. Concatenate these to build the full answer." },
+                    { event: "done", payload: '{ "type": "done", "conversationId": "...", "usage": { ... }, "timeInfo": { ... } }', desc: "Stream complete. Contains usage stats and optional timeInfo." },
+                    { event: "error", payload: '{ "type": "error", "error": "message" }', desc: "Stream failed. The connection is closed after this event." },
+                  ].map((e, i) => (
+                    <div key={i} className="px-4 py-3.5 border-b border-white/[0.06] last:border-0">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <code className="text-xs font-mono text-white/80 border border-white/15 rounded px-1.5 py-0.5">{e.event}</code>
+                      </div>
+                      <p className="text-xs text-white/45 mb-2 leading-relaxed">{e.desc}</p>
+                      <pre className="text-[11px] font-mono text-white/35 overflow-x-auto">{e.payload}</pre>
+                    </div>
+                  ))}
+                </div>
+                <Tabs tabs={[
+                  {
+                    label: "TypeScript",
+                    content: <CodeBlock language="typescript" code={`// Using @afuchat/sdk (recommended)
+import Engagera from "@afuchat/sdk";
+const client = new Engagera({ apiKey: "eng_..." });
+
+for await (const event of client.chat.stream({
+  messages: [{ role: "user", content: "Summarise today's AI news" }],
+})) {
+  if (event.type === "text")    process.stdout.write(event.text);
+  if (event.type === "sources") console.log("Sources:", event.sources);
+  if (event.type === "done")    console.log("\\nUsage:", event.usage);
+}`} />
+                  },
+                  {
+                    label: "curl",
+                    content: <CodeBlock language="bash" code={`curl -X POST "${BASE_URL}/chat" \\
+  -H "x-engagera-api-key: eng_YOUR_KEY" \\
+  -H "Content-Type: application/json" \\
+  -H "Accept: text/event-stream" \\
+  -d '{
+    "messages": [{ "role": "user", "content": "Summarise today\\'s AI news" }],
+    "model": "engagera-pro",
+    "stream": true
+  }'
+
+# Output:
+# data: {"type":"meta","searchInfo":{"query":"...","sources":[...]}}
+# data: {"type":"text","text":"Today"}
+# data: {"type":"text","text":" in AI"}
+# data: {"type":"done","conversationId":"...","usage":{...}}`} />
+                  },
+                  {
+                    label: "JavaScript",
+                    content: <CodeBlock language="javascript" code={`const res = await fetch("${BASE_URL}/chat", {
+  method: "POST",
+  headers: {
+    "x-engagera-api-key": "eng_YOUR_KEY",
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    messages: [{ role: "user", content: "Latest AI news" }],
+    stream: true,
+  }),
+});
+
+const reader = res.body.getReader();
+const decoder = new TextDecoder();
+let buffer = "";
+
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  buffer += decoder.decode(value, { stream: true });
+  for (const block of buffer.split("\\n\\n")) {
+    if (!block.startsWith("data:")) continue;
+    const event = JSON.parse(block.slice(5).trim());
+    if (event.type === "text") process.stdout.write(event.text);
+    if (event.type === "done") console.log("\\n✓ done");
+    buffer = "";
   }
-  return res.json();
+}`} />
+                  },
+                ]} />
+              </div>
+            </Section>
+
+            {/* SDKs */}
+            <Section id="sdks" title="SDK · @afuchat/sdk" icon={BookOpen}>
+              <div id="sdk-install" className="scroll-mt-20">
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="text-xs font-mono text-white/30 border border-white/10 rounded px-2 py-0.5">npm</span>
+                  <code className="text-sm font-mono text-white/70">@afuchat/sdk</code>
+                  <span className="text-xs text-white/30 border border-white/10 rounded px-1.5 py-0.5">v0.1.0</span>
+                </div>
+                <p className="text-white/60 text-sm leading-relaxed mb-4">
+                  The official TypeScript SDK. Zero dependencies — uses native <code className="font-mono text-xs bg-white/10 px-1 py-0.5 rounded">fetch</code>. Works in Node.js 18+, browsers, Cloudflare Workers, Deno, and Bun.
+                </p>
+                <CodeBlock language="bash" code={`npm install @afuchat/sdk
+# or
+pnpm add @afuchat/sdk`} />
+
+                <div className="grid sm:grid-cols-2 gap-3 my-5">
+                  {[
+                    { title: "Full TypeScript", body: "All methods, events, and return types are typed. No any in your code." },
+                    { title: "AfuBot first-class", body: "client.afubot.search() — one line to search the live web." },
+                    { title: "Async iterators", body: "for await (const event of client.chat.stream()) — native streaming." },
+                    { title: "Zero dependencies", body: "Pure fetch. Nothing to audit. Works everywhere." },
+                  ].map(({ title, body }) => (
+                    <div key={title} className="p-3.5 border border-white/10 rounded-xl bg-white/[0.02]">
+                      <p className="text-sm font-medium mb-1">{title}</p>
+                      <p className="text-xs text-white/40 leading-relaxed">{body}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div id="sdk-afubot" className="scroll-mt-20 mt-8">
+                <h3 className="text-sm font-semibold mb-1 text-white/80">AfuBot — crawler</h3>
+                <p className="text-white/50 text-xs mb-3">Synchronous. Use this to build search engines.</p>
+                <CodeBlock language="typescript" code={`import Engagera from "@afuchat/sdk";
+
+const client = new Engagera({ apiKey: "eng_..." });
+
+// One-shot search
+const result = await client.afubot.search("latest AI breakthroughs");
+
+console.log(result.answer);       // synthesised answer
+console.log(result.searchQuery);  // query AfuBot used internally
+result.sources.forEach(source => {
+  console.log(source.title);   // page title
+  console.log(source.url);     // source URL
+  console.log(source.image);   // og:image (if available)
+  console.log(source.snippet); // text preview
+});
+
+// With options
+const result2 = await client.afubot.search({
+  query: "best EVs 2025",
+  contextHint: "focus on charging speed",
+  conversationId: "abc-123",   // continue a conversation
+  model: "engagera-pro",
+});`} />
+              </div>
+
+              <div id="sdk-chat" className="scroll-mt-20 mt-8">
+                <h3 className="text-sm font-semibold mb-1 text-white/80">Chat — AI completions</h3>
+                <p className="text-white/50 text-xs mb-3">Streaming and non-streaming. Supports multi-turn conversation.</p>
+                <Tabs tabs={[
+                  {
+                    label: "Non-streaming",
+                    content: <CodeBlock language="typescript" code={`const reply = await client.chat.create({
+  messages: [
+    { role: "system", content: "You are a helpful assistant." },
+    { role: "user",   content: "What happened in tech this week?" },
+  ],
+  model: "engagera-pro",
+});
+
+console.log(reply.content);  // full answer
+console.log(reply.sources);  // pages AfuBot crawled (if triggered)
+console.log(reply.usage);    // { promptTokens, completionTokens, totalTokens }`} />
+                  },
+                  {
+                    label: "Streaming",
+                    content: <CodeBlock language="typescript" code={`for await (const event of client.chat.stream({
+  messages: [{ role: "user", content: "Summarise today's AI news" }],
+})) {
+  switch (event.type) {
+    case "text":
+      process.stdout.write(event.text);   // token arrives
+      break;
+    case "sources":
+      console.log(event.sources);         // AfuBot finished crawling
+      break;
+    case "done":
+      console.log("\\n✓", event.usage);
+      break;
+    case "error":
+      console.error(event.message);
+      break;
+  }
+}`} />
+                  },
+                  {
+                    label: "Multi-turn",
+                    content: <CodeBlock language="typescript" code={`let conversationId: string | undefined;
+
+async function ask(question: string) {
+  const reply = await client.chat.create({
+    messages: [{ role: "user", content: question }],
+    conversationId,
+  });
+  conversationId = reply.conversationId;
+  return reply.content;
 }
 
-// Usage:
-// const reply = await chat("eng_xxx", [{ role: "user", content: "Hello!" }]);
-// console.log(reply.message.content);`} />
-                  )
-                },
-                {
-                  label: "Python",
-                  content: (
-                    <CodeBlock language="python" code={`# engagera.py — drop this file into any Python project
-import requests
-from typing import Optional
+await ask("Who won the last World Cup?");
+await ask("And the one before that?");  // context maintained`} />
+                  },
+                  {
+                    label: "Error handling",
+                    content: <CodeBlock language="typescript" code={`import Engagera, {
+  EngageraAuthError,
+  EngageraRateLimitError,
+  EngageraStreamError,
+} from "@afuchat/sdk";
 
-BASE = "${BASE_URL}"
+try {
+  const result = await client.afubot.search("...");
+} catch (err) {
+  if (err instanceof EngageraAuthError)
+    console.error("Invalid API key");
+  if (err instanceof EngageraRateLimitError)
+    console.error("Rate limit hit — slow down");
+  if (err instanceof EngageraStreamError)
+    console.error("Stream broke:", err.message);
+}`} />
+                  },
+                ]} />
 
-def chat(
-    api_key: str,
-    messages: list[dict],
-    model: str = "engagera-pro",
-) -> dict:
-    payload = {"messages": messages, "model": model}
-    res = requests.post(
-        f"{BASE}/chat",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        json=payload,
-        timeout=60,
-    )
-    res.raise_for_status()
-    return res.json()
-
-# Usage:
-# reply = chat("eng_xxx", [{"role": "user", "content": "Hello!"}])
-# print(reply["message"]["content"])`} />
-                  )
-                },
-              ]} />
-              <Callout icon={Zap}>
-                Want a full SDK with streaming, retries, and TypeScript types?{" "}
-                <a href="mailto:dev@afuchat.com" className="underline text-white/70 hover:text-white">Contact us</a> — we're building official SDKs for JavaScript, Python, and Go.
-              </Callout>
+                <div className="mt-5 border border-white/10 rounded-xl overflow-hidden">
+                  <div className="px-4 py-3 bg-white/[0.03] border-b border-white/10">
+                    <p className="text-xs font-medium text-white/60">Client configuration</p>
+                  </div>
+                  <div className="divide-y divide-white/[0.06]">
+                    <Param name="apiKey" type="string" required>Your Engagera API key — starts with <code className="font-mono text-[11px]">eng_</code>.</Param>
+                    <Param name="baseUrl" type="string">Override the API base URL. Useful for self-hosted deployments. Defaults to the Engagera production endpoint.</Param>
+                    <Param name="defaultModel" type="EngageraModel">Model used when no model is specified per-call. Defaults to <code className="font-mono text-[11px]">engagera-2.0</code>.</Param>
+                    <Param name="timeout" type="number">Request timeout in milliseconds. Defaults to <code className="font-mono text-[11px]">120000</code> (2 min).</Param>
+                  </div>
+                </div>
+              </div>
             </Section>
 
             {/* Footer */}
             <div className="border-t border-white/10 pt-8 mt-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div>
-                <p className="text-sm font-semibold">Engagera by AfuAI</p>
+                <p className="text-sm font-semibold">Engagera by AfuChat</p>
                 <p className="text-xs text-white/30 mt-0.5">The unified AI platform for developers.</p>
               </div>
               <div className="flex gap-4 text-xs text-white/30">
                 <a href="/" className="hover:text-white transition-colors">Chat</a>
                 <a href="/dashboard" className="hover:text-white transition-colors">Dashboard</a>
+                <a href="https://www.npmjs.com/package/@afuchat/sdk" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">npm</a>
                 <a href="mailto:dev@afuchat.com" className="hover:text-white transition-colors">Support</a>
               </div>
             </div>
