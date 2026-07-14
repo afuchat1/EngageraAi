@@ -371,10 +371,14 @@ export default function Landing() {
                 {isLoading && messages[messages.length - 1]?.role !== "assistant" && (
                   <div className="flex justify-start">
                     <div className="text-white w-full max-w-[88%] break-words">
-                      <div className="flex items-center gap-1.5 py-2">
-                        <span className="w-2 h-2 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "0ms" }} />
-                        <span className="w-2 h-2 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "120ms" }} />
-                        <span className="w-2 h-2 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "240ms" }} />
+                      <div className="flex items-center gap-2.5 py-2">
+                        <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
+                          <span className="thinking-orb-ring absolute inset-0 rounded-full border border-white/40" />
+                          <span className="thinking-orb-core absolute inset-[3px] rounded-full bg-white" />
+                        </span>
+                        <span className="thinking-shimmer text-[13px] font-medium tracking-wide">
+                          Thinking
+                        </span>
                       </div>
                     </div>
                   </div>
