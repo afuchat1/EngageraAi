@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef, createContext, useContext } from "react";
 import PublicLayout from "@/components/layout/PublicLayout";
 import { Copy, Check, ChevronDown, ChevronRight, Terminal, Key, Zap, BookOpen, AlertCircle, Layers, Menu, X } from "lucide-react";
 import { SUPABASE_URL } from "@/lib/supabase";
@@ -109,14 +109,32 @@ function ModelCard({ id, name, tagline, speed, quality }: { id: string; name: st
   );
 }
 
+// ── Active section context ────────────────────────────────────────────────────
+const ActiveSectionCtx = createContext<string>("");
+
 // ── TOC link ──────────────────────────────────────────────────────────────────
 function TocLink({ href, children, sub = false }: { href: string; children: React.ReactNode; sub?: boolean }) {
+  const activeId = useContext(ActiveSectionCtx);
+  const id = href.slice(1); // strip leading #
+  const isActive = activeId === id;
+
   return (
     <a
       href={href}
-      onClick={() => document.querySelector(href)?.scrollIntoView({ behavior: "smooth" })}
-      className={`block py-1 transition-colors hover:text-white text-white/45 ${sub ? "pl-4 text-xs" : "text-sm"}`}
+      onClick={(e) => {
+        e.preventDefault();
+        document.querySelector(href)?.scrollIntoView({ behavior: "smooth" });
+        history.replaceState(null, "", href);
+      }}
+      className={[
+        "flex items-center gap-2 py-1 transition-colors duration-150",
+        sub ? "pl-4 text-xs" : "text-sm",
+        isActive ? "text-white" : "text-white/40 hover:text-white/70",
+      ].join(" ")}
     >
+      {isActive && (
+        <span className="w-0.5 h-3.5 rounded-full bg-white shrink-0 -ml-2" />
+      )}
       {children}
     </a>
   );
@@ -143,9 +161,50 @@ function Tabs({ tabs }: { tabs: { label: string; content: React.ReactNode }[] })
   );
 }
 
+// ── All tracked section IDs (order matters — topmost wins) ───────────────────
+const SECTION_IDS = [
+  "overview", "quickstart", "authentication", "models",
+  "afubot", "afubot-search", "afubot-response",
+  "chat", "chat-response", "chat-examples",
+  "streaming", "streaming-events",
+  "api-keys-endpoint", "usage-endpoint", "errors",
+  "sdks", "sdk-install", "sdk-afubot", "sdk-chat",
+];
+
 // ── Main Docs page ─────────────────────────────────────────────────────────────
 export default function Docs() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [activeId, setActiveId] = useState("overview");
+  const visibleRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            visibleRef.current.add(entry.target.id);
+          } else {
+            visibleRef.current.delete(entry.target.id);
+          }
+        });
+        // Pick the topmost visible section (first in SECTION_IDS order)
+        const next = SECTION_IDS.find((id) => visibleRef.current.has(id));
+        if (next) setActiveId(next);
+      },
+      {
+        // Fire when a section's top edge crosses the upper ~30% of the viewport
+        rootMargin: "-8% 0px -65% 0px",
+        threshold: 0,
+      }
+    );
+
+    SECTION_IDS.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) observer.observe(el);
+    });
+
+    return () => observer.disconnect();
+  }, []);
 
   const navLinks = [
     { href: "#overview", label: "Overview" },
@@ -190,6 +249,7 @@ export default function Docs() {
           {/* Desktop sticky TOC */}
           <aside className="hidden md:block w-52 shrink-0 sticky top-12 self-start h-fit">
             <p className="text-[10px] font-mono uppercase tracking-widest text-white/25 mb-4">Contents</p>
+            <ActiveSectionCtx.Provider value={activeId}>
             <nav className="space-y-0.5">
               <TocLink href="#overview">Overview</TocLink>
               <TocLink href="#quickstart">Quick Start</TocLink>
@@ -212,6 +272,7 @@ export default function Docs() {
               <TocLink href="#sdk-afubot" sub>AfuBot</TocLink>
               <TocLink href="#sdk-chat" sub>Chat</TocLink>
             </nav>
+            </ActiveSectionCtx.Provider>
           </aside>
 
           {/* Main content */}
