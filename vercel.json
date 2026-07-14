@@ -1,0 +1,20 @@
+{
+  "buildCommand": "pnpm --filter @workspace/engagera run build",
+  "outputDirectory": "artifacts/engagera/dist/public",
+  "installCommand": "pnpm install",
+  "framework": null,
+  "routes": [
+    {
+      "src": "/assets/(.*)",
+      "dest": "/assets/$1"
+    },
+    {
+      "src": "/(.*\\.[a-zA-Z0-9]+)",
+      "dest": "/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ]
+}
