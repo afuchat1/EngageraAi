@@ -128,6 +128,7 @@ export default function Landing() {
     const newMessages = [...messages, userMsg];
     setMessages(newMessages);
     setInput("");
+    chatInputRef.current?.focus();
 
     const apiMessages: ChatMessage[] = newMessages.map(m => ({ role: m.role, content: m.content }));
     setIsLoading(true);
@@ -420,7 +421,7 @@ export default function Landing() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={guestLimitReached ? "Sign up to continue..." : "Message Engagera..."}
-                disabled={guestLimitReached || isLoading}
+                disabled={guestLimitReached}
                 className="w-full bg-transparent border border-white/20 focus:border-white/50 outline-none resize-none py-3 pl-4 pr-12 text-sm max-h-48 scrollbar-thin min-h-[50px] transition-colors disabled:opacity-40 rounded-2xl"
                 rows={1}
                 onInput={(e) => {
