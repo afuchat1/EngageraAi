@@ -1,0 +1,138 @@
+[
+  {
+    "id": "3b3e0122-4872-4b88-ab63-178001340426",
+    "position": 1,
+    "filepath": "src/pages/slides/Title.tsx",
+    "title": "Engagera",
+    "description": "Title slide — one chat interface, every leading AI model.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "57914857-7314-40fe-b999-aed4ea3557f2",
+    "position": 2,
+    "filepath": "src/pages/slides/Problem.tsx",
+    "title": "The problem",
+    "description": "Fragmented AI subscriptions, tools, and visibility.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "844d4a0c-cfc5-48d9-9ac1-1315141af745",
+    "position": 3,
+    "filepath": "src/pages/slides/Solution.tsx",
+    "title": "The solution",
+    "description": "Engagera unifies multi-model chat in one account.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "37dbcbfc-5656-411f-8a06-059ebef87615",
+    "position": 4,
+    "filepath": "src/pages/slides/ProductChat.tsx",
+    "title": "Product tour — Chat",
+    "description": "Chat interface, model picker, guest mode.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "2f3acc30-cbc5-4901-a51c-1d72448f364b",
+    "position": 5,
+    "filepath": "src/pages/slides/ProductUsage.tsx",
+    "title": "Product tour — Usage & analytics",
+    "description": "Token usage dashboard and charts.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "d2638ba5-c38f-41b6-b4dc-3eaf96c28e67",
+    "position": 6,
+    "filepath": "src/pages/slides/ProductApi.tsx",
+    "title": "Product tour — Developer API",
+    "description": "API key management and programmatic access.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "abbbdfb0-2159-400c-b3b2-8e3713fdd89d",
+    "position": 7,
+    "filepath": "src/pages/slides/ProductDocs.tsx",
+    "title": "Product tour — Docs",
+    "description": "In-product documentation and model comparisons.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "21b191d2-de26-4c06-9e37-e0fe29732dae",
+    "position": 8,
+    "filepath": "src/pages/slides/TrustControl.tsx",
+    "title": "Built for trust and control",
+    "description": "Admin console, dataset review, account settings.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "982daadb-1648-4f6b-b1d9-baedebe81222",
+    "position": 9,
+    "filepath": "src/pages/slides/WhyWeWin.tsx",
+    "title": "Why Engagera wins",
+    "description": "Model-agnostic, transparent, guest-first, developer-ready.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "047762db-6942-44cf-8df1-a87aa9ad3bc5",
+    "position": 10,
+    "filepath": "src/pages/slides/WhoItsFor.tsx",
+    "title": "Who it's for",
+    "description": "Individuals, teams, and developers.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "829c85c9-2f1b-46e9-98f2-5ee538503a97",
+    "position": 11,
+    "filepath": "src/pages/slides/Infrastructure.tsx",
+    "title": "Built on modern, serverless infrastructure",
+    "description": "Supabase-backed, edge functions, auto-scaling.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "816b4150-28b3-4ec6-9f1f-7680f4baa710",
+    "position": 12,
+    "filepath": "src/pages/slides/Security.tsx",
+    "title": "Security by design",
+    "description": "Row-level security, isolated guest sessions, role gating.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "d76d9d32-f4c1-4f2a-8711-6d46246658cf",
+    "position": 13,
+    "filepath": "src/pages/slides/BusinessModel.tsx",
+    "title": "Business model",
+    "description": "Freemium, subscriptions, usage-based API pricing.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "4790a1d9-6e48-4c18-a4ba-4a702801b701",
+    "position": 14,
+    "filepath": "src/pages/slides/Roadmap.tsx",
+    "title": "Roadmap",
+    "description": "Mobile app, deeper analytics, expanded model catalog.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "83515f21-95e3-4219-8029-bdd986235f55",
+    "position": 15,
+    "filepath": "src/pages/slides/WhereWeAre.tsx",
+    "title": "Where we are today",
+    "description": "Current product status and readiness.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "7c131716-8519-4cd5-a392-687cc684b680",
+    "position": 16,
+    "filepath": "src/pages/slides/Vision.tsx",
+    "title": "The vision",
+    "description": "Engagera as the default front door to AI.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "2af08e0b-89ce-4468-80f6-94f4f2e4ed92",
+    "position": 17,
+    "filepath": "src/pages/slides/Closing.tsx",
+    "title": "Let's talk",
+    "description": "Closing call to action.",
+    "speakerNotes": ""
+  }
+]

@@ -3,8 +3,14 @@ import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
 import PublicLayout from "@/components/layout/PublicLayout";
 import { logoSrc } from "@/lib/assets";
+import { useSEO } from "@/hooks/useSEO";
 
 export default function SignIn() {
+  useSEO({
+    title: "Sign In — Engagera | AfuAI",
+    description: "Sign in to your Engagera account to chat, manage API keys, and track usage.",
+    path: "/sign-in",
+  });
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
   const [error, setError]       = useState<string | null>(null);

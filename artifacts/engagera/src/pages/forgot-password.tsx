@@ -3,8 +3,14 @@ import { Link } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
 import PublicLayout from "@/components/layout/PublicLayout";
 import { logoSrc } from "@/lib/assets";
+import { useSEO } from "@/hooks/useSEO";
 
 export default function ForgotPassword() {
+  useSEO({
+    title: "Reset Your Password — Engagera | AfuAI",
+    description: "Recover access to your Engagera account.",
+    path: "/forgot-password",
+  });
   const [email, setEmail]   = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [message, setMessage] = useState<string | null>(null);

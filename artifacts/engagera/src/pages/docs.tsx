@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, createContext, useContext } from "react";
 import PublicLayout from "@/components/layout/PublicLayout";
 import { Copy, Check, ChevronDown, ChevronRight, Terminal, Key, Zap, BookOpen, AlertCircle, Layers, Menu, X } from "lucide-react";
 import { SUPABASE_URL } from "@/lib/supabase";
+import { useSEO } from "@/hooks/useSEO";
 
 const BASE_URL = `${SUPABASE_URL}/functions/v1`;
 
@@ -173,6 +174,13 @@ const SECTION_IDS = [
 
 // ── Main Docs page ─────────────────────────────────────────────────────────────
 export default function Docs() {
+  useSEO({
+    title: "Developer API Docs — Engagera | AfuAI",
+    description:
+      "Unified access to the world's most powerful AI models through a single API. Authentication, models, chat completions, streaming, API keys, usage, and error codes — built by AfuAI.",
+    path: "/docs",
+  });
+
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeId, setActiveId] = useState("overview");
   const visibleRef = useRef<Set<string>>(new Set());

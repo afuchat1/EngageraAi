@@ -1,0 +1,27 @@
+kind = "slides"
+previewPath = "/pitch-deck/"
+title = "Engagera Pitch Deck"
+version = "1.0.0"
+id = "artifacts/engagera-pitch-deck"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/pitch-deck/" ]
+localPort = 19084
+
+[services.development]
+run = "pnpm --filter @workspace/engagera-pitch-deck run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/engagera-pitch-deck", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/engagera-pitch-deck/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19084"
+BASE_PATH = "/pitch-deck/"
