@@ -1,18 +1,17 @@
 // ---------------------------------------------------------------------------
 // Engagera SDK — AfuBot resource
 //
-// AfuBot is Engagera's web-search AI. It crawls live pages, extracts
-// og:images and snippets, and synthesises a cited natural-language answer.
-// Use it to power search engines, research tools, and news aggregators.
+// AfuBot is Engagera's web crawler / spider. It fetches live pages, extracts
+// structured data (titles, og:images, snippets), and returns cited sources
+// alongside a synthesised answer. AfuBot is NOT a streaming interface — it
+// crawls, indexes, and responds synchronously. For token-by-token streaming
+// use client.chat.stream() instead.
 // ---------------------------------------------------------------------------
 
 import type { HttpClient } from "../http.js";
-import { parseSSEStream } from "../streaming.js";
-import { EngageraStreamError } from "../error.js";
 import type {
   AfuBotSearchParams,
   AfuBotSearchResult,
-  AfuBotStreamEvent,
   Source,
 } from "../types.js";
 
@@ -25,7 +24,6 @@ function normaliseSource(s: Record<string, unknown>): Source {
   };
 }
 
-/** Wrap a plain query string into the messages array AfuBot expects. */
 function toMessages(query: string) {
   return [{ role: "user" as const, content: query }];
 }
@@ -34,21 +32,30 @@ export class AfuBot {
   constructor(private readonly http: HttpClient) {}
 
   /**
-   * Search the web and get a fully-synthesised answer with cited sources.
-   * Blocks until the entire response is ready.
+   * Crawl the web for a query and return cited sources with a synthesised answer.
+   *
+   * AfuBot spiders relevant pages, extracts structured content (titles,
+   * og:images, snippets), and returns everything in one response.
+   * This call blocks until crawling and synthesis are complete.
+   *
+   * For streaming the AI answer token-by-token while results load,
+   * use `client.chat.stream()` instead.
    *
    * @example
    * ```ts
    * const result = await client.afubot.search("latest SpaceX launch");
-   * console.log(result.answer);
-   * result.sources.forEach(s => console.log(s.title, s.url));
+   *
+   * console.log(result.answer);      // synthesised answer
+   * console.log(result.searchQuery); // query AfuBot issued internally
+   * result.sources.forEach(s => {
+   *   console.log(s.title, s.url, s.image);
+   * });
    * ```
    */
   async search(
     query: string | AfuBotSearchParams,
   ): Promise<AfuBotSearchResult> {
-    const params =
-      typeof query === "string" ? { query } : query;
+    const params = typeof query === "string" ? { query } : query;
 
     const body = {
       messages: toMessages(params.query),
@@ -80,96 +87,5 @@ export class AfuBot {
           (raw.usage?.prompt_tokens ?? 0) + (raw.usage?.completion_tokens ?? 0),
       },
     };
-  }
-
-  /**
-   * Stream AfuBot's response in real-time.
-   * Yields `text` events as tokens arrive, then a `sources` event when
-   * web results are ready, and finally a `done` event with the full answer.
-   *
-   * @example
-   * ```ts
-   * for await (const event of client.afubot.stream("AI news today")) {
-   *   if (event.type === "text")    process.stdout.write(event.text);
-   *   if (event.type === "sources") console.log(event.sources);
-   *   if (event.type === "done")    console.log("\n✓", event.answer);
-   * }
-   * ```
-   */
-  async *stream(
-    query: string | AfuBotSearchParams,
-  ): AsyncGenerator<AfuBotStreamEvent> {
-    const params =
-      typeof query === "string" ? { query } : query;
-
-    const body = {
-      messages: toMessages(params.query),
-      model: params.model ?? this.http.defaultModel,
-      conversationId: params.conversationId,
-      contextHint: params.contextHint,
-      stream: true,
-    };
-
-    const response = await this.http.post("/chat", body, true);
-
-    let fullAnswer = "";
-    let finalSources: Source[] = [];
-    let searchQuery = params.query;
-
-    for await (const event of parseSSEStream(response)) {
-      switch (event.type) {
-        case "meta": {
-          const rawSources = (
-            event.data.crawledSources ??
-            event.data.searchInfo?.sources ??
-            []
-          ).map(normaliseSource);
-          finalSources = rawSources;
-          searchQuery = event.data.searchInfo?.query ?? params.query;
-
-          yield {
-            type: "sources",
-            searchQuery,
-            sources: rawSources,
-          };
-          break;
-        }
-        case "text": {
-          const chunk = (event.data.text ?? event.data.content ?? "") as string;
-          fullAnswer += chunk;
-          yield { type: "text", text: chunk };
-          break;
-        }
-        case "done": {
-          const rawSources = (
-            event.data.crawledSources ??
-            event.data.searchInfo?.sources ??
-            []
-          ).map(normaliseSource);
-          if (rawSources.length) finalSources = rawSources;
-
-          yield {
-            type: "done",
-            answer: fullAnswer,
-            sources: finalSources,
-            searchQuery,
-            conversationId: event.data.conversationId,
-            timeInfo: event.data.timeInfo,
-            usage: {
-              promptTokens: event.data.usage?.prompt_tokens ?? 0,
-              completionTokens: event.data.usage?.completion_tokens ?? 0,
-              totalTokens:
-                (event.data.usage?.prompt_tokens ?? 0) +
-                (event.data.usage?.completion_tokens ?? 0),
-            },
-          };
-          return;
-        }
-        case "error": {
-          yield { type: "error", message: event.data.error ?? "Stream error" };
-          throw new EngageraStreamError(event.data.error ?? "Stream error");
-        }
-      }
-    }
   }
 }

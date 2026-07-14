@@ -2,11 +2,11 @@
 // Engagera SDK — Shared Types
 // ---------------------------------------------------------------------------
 
-/** A web source surfaced by AfuBot during a search. */
+/** A web source returned by AfuBot after crawling a page. */
 export interface Source {
   url: string;
   title: string;
-  /** og:image or favicon extracted from the page, if available. */
+  /** og:image or favicon extracted from the live page, if available. */
   image?: string;
   snippet?: string;
 }
@@ -49,7 +49,7 @@ export interface ChatCreateParams {
   model?: EngageraModel;
   /** Pass an existing ID to continue a conversation. */
   conversationId?: string;
-  /** Extra hint to bias AfuBot's search behaviour. */
+  /** Extra hint to bias AfuBot's crawl behaviour. */
   contextHint?: string;
 }
 
@@ -58,6 +58,7 @@ export interface ChatResponse {
   content: string;
   model: string;
   conversationId?: string;
+  /** Web sources AfuBot crawled to produce this response. */
   sources?: Source[];
   searchInfo?: { query: string; sources: Source[] };
   timeInfo?: TimeInfo;
@@ -66,6 +67,7 @@ export interface ChatResponse {
 
 // ---------------------------------------------------------------------------
 // Chat streaming event types
+// (Streaming is a chat-layer feature — AfuBot itself is not a stream.)
 // ---------------------------------------------------------------------------
 
 export interface ChatStreamEventText {
@@ -73,6 +75,7 @@ export interface ChatStreamEventText {
   text: string;
 }
 
+/** Emitted when AfuBot has finished crawling and sources are ready. */
 export interface ChatStreamEventSources {
   type: "sources";
   searchQuery: string;
@@ -84,6 +87,7 @@ export interface ChatStreamEventDone {
   content: string;
   model: string;
   conversationId?: string;
+  /** Web sources AfuBot crawled during this turn. */
   sources?: Source[];
   timeInfo?: TimeInfo;
   usage: Usage;
@@ -102,20 +106,22 @@ export type ChatStreamEvent =
 
 // ---------------------------------------------------------------------------
 // AfuBot types
+// AfuBot is a crawler / spider — results are returned synchronously, not streamed.
 // ---------------------------------------------------------------------------
 
 export interface AfuBotSearchParams {
   query: string;
   model?: EngageraModel;
+  /** Steers what AfuBot crawls — e.g. "focus on pricing". */
   contextHint?: string;
-  /** Conversation ID to carry context across searches. */
+  /** Conversation ID to maintain context across searches. */
   conversationId?: string;
 }
 
 export interface AfuBotSearchResult {
-  /** Full natural-language answer from AfuBot. */
+  /** Natural-language answer synthesised from crawled pages. */
   answer: string;
-  /** Web sources cited in the answer. */
+  /** Live web sources AfuBot crawled, with titles, urls, and og:images. */
   sources: Source[];
   /** The search query AfuBot issued internally. */
   searchQuery: string;
@@ -123,39 +129,6 @@ export interface AfuBotSearchResult {
   timeInfo?: TimeInfo;
   usage: Usage;
 }
-
-// AfuBot streaming events — a friendlier subset of ChatStreamEvent
-export interface AfuBotStreamEventText {
-  type: "text";
-  text: string;
-}
-
-export interface AfuBotStreamEventSources {
-  type: "sources";
-  searchQuery: string;
-  sources: Source[];
-}
-
-export interface AfuBotStreamEventDone {
-  type: "done";
-  answer: string;
-  sources: Source[];
-  searchQuery: string;
-  conversationId?: string;
-  timeInfo?: TimeInfo;
-  usage: Usage;
-}
-
-export interface AfuBotStreamEventError {
-  type: "error";
-  message: string;
-}
-
-export type AfuBotStreamEvent =
-  | AfuBotStreamEventText
-  | AfuBotStreamEventSources
-  | AfuBotStreamEventDone
-  | AfuBotStreamEventError;
 
 // ---------------------------------------------------------------------------
 // Client config

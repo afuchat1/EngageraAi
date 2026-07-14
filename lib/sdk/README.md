@@ -1,6 +1,15 @@
 # @engagera/sdk
 
-The official TypeScript SDK for [Engagera](https://engagera.com) — build AI-powered search engines with **AfuBot**, our live web-search AI.
+The official TypeScript SDK for [Engagera](https://engagera.com).
+
+Two building blocks:
+
+| | What it does | Streaming? |
+|---|---|---|
+| **AfuBot** | Crawls the live web — spiders pages, extracts titles, images & snippets, returns cited sources | ✗ Returns synchronously |
+| **Chat** | AI completions that can call AfuBot internally | ✓ Token-by-token SSE |
+
+---
 
 ## Installation
 
@@ -22,40 +31,29 @@ Get your API key from the Engagera dashboard.
 
 ---
 
-## AfuBot — Web Search AI
+## AfuBot — Web Crawler / Spider
 
-AfuBot crawls live pages, extracts real content and images, and synthesises a cited natural-language answer. Use it to power search engines, news aggregators, and research tools.
-
-### One-shot search
+AfuBot is a crawler, not an AI streamer. You give it a query; it spiders
+relevant live pages, extracts structured data (og:images, titles, snippets),
+and returns everything in one synchronous response.
 
 ```ts
-const result = await client.afubot.search("latest SpaceX launch");
+const result = await client.afubot.search("SpaceX Starship latest launch");
 
-console.log(result.answer);       // Full natural-language answer
-console.log(result.searchQuery);  // The query AfuBot issued internally
-console.log(result.sources);      // Web sources with url, title, image, snippet
+console.log(result.answer);        // synthesised answer from crawled content
+console.log(result.searchQuery);   // query AfuBot used internally
+console.log(result.sources);       // crawled pages: url, title, image, snippet
 ```
 
-### Streaming search (token-by-token)
+### Source object
 
 ```ts
-for await (const event of client.afubot.stream("AI breakthroughs this week")) {
-  switch (event.type) {
-    case "text":
-      process.stdout.write(event.text);   // Stream tokens as they arrive
-      break;
-    case "sources":
-      console.log(event.sources);         // Web sources (arrives early)
-      break;
-    case "done":
-      console.log("\n✓", event.answer);   // Full answer + metadata
-      console.log("Usage:", event.usage);
-      break;
-    case "error":
-      console.error(event.message);
-      break;
-  }
-}
+result.sources.forEach(source => {
+  console.log(source.url);      // "https://space.com/..."
+  console.log(source.title);    // "SpaceX Starship completes..."
+  console.log(source.image);    // og:image extracted from the live page
+  console.log(source.snippet);  // text preview
+});
 ```
 
 ### Search with options
@@ -63,17 +61,36 @@ for await (const event of client.afubot.stream("AI breakthroughs this week")) {
 ```ts
 const result = await client.afubot.search({
   query: "best electric cars 2025",
-  model: "engagera-pro",          // optional — defaults to engagera-2.0
-  contextHint: "focus on range",  // optional — steers the search
-  conversationId: "abc-123",      // optional — continue a conversation
+  contextHint: "focus on range and charging speed",  // steers what AfuBot crawls
+  conversationId: "abc-123",                          // carry context across calls
+  model: "engagera-pro",
 });
+```
+
+### Build a search engine
+
+```ts
+async function search(userQuery: string) {
+  const { sources, answer } = await client.afubot.search(userQuery);
+
+  return {
+    answer,
+    cards: sources.map(s => ({
+      title: s.title,
+      url: s.url,
+      thumbnail: s.image,
+      preview: s.snippet,
+    })),
+  };
+}
 ```
 
 ---
 
-## Chat
+## Chat — AI Completions
 
-For general-purpose chat completions with optional web-search augmentation.
+For AI responses that may internally invoke AfuBot to fetch live data.
+Use `chat` when you need streaming or multi-turn conversation.
 
 ### Non-streaming
 
@@ -81,23 +98,34 @@ For general-purpose chat completions with optional web-search augmentation.
 const reply = await client.chat.create({
   messages: [
     { role: "system", content: "You are a helpful assistant." },
-    { role: "user",   content: "Explain quantum entanglement simply." },
+    { role: "user",   content: "What happened in tech this week?" },
   ],
-  model: "engagera-pro",
 });
 
-console.log(reply.content);
-console.log(reply.sources);   // Cited web sources (if search was triggered)
+console.log(reply.content);   // full AI answer
+console.log(reply.sources);   // pages AfuBot crawled (if triggered)
 ```
 
-### Streaming
+### Streaming — token-by-token
 
 ```ts
 for await (const event of client.chat.stream({
-  messages: [{ role: "user", content: "What is happening in tech today?" }],
+  messages: [{ role: "user", content: "Summarise today's AI news" }],
 })) {
-  if (event.type === "text") process.stdout.write(event.text);
-  if (event.type === "done") console.log("\nDone.", event.usage);
+  switch (event.type) {
+    case "text":
+      process.stdout.write(event.text);   // token arrives
+      break;
+    case "sources":
+      console.log(event.sources);         // AfuBot finished crawling
+      break;
+    case "done":
+      console.log("\n✓ done", event.usage);
+      break;
+    case "error":
+      console.error(event.message);
+      break;
+  }
 }
 ```
 
@@ -111,12 +139,12 @@ async function ask(question: string) {
     messages: [{ role: "user", content: question }],
     conversationId,
   });
-  conversationId = reply.conversationId; // carry the ID forward
+  conversationId = reply.conversationId; // carry forward
   return reply.content;
 }
 
-console.log(await ask("Who won the last World Cup?"));
-console.log(await ask("And the one before that?"));  // context is maintained
+await ask("Who won the last World Cup?");
+await ask("And the one before that?");   // context maintained
 ```
 
 ---
@@ -127,8 +155,7 @@ console.log(await ask("And the one before that?"));  // context is maintained
 |---|---|
 | `engagera-2.0` | Default — fast, balanced |
 | `engagera-2.1` | Latest generation |
-| `engagera-pro` | Most capable, slower |
-| `afubot-search` | Search-optimised |
+| `engagera-pro` | Most capable |
 
 ---
 
@@ -140,8 +167,8 @@ import Engagera, { EngageraAuthError, EngageraRateLimitError } from "@engagera/s
 try {
   const result = await client.afubot.search("...");
 } catch (err) {
-  if (err instanceof EngageraAuthError)      console.error("Bad API key");
-  if (err instanceof EngageraRateLimitError) console.error("Slow down");
+  if (err instanceof EngageraAuthError)      console.error("Invalid API key");
+  if (err instanceof EngageraRateLimitError) console.error("Rate limit hit — slow down");
 }
 ```
 
@@ -151,10 +178,10 @@ try {
 
 ```ts
 const client = new Engagera({
-  apiKey: "eng_...",          // required
-  baseUrl: "https://...",     // optional — for self-hosted deployments
-  defaultModel: "engagera-pro", // optional — model used when none is specified
-  timeout: 60_000,            // optional — ms (default: 120 000)
+  apiKey: "eng_...",              // required
+  baseUrl: "https://...",         // optional — override for self-hosted deployments
+  defaultModel: "engagera-pro",   // optional — model used when none is specified
+  timeout: 60_000,                // optional — ms, default 120 000 (2 min)
 });
 ```
 
@@ -162,20 +189,22 @@ const client = new Engagera({
 
 ## TypeScript
 
-The SDK is written in TypeScript and ships full type declarations. Every method, parameter, and event is typed — no `any` in your code.
+Written in TypeScript, ships full declarations. All methods, events, and
+return types are typed — no `any` in your consumer code.
 
 ```ts
-import type { AfuBotSearchResult, Source, AfuBotStreamEvent } from "@engagera/sdk";
+import type { AfuBotSearchResult, Source, ChatStreamEvent } from "@engagera/sdk";
 ```
 
 ---
 
 ## Runtime support
 
-Works anywhere `fetch` is available:
+Zero dependencies — uses native `fetch`. Works in:
+
 - Node.js 18+
 - Browsers
-- Edge runtimes (Cloudflare Workers, Vercel Edge, Deno)
+- Cloudflare Workers / Vercel Edge / Deno
 - Bun
 
 ---

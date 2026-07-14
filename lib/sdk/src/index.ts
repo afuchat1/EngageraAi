@@ -35,12 +35,7 @@ export type {
   ChatStreamEventSources,
   ChatStreamEventDone,
   ChatStreamEventError,
-  // AfuBot
+  // AfuBot (crawler — no streaming types)
   AfuBotSearchParams,
   AfuBotSearchResult,
-  AfuBotStreamEvent,
-  AfuBotStreamEventText,
-  AfuBotStreamEventSources,
-  AfuBotStreamEventDone,
-  AfuBotStreamEventError,
 } from "./types.js";
