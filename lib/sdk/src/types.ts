@@ -1,0 +1,149 @@
+// ---------------------------------------------------------------------------
+// Engagera SDK — Shared Types
+// ---------------------------------------------------------------------------
+
+/** A web source returned by AfuBot after crawling a page. */
+export interface Source {
+  url: string;
+  title: string;
+  /** og:image or favicon extracted from the live page, if available. */
+  image?: string;
+  snippet?: string;
+}
+
+/** Token-usage summary returned at the end of every response. */
+export interface Usage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
+/** Timezone / clock info returned when the query is time-sensitive. */
+export interface TimeInfo {
+  ianaZone: string;
+  label: string;
+  utcOffset: string;
+}
+
+/** Chat message roles. */
+export type Role = "user" | "assistant" | "system";
+
+export interface Message {
+  role: Role;
+  content: string;
+}
+
+// ---------------------------------------------------------------------------
+// Chat types
+// ---------------------------------------------------------------------------
+
+export type EngageraModel =
+  | "engagera-2.0"
+  | "engagera-2.1"
+  | "engagera-pro"
+  | "afubot-search"
+  | (string & {}); // allow arbitrary strings for forward-compat
+
+export interface ChatCreateParams {
+  messages: Message[];
+  model?: EngageraModel;
+  /** Pass an existing ID to continue a conversation. */
+  conversationId?: string;
+  /** Extra hint to bias AfuBot's crawl behaviour. */
+  contextHint?: string;
+}
+
+export interface ChatResponse {
+  /** Full assistant reply. */
+  content: string;
+  model: string;
+  conversationId?: string;
+  /** Web sources AfuBot crawled to produce this response. */
+  sources?: Source[];
+  searchInfo?: { query: string; sources: Source[] };
+  timeInfo?: TimeInfo;
+  usage: Usage;
+}
+
+// ---------------------------------------------------------------------------
+// Chat streaming event types
+// (Streaming is a chat-layer feature — AfuBot itself is not a stream.)
+// ---------------------------------------------------------------------------
+
+export interface ChatStreamEventText {
+  type: "text";
+  text: string;
+}
+
+/** Emitted when AfuBot has finished crawling and sources are ready. */
+export interface ChatStreamEventSources {
+  type: "sources";
+  searchQuery: string;
+  sources: Source[];
+}
+
+export interface ChatStreamEventDone {
+  type: "done";
+  content: string;
+  model: string;
+  conversationId?: string;
+  /** Web sources AfuBot crawled during this turn. */
+  sources?: Source[];
+  timeInfo?: TimeInfo;
+  usage: Usage;
+}
+
+export interface ChatStreamEventError {
+  type: "error";
+  message: string;
+}
+
+export type ChatStreamEvent =
+  | ChatStreamEventText
+  | ChatStreamEventSources
+  | ChatStreamEventDone
+  | ChatStreamEventError;
+
+// ---------------------------------------------------------------------------
+// AfuBot types
+// AfuBot is a crawler / spider — results are returned synchronously, not streamed.
+// ---------------------------------------------------------------------------
+
+export interface AfuBotSearchParams {
+  query: string;
+  model?: EngageraModel;
+  /** Steers what AfuBot crawls — e.g. "focus on pricing". */
+  contextHint?: string;
+  /** Conversation ID to maintain context across searches. */
+  conversationId?: string;
+}
+
+export interface AfuBotSearchResult {
+  /** Natural-language answer synthesised from crawled pages. */
+  answer: string;
+  /** Live web sources AfuBot crawled, with titles, urls, and og:images. */
+  sources: Source[];
+  /** The search query AfuBot issued internally. */
+  searchQuery: string;
+  conversationId?: string;
+  timeInfo?: TimeInfo;
+  usage: Usage;
+}
+
+// ---------------------------------------------------------------------------
+// Client config
+// ---------------------------------------------------------------------------
+
+export interface EngageraClientOptions {
+  /** Your Engagera API key (starts with `eng_`). */
+  apiKey: string;
+  /**
+   * Override the base URL. Defaults to the Engagera production endpoint.
+   * Useful for self-hosted deployments or local testing.
+   */
+  baseUrl?: string;
+  /** Default model to use when none is specified. Defaults to `"engagera-2.0"`. */
+  defaultModel?: EngageraModel;
+  /** Request timeout in milliseconds. Defaults to 120 000 (2 min). */
+  timeout?: number;
+}

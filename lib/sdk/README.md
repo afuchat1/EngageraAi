@@ -1,0 +1,250 @@
+# @afuchat/sdk
+
+The official TypeScript SDK for [Engagera](https://engagera.com) — powered by **AfuBot**, our live web crawler and search AI.
+
+[![npm version](https://img.shields.io/npm/v/@afuchat/sdk)](https://www.npmjs.com/package/@afuchat/sdk)
+[![license](https://img.shields.io/npm/l/@afuchat/sdk)](LICENSE)
+
+Two building blocks:
+
+| | What it does | Streaming? |
+|---|---|---|
+| **`client.afubot`** | Crawls the live web — spiders pages, extracts titles, images & snippets, returns cited sources | ✗ Synchronous |
+| **`client.chat`** | AI completions that can invoke AfuBot internally | ✓ Token-by-token SSE |
+
+---
+
+## Installation
+
+```bash
+npm install @afuchat/sdk
+# or
+pnpm add @afuchat/sdk
+# or
+yarn add @afuchat/sdk
+```
+
+## Quick start
+
+```ts
+import Engagera from "@afuchat/sdk";
+
+const client = new Engagera({ apiKey: "eng_..." });
+```
+
+Get your API key from the [Engagera dashboard](https://engagera.com/dashboard).
+
+---
+
+## AfuBot — Web Crawler / Spider
+
+AfuBot is a crawler, not an AI streamer. Pass it a query; it spiders relevant
+live pages, extracts structured data (og:images, titles, snippets), and returns
+everything in one synchronous response. Use it to build search engines,
+news aggregators, and research tools.
+
+### One-shot search
+
+```ts
+const result = await client.afubot.search("SpaceX Starship latest launch");
+
+console.log(result.answer);       // synthesised answer from crawled content
+console.log(result.searchQuery);  // query AfuBot issued internally
+console.log(result.sources);      // crawled pages: url, title, image, snippet
+```
+
+### Source object
+
+```ts
+result.sources.forEach(source => {
+  console.log(source.url);      // "https://space.com/..."
+  console.log(source.title);    // "SpaceX Starship completes..."
+  console.log(source.image);    // og:image extracted from the live page
+  console.log(source.snippet);  // text preview
+});
+```
+
+### Search with options
+
+```ts
+const result = await client.afubot.search({
+  query: "best electric cars 2025",
+  contextHint: "focus on range and charging speed",
+  conversationId: "abc-123",   // carry context across searches
+  model: "engagera-pro",
+});
+```
+
+### Build a search engine
+
+```ts
+async function search(userQuery: string) {
+  const { sources, answer } = await client.afubot.search(userQuery);
+
+  return {
+    answer,
+    cards: sources.map(s => ({
+      title:     s.title,
+      url:       s.url,
+      thumbnail: s.image,
+      preview:   s.snippet,
+    })),
+  };
+}
+```
+
+---
+
+## Chat — AI Completions
+
+General-purpose AI completions that can internally invoke AfuBot to fetch
+live data. Use `chat` when you need streaming or multi-turn conversations.
+
+### Non-streaming
+
+```ts
+const reply = await client.chat.create({
+  messages: [
+    { role: "system", content: "You are a helpful assistant." },
+    { role: "user",   content: "What happened in tech this week?" },
+  ],
+});
+
+console.log(reply.content);  // full AI answer
+console.log(reply.sources);  // pages AfuBot crawled (if triggered)
+```
+
+### Streaming — token-by-token
+
+```ts
+for await (const event of client.chat.stream({
+  messages: [{ role: "user", content: "Summarise today's AI news" }],
+})) {
+  switch (event.type) {
+    case "text":
+      process.stdout.write(event.text);  // token arrives
+      break;
+    case "sources":
+      console.log(event.sources);        // AfuBot finished crawling
+      break;
+    case "done":
+      console.log("\n✓", event.usage);
+      break;
+    case "error":
+      console.error(event.message);
+      break;
+  }
+}
+```
+
+### Multi-turn conversation
+
+```ts
+let conversationId: string | undefined;
+
+async function ask(question: string) {
+  const reply = await client.chat.create({
+    messages: [{ role: "user", content: question }],
+    conversationId,
+  });
+  conversationId = reply.conversationId;
+  return reply.content;
+}
+
+await ask("Who won the last World Cup?");
+await ask("And the one before that?");  // context maintained
+```
+
+---
+
+## Models
+
+| Model | Description |
+|---|---|
+| `engagera-2.0` | Default — fast, balanced |
+| `engagera-2.1` | Latest generation |
+| `engagera-pro` | Most capable |
+
+---
+
+## Error handling
+
+```ts
+import Engagera, {
+  EngageraError,
+  EngageraAuthError,
+  EngageraRateLimitError,
+  EngageraStreamError,
+} from "@afuchat/sdk";
+
+try {
+  const result = await client.afubot.search("...");
+} catch (err) {
+  if (err instanceof EngageraAuthError)      console.error("Invalid API key");
+  if (err instanceof EngageraRateLimitError) console.error("Rate limit hit");
+  if (err instanceof EngageraStreamError)    console.error("Stream broke:", err.message);
+  if (err instanceof EngageraError)          console.error("API error:", err.status, err.message);
+}
+```
+
+---
+
+## Configuration
+
+```ts
+const client = new Engagera({
+  apiKey:       "eng_...",         // required
+  baseUrl:      "https://...",     // optional — for self-hosted deployments
+  defaultModel: "engagera-pro",    // optional — used when no model is specified
+  timeout:      60_000,            // optional — ms (default: 120 000 / 2 min)
+});
+```
+
+---
+
+## TypeScript
+
+Written in TypeScript, ships full declarations. All methods, parameters,
+and events are typed — no `any` in your consumer code.
+
+```ts
+import type {
+  AfuBotSearchResult,
+  AfuBotSearchParams,
+  Source,
+  ChatStreamEvent,
+  ChatResponse,
+  Message,
+  Usage,
+} from "@afuchat/sdk";
+```
+
+---
+
+## Runtime support
+
+Zero dependencies — uses native `fetch`. Works in:
+
+- **Node.js** 18+
+- **Browsers**
+- **Edge runtimes** — Cloudflare Workers, Vercel Edge, Deno
+- **Bun**
+
+---
+
+## Publishing / self-hosting
+
+The `baseUrl` option lets you point the SDK at your own backend:
+
+```ts
+const client = new Engagera({
+  apiKey:  "your-key",
+  baseUrl: "https://your-own-api.com/v1",
+});
+```
+
+---
+
+## License
+
+MIT © AfuChat
