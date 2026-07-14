@@ -19,6 +19,7 @@ interface DisplayMessage {
   content: string;
   sources?: Source[];
   timeInfo?: TimeInfo;
+  streaming?: boolean; // true while the SSE stream is open
 }
 
 export default function Landing() {
@@ -142,7 +143,7 @@ export default function Landing() {
     streamClosedRef.current = false;
 
     // Insert the empty placeholder now so the index is valid from the first token.
-    setMessages([...newMessages, { role: "assistant", content: "" }]);
+    setMessages([...newMessages, { role: "assistant", content: "", streaming: true }]);
     startRevealLoop(assistantIndex);
 
     try {
@@ -163,17 +164,17 @@ export default function Landing() {
           },
           onDone: (doneEvt) => {
             const rawSources = doneEvt.crawledSources?.length ? doneEvt.crawledSources : doneEvt.searchInfo?.sources;
-            if (assistantIndex !== -1 && (rawSources?.length || doneEvt.timeInfo)) {
-              setMessages((prev) => {
-                const next = [...prev];
-                next[assistantIndex] = {
-                  ...next[assistantIndex],
-                  sources: rawSources?.length ? (rawSources as Source[]) : next[assistantIndex].sources,
-                  timeInfo: doneEvt.timeInfo ?? next[assistantIndex].timeInfo,
-                };
-                return next;
-              });
-            }
+            setMessages((prev) => {
+              const next = [...prev];
+              if (!next[assistantIndex]) return prev;
+              next[assistantIndex] = {
+                ...next[assistantIndex],
+                streaming: false,
+                sources: rawSources?.length ? (rawSources as Source[]) : next[assistantIndex].sources,
+                timeInfo: doneEvt.timeInfo ?? next[assistantIndex].timeInfo,
+              };
+              return next;
+            });
 
             if (!conversationId && doneEvt.conversationId) {
               setConversationId(doneEvt.conversationId);
@@ -212,10 +213,15 @@ export default function Landing() {
         setGuestLimitReached(true);
         setMessages((prev) => prev.slice(0, assistantIndex - 1)); // remove user msg + placeholder
       } else if (!streamedAny) {
-        setMessages(newMessages.slice(0, -1)); // remove user msg only
+        setMessages(newMessages.slice(0, -1)); // remove user msg + empty placeholder
+      } else {
+        // Partial reply — keep it but clear the streaming flag so the cursor disappears
+        setMessages((prev) => {
+          const next = [...prev];
+          if (next[assistantIndex]) next[assistantIndex] = { ...next[assistantIndex], streaming: false };
+          return next;
+        });
       }
-      // If tokens already streamed before the error (e.g. connection dropped
-      // near the end), keep the partial reply visible rather than discarding it.
     } finally {
       setIsLoading(false);
     }
@@ -356,7 +362,25 @@ export default function Landing() {
                       }`}
                     >
                       {msg.role === "assistant" ? (
-                        <MessageContent content={msg.content} sources={msg.sources} timeInfo={msg.timeInfo} />
+                        msg.streaming && !msg.content ? (
+                          /* Waiting for first token — show thinking animation */
+                          <div className="flex items-center gap-2.5 py-2">
+                            <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
+                              <span className="thinking-orb-ring absolute inset-0 rounded-full border border-white/40" />
+                              <span className="thinking-orb-core absolute inset-[3px] rounded-full bg-white" />
+                            </span>
+                            <span className="thinking-shimmer text-[13px] font-medium tracking-wide">
+                              Thinking
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="relative">
+                            <MessageContent content={msg.content} sources={msg.sources} timeInfo={msg.timeInfo} />
+                            {msg.streaming && (
+                              <span className="inline-block w-[2px] h-[1em] bg-white/60 rounded-full ml-0.5 align-text-bottom animate-pulse" />
+                            )}
+                          </div>
+                        )
                       ) : (
                         msg.content
                       )}
