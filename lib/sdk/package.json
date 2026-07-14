@@ -1,0 +1,34 @@
+{
+  "name": "@engagera/sdk",
+  "version": "0.1.0",
+  "description": "The official Engagera SDK — build AI-powered search engines with AfuBot",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json && node scripts/cjs-shim.mjs",
+    "dev": "tsc --watch --project tsconfig.build.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "keywords": [
+    "engagera",
+    "afubot",
+    "search",
+    "ai",
+    "streaming",
+    "sdk"
+  ],
+  "license": "MIT"
+}
