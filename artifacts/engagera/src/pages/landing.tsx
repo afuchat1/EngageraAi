@@ -131,14 +131,19 @@ export default function Landing() {
     const apiMessages: ChatMessage[] = newMessages.map(m => ({ role: m.role, content: m.content }));
     setIsLoading(true);
 
-    // Assistant message is appended empty, then filled in as the edge
-    // function streams the model's reply — tokens land in pendingCharsRef
-    // as they genuinely arrive, and the rAF reveal loop paces them onto
-    // screen so the reveal is visibly gradual (see startRevealLoop above).
-    let assistantIndex = -1;
+    // We know exactly where the assistant placeholder will land: right after
+    // the user message we just pushed. Compute this BEFORE streaming so that
+    // all onToken callbacks see a valid index immediately — avoiding the race
+    // where multiple rapid tokens each see assistantIndex === -1 and each
+    // append a new empty bubble.
+    const assistantIndex = newMessages.length;
     let streamedAny = false;
     pendingCharsRef.current = "";
     streamClosedRef.current = false;
+
+    // Insert the empty placeholder now so the index is valid from the first token.
+    setMessages([...newMessages, { role: "assistant", content: "" }]);
+    startRevealLoop(assistantIndex);
 
     try {
       await streamEdgeChat(
@@ -146,13 +151,6 @@ export default function Landing() {
         {
           onToken: (chunk) => {
             streamedAny = true;
-            if (assistantIndex === -1) {
-              setMessages((prev) => {
-                assistantIndex = prev.length;
-                return [...prev, { role: "assistant", content: "" }];
-              });
-              startRevealLoop(assistantIndex);
-            }
             pendingCharsRef.current += chunk;
           },
           onMeta: (searchInfo) => {
@@ -195,7 +193,7 @@ export default function Landing() {
       if (!streamedAny) {
         // Stream produced no tokens at all (e.g. upstream failure) — drop the
         // empty assistant placeholder rather than showing a blank bubble.
-        setMessages((prev) => (assistantIndex === -1 ? prev : prev.slice(0, assistantIndex)));
+        setMessages((prev) => prev.slice(0, assistantIndex));
       } else {
         // Let the reveal loop finish draining any buffered characters before
         // we consider the turn fully settled (isLoading only gates input).
@@ -212,9 +210,9 @@ export default function Landing() {
       const status = err?.status ?? err?.response?.status;
       if (status === 429 || status === 403) {
         setGuestLimitReached(true);
-        setMessages((prev) => (assistantIndex === -1 ? prev.slice(0, -1) : prev.slice(0, assistantIndex)));
+        setMessages((prev) => prev.slice(0, assistantIndex - 1)); // remove user msg + placeholder
       } else if (!streamedAny) {
-        setMessages(newMessages.slice(0, -1));
+        setMessages(newMessages.slice(0, -1)); // remove user msg only
       }
       // If tokens already streamed before the error (e.g. connection dropped
       // near the end), keep the partial reply visible rather than discarding it.
