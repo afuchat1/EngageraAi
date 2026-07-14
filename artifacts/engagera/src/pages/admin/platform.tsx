@@ -10,6 +10,7 @@ import {
   useSetApiKeyActive,
   type PlatformApiKey,
   type PlatformUser,
+  type PlatformUsageDay,
 } from "@/lib/adminApi";
 import { Pause, Play, Ban, RotateCcw, Users, KeyRound, X } from "lucide-react";
 import {
@@ -182,14 +183,16 @@ export default function AdminPlatform() {
 
   const keys = keysData?.keys ?? [];
   const users = usersData?.users ?? [];
-  const chartData = (usageDaily?.series ?? []).map((d) => ({
+  const chartData = (usageDaily?.series ?? []).map((d: PlatformUsageDay) => ({
     ...d,
     date: format(parseISO(d.date), "MMM dd"),
   }));
 
-  const filteredKeys = keys.filter(
-    (k: PlatformApiKey) => !search || k.name.toLowerCase().includes(search.toLowerCase()) || k.ownerEmail.toLowerCase().includes(search.toLowerCase()),
-  );
+  const filteredKeys = keys
+    .filter(
+      (k: PlatformApiKey) => !search || k.name.toLowerCase().includes(search.toLowerCase()) || k.ownerEmail.toLowerCase().includes(search.toLowerCase()),
+    )
+    .sort((a: PlatformApiKey, b: PlatformApiKey) => b.tokens30d - a.tokens30d);
   const filteredUsers = users.filter((u: PlatformUser) => !search || u.email.toLowerCase().includes(search.toLowerCase()));
 
   const activeCount = keys.filter((k: PlatformApiKey) => k.isActive && !k.isPaused).length;
