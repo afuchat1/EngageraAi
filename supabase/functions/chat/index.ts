@@ -2812,6 +2812,43 @@ Deno.serve(async (req: Request) => {
         })),
       ];
 
+      // Auto-crawl URLs mentioned in the user's message (same behaviour as the
+      // non-streaming path) so pasted links still get real content + source cards.
+      const lastUserText2 = lastUserMsg
+        ? (typeof lastUserMsg.content === "string" ? lastUserMsg.content : getTextPreview(lastUserMsg.content as MessageContent))
+        : "";
+      let streamCrawledUrls: string[] = [];
+      let streamCrawledSources: Source[] = [];
+      if (lastUserText2) {
+        const urls2 = detectURLs(lastUserText2);
+        if (urls2.length > 0) {
+          try {
+            const fetched2 = await Promise.allSettled(urls2.map((u) => afuBotFetch(u).then((result) => ({ url: u, ...result }))));
+            const urlParts2: string[] = [];
+            for (const r of fetched2) {
+              if (r.status === "fulfilled") {
+                const { url: rUrl, text, image, pageTitle } = r.value;
+                const bad = ["Could not fetch", "Failed to fetch", "Invalid URL", "is not a readable webpage", "not permitted"];
+                if (!bad.some((b) => text.startsWith(b))) {
+                  urlParts2.push(`### Content from: ${rUrl}\n\n${text}`);
+                  streamCrawledUrls.push(rUrl);
+                  streamCrawledSources.push({
+                    url: rUrl, title: pageTitle || rUrl,
+                    snippet: text.replace(/^#[^\n]*\n+/, "").slice(0, 120).trim(),
+                    ...(image && { image }),
+                  });
+                }
+              }
+            }
+            if (urlParts2.length > 0) {
+              const crawlBlock2 = `\n\n---\n[LIVE PAGE CONTENT — fetched right now by AfuBot]\n\n${urlParts2.join("\n\n---\n\n")}\n---\n\nINSTRUCTION: You have just browsed the above URL(s) in real-time. Present the content to the user in a clean, well-organised format:\n- Start with the page title and source URL\n- Use headings to separate sections (pricing, features, team, docs, articles, etc.)\n- Use bullet points or numbered lists where appropriate\n- Highlight the most important or interesting information first\n- If the user asked a specific question about the page, answer it directly using the content above\n- Do NOT say you "cannot access" or "cannot browse" — you already have the content above\n- Do NOT dump raw text — always organise and present it cleanly`;
+              const si0 = streamMsgs.findIndex((m) => m.role === "system");
+              if (si0 >= 0) streamMsgs[si0] = { ...streamMsgs[si0], content: (streamMsgs[si0].content as string) + crawlBlock2 };
+            }
+          } catch { /* non-fatal */ }
+        }
+      }
+
       // Pre-search (lightweight — snippets only, no deep crawl to keep TTFT low)
       let streamSearchInfo: { query: string; sources: Source[] } | undefined;
       const searchText2 = needsWebSearch(validMessages as IncomingMessage[]);
@@ -2910,7 +2947,8 @@ Deno.serve(async (req: Request) => {
                     });
                   }
                   const streamMetadata: Record<string, unknown> = {};
-                  if (streamSearchInfo?.sources?.length) streamMetadata.sources = streamSearchInfo.sources;
+                  if (streamCrawledSources.length) streamMetadata.sources = streamCrawledSources;
+                  else if (streamSearchInfo?.sources?.length) streamMetadata.sources = streamSearchInfo.sources;
                   if (timeInfo) streamMetadata.timeInfo = { ianaZone: timeInfo.ianaZone, label: timeInfo.label };
                   await db.from("engagera_messages").insert({
                     conversation_id: convId2, role: "assistant", content: fullReply,
@@ -2946,6 +2984,9 @@ Deno.serve(async (req: Request) => {
 
             send({ type: "done", model, conversationId: convId2,
               ...(streamSearchInfo && { searchInfo: streamSearchInfo }),
+              ...(streamCrawledUrls.length && { crawledUrls: streamCrawledUrls }),
+              ...(streamCrawledSources.length && { crawledSources: streamCrawledSources }),
+              ...(timeInfo && { timeInfo: { ianaZone: timeInfo.ianaZone, label: timeInfo.label } }),
               ...(streamGuestCount !== undefined && {
                 guestMessageCount: streamGuestCount, guestMessageLimit: GUEST_LIMIT,
               }) });

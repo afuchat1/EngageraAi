@@ -7,7 +7,7 @@ import {
   getGetConversationMessagesQueryKey,
   useDeleteConversation
 } from "@workspace/api-client-react";
-import { callEdgeChat, ChatMessage, TimeInfo } from "@/hooks/useEdgeChatCompletion";
+import { streamEdgeChat, ChatMessage, TimeInfo } from "@/hooks/useEdgeChatCompletion";
 import { useAuth } from "@/hooks/useAuth";
 import { MessageContent, Source } from "@/components/MessageContent";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -78,36 +78,78 @@ export default function Landing() {
     const apiMessages: ChatMessage[] = newMessages.map(m => ({ role: m.role, content: m.content }));
     setIsLoading(true);
 
+    // Assistant message is appended empty, then filled in token-by-token as
+    // the edge function streams the model's reply — this is real streaming,
+    // not a simulated reveal of an already-complete response.
+    let assistantIndex = -1;
+    let streamedAny = false;
+
     try {
-      const response = await callEdgeChat({ messages: apiMessages, model: msgModel, conversationId });
+      await streamEdgeChat(
+        { messages: apiMessages, model: msgModel, conversationId, stream: true },
+        {
+          onToken: (chunk) => {
+            streamedAny = true;
+            setMessages((prev) => {
+              if (assistantIndex === -1) {
+                assistantIndex = prev.length;
+                return [...prev, { role: "assistant", content: chunk }];
+              }
+              const next = [...prev];
+              next[assistantIndex] = { ...next[assistantIndex], content: next[assistantIndex].content + chunk };
+              return next;
+            });
+          },
+          onMeta: (searchInfo) => {
+            if (assistantIndex === -1) return;
+            setMessages((prev) => {
+              const next = [...prev];
+              next[assistantIndex] = { ...next[assistantIndex], sources: searchInfo.sources as Source[] };
+              return next;
+            });
+          },
+          onDone: (doneEvt) => {
+            const rawSources = doneEvt.crawledSources?.length ? doneEvt.crawledSources : doneEvt.searchInfo?.sources;
+            if (assistantIndex !== -1 && (rawSources?.length || doneEvt.timeInfo)) {
+              setMessages((prev) => {
+                const next = [...prev];
+                next[assistantIndex] = {
+                  ...next[assistantIndex],
+                  sources: rawSources?.length ? (rawSources as Source[]) : next[assistantIndex].sources,
+                  timeInfo: doneEvt.timeInfo ?? next[assistantIndex].timeInfo,
+                };
+                return next;
+              });
+            }
 
-      const rawSources = response.crawledSources?.length
-        ? response.crawledSources
-        : response.searchInfo?.sources;
-      const assistantMsg: DisplayMessage = {
-        role: "assistant",
-        content: response.message.content,
-        sources: rawSources?.length ? rawSources as Source[] : undefined,
-        timeInfo: response.timeInfo,
-      };
-      setMessages([...newMessages, assistantMsg]);
+            if (!conversationId && doneEvt.conversationId) {
+              setConversationId(doneEvt.conversationId);
+              if (user) refetchConversations();
+            }
+            if (!user && doneEvt.guestMessageCount != null && doneEvt.guestMessageLimit != null) {
+              if (doneEvt.guestMessageCount >= doneEvt.guestMessageLimit) {
+                setGuestLimitReached(true);
+              }
+            }
+          },
+        },
+      );
 
-      if (!conversationId && response.conversationId) {
-        setConversationId(response.conversationId);
-        if (user) refetchConversations();
-      }
-      if (!user && response.guestMessageCount != null && response.guestMessageLimit != null) {
-        if (response.guestMessageCount >= response.guestMessageLimit) {
-          setGuestLimitReached(true);
-        }
+      if (!streamedAny) {
+        // Stream produced no tokens at all (e.g. upstream failure) — drop the
+        // empty assistant placeholder rather than showing a blank bubble.
+        setMessages((prev) => (assistantIndex === -1 ? prev : prev.slice(0, assistantIndex)));
       }
     } catch (err: any) {
       const status = err?.status ?? err?.response?.status;
       if (status === 429 || status === 403) {
         setGuestLimitReached(true);
-      } else {
+        setMessages((prev) => (assistantIndex === -1 ? prev.slice(0, -1) : prev.slice(0, assistantIndex)));
+      } else if (!streamedAny) {
         setMessages(newMessages.slice(0, -1));
       }
+      // If tokens already streamed before the error (e.g. connection dropped
+      // near the end), keep the partial reply visible rather than discarding it.
     } finally {
       setIsLoading(false);
     }
@@ -256,8 +298,9 @@ export default function Landing() {
                   </div>
                 ))}
 
-                {/* Loading indicator while waiting for response */}
-                {isLoading && (
+                {/* Loading indicator only while waiting for the first token — once
+                    streaming text starts arriving, the growing message itself is the indicator. */}
+                {isLoading && messages[messages.length - 1]?.role !== "assistant" && (
                   <div className="flex justify-start">
                     <div className="text-white w-full max-w-[88%] break-words">
                       <div className="flex items-center gap-1.5 py-2">

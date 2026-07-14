@@ -15,6 +15,7 @@ export interface ChatRequest {
   model: string;
   conversationId?: number;
   contextHint?: string;
+  stream?: boolean;
 }
 
 export interface SearchSource {
@@ -114,4 +115,108 @@ export function useEdgeChatCompletion() {
   return useMutation<ChatResponse, Error, ChatRequest>({
     mutationFn: callEdgeChat,
   });
+}
+
+// ── Real streaming ───────────────────────────────────────────────────────────
+// The edge function responds with `Content-Type: text/event-stream` and
+// emits one `data: {...}\n\n` frame per token as the upstream LLM produces
+// it (see supabase/functions/chat/index.ts). This reads that stream
+// incrementally via `body.getReader()` instead of buffering the whole
+// response with `res.json()`, so the UI can render tokens as they arrive.
+export interface StreamDoneEvent {
+  model: string;
+  conversationId?: number;
+  searchInfo?: SearchInfo;
+  crawledUrls?: string[];
+  crawledSources?: SearchSource[];
+  timeInfo?: TimeInfo;
+  guestMessageCount?: number;
+  guestMessageLimit?: number;
+}
+
+export interface StreamHandlers {
+  onToken?: (content: string) => void;
+  onMeta?: (searchInfo: SearchInfo) => void;
+  onDone?: (done: StreamDoneEvent) => void;
+}
+
+export async function streamEdgeChat(
+  request: ChatRequest,
+  handlers: StreamHandlers,
+  signal?: AbortSignal,
+): Promise<void> {
+  const headers = await buildHeaders();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener("abort", () => controller.abort(), { once: true });
+  }
+
+  try {
+    const res = await fetch(EDGE_FUNCTION_URL, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(request),
+      signal: controller.signal,
+    });
+
+    if (!res.ok || !res.body) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw Object.assign(new Error(err.error ?? "Chat request failed"), {
+        status: res.status,
+        data: err,
+      });
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let sawDone = false;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let sepIdx: number;
+      while ((sepIdx = buffer.indexOf("\n\n")) !== -1) {
+        const rawEvent = buffer.slice(0, sepIdx);
+        buffer = buffer.slice(sepIdx + 2);
+
+        const dataLine = rawEvent
+          .split("\n")
+          .find((line) => line.startsWith("data:"));
+        if (!dataLine) continue;
+        const payload = dataLine.slice(5).trim();
+        if (payload === "[DONE]") { sawDone = true; continue; }
+
+        let evt: { type: string; content?: string; searchInfo?: SearchInfo; error?: string } & Partial<StreamDoneEvent>;
+        try {
+          evt = JSON.parse(payload);
+        } catch {
+          continue;
+        }
+
+        if (evt.type === "token" && evt.content) handlers.onToken?.(evt.content);
+        else if (evt.type === "meta" && evt.searchInfo) handlers.onMeta?.(evt.searchInfo);
+        else if (evt.type === "error") throw new Error(evt.error ?? "Stream error");
+        else if (evt.type === "done") handlers.onDone?.(evt as StreamDoneEvent);
+      }
+    }
+
+    if (!sawDone) {
+      throw new Error("Stream ended unexpectedly before completion.");
+    }
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw Object.assign(
+        new Error("Request timed out. The AI is taking too long — please try again."),
+        { status: 408, data: { error: "timeout" } },
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
