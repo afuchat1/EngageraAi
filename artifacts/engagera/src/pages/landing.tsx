@@ -35,6 +35,59 @@ export default function Landing() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
 
+  // Real tokens arrive over the wire in genuine SSE frames (verified against
+  // the edge function), but fast providers (e.g. Groq) can deliver an entire
+  // reply within ~20-30ms — far faster than a render frame — which makes a
+  // truly-streamed response look like it appeared all at once. This queue
+  // decouples "data received" from "text shown": every arriving chunk is
+  // appended to a buffer, and a rAF loop drains it onto the screen a few
+  // characters per frame, so the reveal is visibly gradual regardless of how
+  // bursty the underlying network delivery is. It never fabricates content or
+  // delays past what has actually arrived — it only paces the reveal of real,
+  // already-received data.
+  const pendingCharsRef = useRef("");
+  const streamClosedRef = useRef(true);
+  const revealRafRef = useRef<number | null>(null);
+
+  const stopRevealLoop = () => {
+    if (revealRafRef.current != null) {
+      cancelAnimationFrame(revealRafRef.current);
+      revealRafRef.current = null;
+    }
+  };
+
+  const startRevealLoop = (index: number) => {
+    if (revealRafRef.current != null) return;
+    const step = () => {
+      const pending = pendingCharsRef.current;
+      if (pending.length > 0) {
+        // Reveal at a steady typewriter-ish pace (a few characters per
+        // frame) regardless of how the network delivered them. Fast
+        // providers (e.g. Groq) can flush an entire reply within ~20ms —
+        // without this cap the whole backlog would drain in a couple of
+        // frames and look like it "just appeared". Very long replies still
+        // scale up slightly so they don't trail the done event for too long.
+        const take = Math.min(pending.length, Math.max(3, Math.ceil(pending.length / 80)));
+        const chunk = pending.slice(0, take);
+        pendingCharsRef.current = pending.slice(take);
+        setMessages((prev) => {
+          if (!prev[index]) return prev;
+          const next = [...prev];
+          next[index] = { ...next[index], content: next[index].content + chunk };
+          return next;
+        });
+      }
+      if (pendingCharsRef.current.length > 0 || !streamClosedRef.current) {
+        revealRafRef.current = requestAnimationFrame(step);
+      } else {
+        revealRafRef.current = null;
+      }
+    };
+    revealRafRef.current = requestAnimationFrame(step);
+  };
+
+  useEffect(() => stopRevealLoop, []);
+
   const { data: conversations = [], refetch: refetchConversations } = useListConversations();
   const { data: historyMessages } = useGetConversationMessages(conversationId!, {
     query: { enabled: !!conversationId, queryKey: getGetConversationMessagesQueryKey(conversationId!) }
@@ -78,11 +131,14 @@ export default function Landing() {
     const apiMessages: ChatMessage[] = newMessages.map(m => ({ role: m.role, content: m.content }));
     setIsLoading(true);
 
-    // Assistant message is appended empty, then filled in token-by-token as
-    // the edge function streams the model's reply — this is real streaming,
-    // not a simulated reveal of an already-complete response.
+    // Assistant message is appended empty, then filled in as the edge
+    // function streams the model's reply — tokens land in pendingCharsRef
+    // as they genuinely arrive, and the rAF reveal loop paces them onto
+    // screen so the reveal is visibly gradual (see startRevealLoop above).
     let assistantIndex = -1;
     let streamedAny = false;
+    pendingCharsRef.current = "";
+    streamClosedRef.current = false;
 
     try {
       await streamEdgeChat(
@@ -90,15 +146,14 @@ export default function Landing() {
         {
           onToken: (chunk) => {
             streamedAny = true;
-            setMessages((prev) => {
-              if (assistantIndex === -1) {
+            if (assistantIndex === -1) {
+              setMessages((prev) => {
                 assistantIndex = prev.length;
-                return [...prev, { role: "assistant", content: chunk }];
-              }
-              const next = [...prev];
-              next[assistantIndex] = { ...next[assistantIndex], content: next[assistantIndex].content + chunk };
-              return next;
-            });
+                return [...prev, { role: "assistant", content: "" }];
+              });
+              startRevealLoop(assistantIndex);
+            }
+            pendingCharsRef.current += chunk;
           },
           onMeta: (searchInfo) => {
             if (assistantIndex === -1) return;
@@ -135,12 +190,25 @@ export default function Landing() {
         },
       );
 
+      streamClosedRef.current = true;
+
       if (!streamedAny) {
         // Stream produced no tokens at all (e.g. upstream failure) — drop the
         // empty assistant placeholder rather than showing a blank bubble.
         setMessages((prev) => (assistantIndex === -1 ? prev : prev.slice(0, assistantIndex)));
+      } else {
+        // Let the reveal loop finish draining any buffered characters before
+        // we consider the turn fully settled (isLoading only gates input).
+        await new Promise<void>((resolve) => {
+          const waitForDrain = () => {
+            if (pendingCharsRef.current.length === 0) resolve();
+            else requestAnimationFrame(waitForDrain);
+          };
+          waitForDrain();
+        });
       }
     } catch (err: any) {
+      streamClosedRef.current = true;
       const status = err?.status ?? err?.response?.status;
       if (status === 429 || status === 403) {
         setGuestLimitReached(true);
