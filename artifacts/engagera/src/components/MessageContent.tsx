@@ -50,6 +50,22 @@ function cleanForSpeech(md: string) {
     .trim();
 }
 
+// Defense-in-depth: the model is instructed never to print raw link lines,
+// but older stored messages (or an occasional slip) may still contain them.
+// Strip "URL:"/"Link:"/"Source:" lines and standalone bare-URL lines before
+// rendering — the app already shows real clickable source cards separately,
+// so a message never needs to expose a raw link as plain text.
+function sanitizeLinkNoise(md: string): string {
+  return md
+    // "1. URL: https://..." / "   URL: https://..." / "- Link: https://..."
+    .replace(/^[ \t]*[-*•]?\s*(URL|Link|Source)\s*:\s*https?:\/\/\S+[ \t]*$/gim, "")
+    // A line that is nothing but a bare URL (not part of a markdown link)
+    .replace(/^[ \t]*https?:\/\/\S+[ \t]*$/gm, "")
+    // Collapse the blank-line gaps left behind
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 /** Extract display name from a source (e.g. "Wikipedia" from "en.wikipedia.org") */
 function extractSiteName(source: Source): string {
   if (source.title) {
@@ -805,11 +821,12 @@ function SourceImageCards({ sources }: { sources: Source[] }) {
 }
 
 export function MessageContent({ content, sources, timeInfo }: MessageContentProps) {
-  const hasInlineImages = MARKDOWN_IMAGE_RE.test(content);
+  const cleanContent = sanitizeLinkNoise(content);
+  const hasInlineImages = MARKDOWN_IMAGE_RE.test(cleanContent);
   const hasSources = sources && sources.length > 0;
   // Only show Wikipedia media cards when there are no real web sources — otherwise
   // detectMediaTitles fires on summarised page content and shows blank placeholders.
-  const mediaTitles = hasInlineImages || hasSources ? [] : detectMediaTitles(content);
+  const mediaTitles = hasInlineImages || hasSources ? [] : detectMediaTitles(cleanContent);
 
   return (
     <div className="text-[0.875rem] leading-relaxed text-white/90 min-w-0 overflow-hidden">
@@ -906,7 +923,7 @@ export function MessageContent({ content, sources, timeInfo }: MessageContentPro
           td: ({ children }) => <td className="px-3 py-2 text-white/60 border-l border-white/[0.04] first:border-l-0">{children}</td>,
         }}
       >
-        {content}
+        {cleanContent}
       </ReactMarkdown>
 
       {/* Source favicon strip — only when sources exist, shown once below content */}
