@@ -2017,7 +2017,7 @@ function getClientIp(req: Request): string | null {
   return req.headers.get("cf-connecting-ip") ?? req.headers.get("x-real-ip");
 }
 
-interface DetectedLocation { country: string; ianaZone: string; label: string }
+interface DetectedLocation { country: string; ianaZone: string; label: string; lat?: number; lon?: number }
 
 async function geolocateIp(ip: string | null, requestId: string): Promise<DetectedLocation | null> {
   if (!ip || ip === "127.0.0.1" || ip.startsWith("::1") || ip.startsWith("192.168.") || ip.startsWith("10.")) return null;
@@ -2026,15 +2026,152 @@ async function geolocateIp(ip: string | null, requestId: string): Promise<Detect
     if (!res.ok) return null;
     const data = await res.json() as {
       success?: boolean; country?: string; city?: string;
-      timezone?: { id?: string };
+      timezone?: { id?: string }; latitude?: number; longitude?: number;
     };
     if (!data.success || !data.timezone?.id || !data.country) return null;
     const label = data.city ? `${data.city}, ${data.country}` : data.country;
-    return { country: data.country, ianaZone: data.timezone.id, label };
+    return {
+      country: data.country, ianaZone: data.timezone.id, label,
+      lat: typeof data.latitude === "number" ? data.latitude : undefined,
+      lon: typeof data.longitude === "number" ? data.longitude : undefined,
+    };
   } catch (err) {
     log("warn", "geolocate_ip.failed", { requestId, error: String(err) });
     return null;
   }
+}
+
+// ── Weather query detection + lookup (Open-Meteo — free, no API key) ──────────
+// Mirrors the time-widget pattern above: detect a weather-style question,
+// resolve it to coordinates (either a named place via geocoding, or the
+// user's own IP-detected location), then fetch live current conditions.
+const WEATHER_CODE_MAP: Record<number, { condition: string; icon: string }> = {
+  0: { condition: "Clear sky", icon: "sun" },
+  1: { condition: "Mostly clear", icon: "sun" },
+  2: { condition: "Partly cloudy", icon: "cloud-sun" },
+  3: { condition: "Overcast", icon: "cloud" },
+  45: { condition: "Fog", icon: "fog" },
+  48: { condition: "Depositing rime fog", icon: "fog" },
+  51: { condition: "Light drizzle", icon: "drizzle" },
+  53: { condition: "Drizzle", icon: "drizzle" },
+  55: { condition: "Dense drizzle", icon: "drizzle" },
+  56: { condition: "Freezing drizzle", icon: "drizzle" },
+  57: { condition: "Dense freezing drizzle", icon: "drizzle" },
+  61: { condition: "Light rain", icon: "rain" },
+  63: { condition: "Rain", icon: "rain" },
+  65: { condition: "Heavy rain", icon: "rain" },
+  66: { condition: "Freezing rain", icon: "rain" },
+  67: { condition: "Heavy freezing rain", icon: "rain" },
+  71: { condition: "Light snow", icon: "snow" },
+  73: { condition: "Snow", icon: "snow" },
+  75: { condition: "Heavy snow", icon: "snow" },
+  77: { condition: "Snow grains", icon: "snow" },
+  80: { condition: "Light rain showers", icon: "rain" },
+  81: { condition: "Rain showers", icon: "rain" },
+  82: { condition: "Violent rain showers", icon: "rain" },
+  85: { condition: "Snow showers", icon: "snow" },
+  86: { condition: "Heavy snow showers", icon: "snow" },
+  95: { condition: "Thunderstorm", icon: "storm" },
+  96: { condition: "Thunderstorm with hail", icon: "storm" },
+  99: { condition: "Severe thunderstorm with hail", icon: "storm" },
+};
+
+function isWeatherQuery(text: string): boolean {
+  const lower = text.toLowerCase();
+  return /\b(weather|temperature|forecast|how (hot|cold|warm) is it|is it (raining|snowing|sunny|cloudy|windy)|humidity|wind speed)\b/.test(lower);
+}
+
+// Best-effort extraction of a named place from "weather in <place>" style
+// phrasing. Returns null when no explicit place is named (caller then falls
+// back to the user's own IP-detected location, same as the time widget).
+function extractWeatherPlace(text: string): string | null {
+  const m = text.match(/\b(?:weather|temperature|forecast|humidity|wind speed)\b(?:\s+\w+){0,3}?\s+(?:in|at|for)\s+([a-z\s,.'-]+?)(?:[?.!]|$)/i)
+    ?? text.match(/\bin\s+([a-z\s,.'-]+?)\s+(?:weather|temperature|forecast)\b/i);
+  const place = m?.[1]?.trim();
+  return place && place.length > 1 && place.length < 80 ? place : null;
+}
+
+async function geocodePlace(place: string, requestId: string): Promise<{ lat: number; lon: number; label: string } | null> {
+  try {
+    const res = await fetch(
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(place)}&count=1&language=en&format=json`,
+      { signal: AbortSignal.timeout(3000) },
+    );
+    if (!res.ok) return null;
+    const data = await res.json() as { results?: Array<{ latitude: number; longitude: number; name: string; admin1?: string; country?: string }> };
+    const hit = data.results?.[0];
+    if (!hit) return null;
+    const label = [hit.name, hit.admin1, hit.country].filter(Boolean).join(", ");
+    return { lat: hit.latitude, lon: hit.longitude, label };
+  } catch (err) {
+    log("warn", "geocode_place.failed", { requestId, place, error: String(err) });
+    return null;
+  }
+}
+
+interface WeatherInfo {
+  label: string; tempC: number; feelsLikeC: number; condition: string; icon: string;
+  windKph: number; humidity: number; isDay: boolean;
+}
+
+async function fetchWeather(lat: number, lon: number, label: string, requestId: string): Promise<WeatherInfo | null> {
+  try {
+    const res = await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+        `&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,is_day` +
+        `&temperature_unit=celsius&wind_speed_unit=kmh`,
+      { signal: AbortSignal.timeout(3000) },
+    );
+    if (!res.ok) return null;
+    const data = await res.json() as {
+      current?: {
+        temperature_2m?: number; relative_humidity_2m?: number; apparent_temperature?: number;
+        weather_code?: number; wind_speed_10m?: number; is_day?: number;
+      };
+    };
+    const c = data.current;
+    if (!c || typeof c.temperature_2m !== "number" || typeof c.weather_code !== "number") return null;
+    const mapped = WEATHER_CODE_MAP[c.weather_code] ?? { condition: "Unknown", icon: "cloud" };
+    return {
+      label,
+      tempC: Math.round(c.temperature_2m),
+      feelsLikeC: Math.round(c.apparent_temperature ?? c.temperature_2m),
+      condition: mapped.condition,
+      icon: mapped.icon,
+      windKph: Math.round(c.wind_speed_10m ?? 0),
+      humidity: Math.round(c.relative_humidity_2m ?? 0),
+      isDay: c.is_day !== 0,
+    };
+  } catch (err) {
+    log("warn", "fetch_weather.failed", { requestId, lat, lon, error: String(err) });
+    return null;
+  }
+}
+
+/**
+ * `fallback` is the user's own IP-detected location (if any) — same
+ * "what's the weather" implicitly means "here" pattern as detectTimeQuery.
+ * Unlike time, weather needs real coordinates, so a named place is resolved
+ * via free geocoding rather than a static timezone map.
+ */
+async function detectWeatherQuery(
+  text: string,
+  fallback: DetectedLocation | null | undefined,
+  requestId: string,
+): Promise<WeatherInfo | null> {
+  if (!isWeatherQuery(text)) return null;
+
+  const namedPlace = extractWeatherPlace(text);
+  if (namedPlace) {
+    const geo = await geocodePlace(namedPlace, requestId);
+    if (geo) return fetchWeather(geo.lat, geo.lon, geo.label, requestId);
+  }
+
+  if (fallback?.lat != null && fallback?.lon != null) {
+    return fetchWeather(fallback.lat, fallback.lon, fallback.label, requestId);
+  }
+
+  return null;
 }
 
 // ── Search SKIP patterns ───────────────────────────────────────────────────────
@@ -2067,6 +2204,8 @@ const NO_SEARCH_PATTERNS: RegExp[] = [
   /^(what did (i|you|we) (say|ask|mention|discuss)|what was (my|your|our) (last|previous|first)|summaris(e|ize) (this|our|the) conversation|what have we (talked|spoken|discussed))/i,
   // Time queries — answered via system clock + clock widget, web search adds no value
   /\b(what.?s the time|what time is it|current time (in|at)?|time right now|time in [a-z]|clock in [a-z])\b/i,
+  // Weather queries — answered via the live weather widget, web search adds no value
+  /\b(weather|temperature|forecast|is it (raining|snowing|sunny|cloudy|windy))\b/i,
   // Generic media/content recommendations — AI already knows; web search only returns listing sites, not titles
   /^(suggest (me )?(a |some )?(good )?(movie|film|show|series|tv show|anime|book|song|album|game|podcast)s?)/i,
   /^(recommend (me )?(a |some )?(good )?(movie|film|show|series|tv show|anime|book|song|album|game|podcast)s?)/i,
@@ -2804,6 +2943,10 @@ Deno.serve(async (req: Request) => {
 
     // Detect time query for real-time clock widget on the frontend
     const timeInfo = lastUserMsg ? detectTimeQuery(getTextPreview(lastUserMsg.content), detectedLocation) : null;
+    // Detect weather query for the real-time weather widget on the frontend
+    const weatherInfo = lastUserMsg
+      ? await detectWeatherQuery(getTextPreview(lastUserMsg.content), detectedLocation, requestId)
+      : null;
 
     // First-turn, one-time notice so the user knows we're defaulting to their
     // network-detected location — without ever having asked browser
@@ -2841,9 +2984,12 @@ Deno.serve(async (req: Request) => {
             hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
           }).format(new Date())}`
         : "";
+      const weatherCtx2 = weatherInfo
+        ? `\n\n[Current weather in ${weatherInfo.label}]: ${weatherInfo.condition}, ${weatherInfo.tempC}°C (feels like ${weatherInfo.feelsLikeC}°C), humidity ${weatherInfo.humidity}%, wind ${weatherInfo.windKph} km/h`
+        : "";
       const sysContent2 = developerSysMsg2
         ? basePrompt2
-        : [basePrompt2, userCtxBlock, timeCtx2, locationNotice,
+        : [basePrompt2, userCtxBlock, timeCtx2, weatherCtx2, locationNotice,
             contextHint ? `\n\n[Additional user context] ${contextHint}` : ""].join("");
 
       let streamMsgs: ChatMessage[] = [
@@ -2994,6 +3140,7 @@ Deno.serve(async (req: Request) => {
                   if (streamCrawledSources.length) streamMetadata.sources = streamCrawledSources;
                   else if (streamSearchInfo?.sources?.length) streamMetadata.sources = streamSearchInfo.sources;
                   if (timeInfo) streamMetadata.timeInfo = { ianaZone: timeInfo.ianaZone, label: timeInfo.label };
+                  if (weatherInfo) streamMetadata.weatherInfo = weatherInfo;
                   await db.from("engagera_messages").insert({
                     conversation_id: convId2, role: "assistant", content: fullReply,
                     token_count: Math.ceil(fullReply.length / 4),
@@ -3031,6 +3178,7 @@ Deno.serve(async (req: Request) => {
               ...(streamCrawledUrls.length && { crawledUrls: streamCrawledUrls }),
               ...(streamCrawledSources.length && { crawledSources: streamCrawledSources }),
               ...(timeInfo && { timeInfo: { ianaZone: timeInfo.ianaZone, label: timeInfo.label } }),
+              ...(weatherInfo && { weatherInfo }),
               ...(streamGuestCount !== undefined && {
                 guestMessageCount: streamGuestCount, guestMessageLimit: GUEST_LIMIT,
               }) });
@@ -3112,12 +3260,16 @@ Deno.serve(async (req: Request) => {
             hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
           }).format(new Date())}`
         : "";
+      const weatherContext = weatherInfo
+        ? `\n\n[Current weather in ${weatherInfo.label}]: ${weatherInfo.condition}, ${weatherInfo.tempC}°C (feels like ${weatherInfo.feelsLikeC}°C), humidity ${weatherInfo.humidity}%, wind ${weatherInfo.windKph} km/h`
+        : "";
       const systemContent = developerSysMsg
         ? basePrompt
         : [
             basePrompt,
             userContextBlock,
             timeContext,
+            weatherContext,
             locationNotice,
             contextHint ? `\n\n[Additional user context] ${contextHint}` : "",
           ].join("");
@@ -3223,6 +3375,7 @@ Deno.serve(async (req: Request) => {
           const assistantMetadata: Record<string, unknown> = {};
           if (persistedSearchInfo?.sources?.length) assistantMetadata.sources = persistedSearchInfo.sources;
           if (timeInfo) assistantMetadata.timeInfo = { ianaZone: timeInfo.ianaZone, label: timeInfo.label };
+          if (weatherInfo) assistantMetadata.weatherInfo = weatherInfo;
 
           const [assistantResult, rpcResult] = await Promise.allSettled([
             db.from("engagera_messages").insert({
@@ -3277,6 +3430,7 @@ Deno.serve(async (req: Request) => {
       ...(crawledUrls?.length && { crawledUrls }),
       ...(crawledSources?.length && { crawledSources }),
       ...(timeInfo && { timeInfo }),
+      ...(weatherInfo && { weatherInfo }),
       ...(newGuestCount !== undefined && {
         guestMessageCount: newGuestCount, guestMessageLimit: GUEST_LIMIT,
       }),

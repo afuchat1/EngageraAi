@@ -35,6 +35,17 @@ export interface TimeInfo {
   label: string;
 }
 
+export interface WeatherInfo {
+  label: string;
+  tempC: number;
+  feelsLikeC: number;
+  condition: string;
+  icon: string;
+  windKph: number;
+  humidity: number;
+  isDay: boolean;
+}
+
 export interface ChatResponse {
   id: string;
   model: string;
@@ -47,6 +58,7 @@ export interface ChatResponse {
   crawledUrls?: string[];
   crawledSources?: SearchSource[];  // rich source objects with og:image for user-pasted URLs
   timeInfo?: TimeInfo;
+  weatherInfo?: WeatherInfo;
 }
 
 const EDGE_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/chat`;
@@ -130,6 +142,7 @@ export interface StreamDoneEvent {
   crawledUrls?: string[];
   crawledSources?: SearchSource[];
   timeInfo?: TimeInfo;
+  weatherInfo?: WeatherInfo;
   guestMessageCount?: number;
   guestMessageLimit?: number;
 }
@@ -187,6 +200,7 @@ export async function streamEdgeChat(
         crawledUrls: data?.crawledUrls,
         crawledSources: data?.crawledSources,
         timeInfo: data?.timeInfo,
+        weatherInfo: data?.weatherInfo,
         guestMessageCount: data?.guestMessageCount,
         guestMessageLimit: data?.guestMessageLimit,
       });

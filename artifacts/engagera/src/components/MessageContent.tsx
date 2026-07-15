@@ -11,7 +11,7 @@ import {
   Share2, Globe, FileDown, ChevronLeft, ChevronRight, X,
   Download,
 } from "lucide-react";
-import type { TimeInfo } from "@/hooks/useEdgeChatCompletion";
+import type { TimeInfo, WeatherInfo } from "@/hooks/useEdgeChatCompletion";
 
 export interface Source {
   title: string;
@@ -24,6 +24,7 @@ interface MessageContentProps {
   content: string;
   sources?: Source[];
   timeInfo?: TimeInfo;
+  weatherInfo?: WeatherInfo;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -438,6 +439,91 @@ function ClockWidget({ timeInfo }: { timeInfo: TimeInfo }) {
           <circle cx="32" cy="32" r="2.5" fill="white" />
           <circle cx="32" cy="32" r="1.2" fill="#ef4444" />
         </svg>
+      </div>
+    </div>
+  );
+}
+
+// ── Real-time weather widget ───────────────────────────────────────────────────
+function WeatherIcon({ icon, isDay }: { icon: string; isDay: boolean }) {
+  const stroke = "white";
+  const common = { width: 40, height: 40, viewBox: "0 0 40 40", fill: "none" } as const;
+  switch (icon) {
+    case "sun":
+      return (
+        <svg {...common}>
+          <circle cx="20" cy="20" r="8" fill={isDay ? "#fbbf24" : "rgba(255,255,255,0.5)"} />
+          {Array.from({ length: 8 }, (_, i) => {
+            const a = (i * 45) * (Math.PI / 180);
+            return <line key={i} x1={20 + 12 * Math.cos(a)} y1={20 + 12 * Math.sin(a)} x2={20 + 16 * Math.cos(a)} y2={20 + 16 * Math.sin(a)} stroke={isDay ? "#fbbf24" : "rgba(255,255,255,0.4)"} strokeWidth="1.5" strokeLinecap="round" />;
+          })}
+        </svg>
+      );
+    case "cloud-sun":
+      return (
+        <svg {...common}>
+          <circle cx="16" cy="16" r="6" fill="#fbbf24" />
+          <path d="M11 26a6 6 0 0 1 1-11.9A8 8 0 0 1 27 17.5 5.5 5.5 0 0 1 26 26H11z" fill="rgba(255,255,255,0.7)" />
+        </svg>
+      );
+    case "fog":
+      return (
+        <svg {...common}>
+          <path d="M11 18a6 6 0 0 1 1-11.9A8 8 0 0 1 27 9.5 5.5 5.5 0 0 1 26 18H11z" fill="rgba(255,255,255,0.5)" />
+          <line x1="10" y1="24" x2="30" y2="24" stroke="rgba(255,255,255,0.4)" strokeWidth="2" strokeLinecap="round" />
+          <line x1="8" y1="29" x2="32" y2="29" stroke="rgba(255,255,255,0.4)" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      );
+    case "drizzle":
+    case "rain":
+      return (
+        <svg {...common}>
+          <path d="M11 18a6 6 0 0 1 1-11.9A8 8 0 0 1 27 9.5 5.5 5.5 0 0 1 26 18H11z" fill="rgba(255,255,255,0.7)" />
+          {[13, 20, 27].map((x, i) => (
+            <line key={i} x1={x} y1="23" x2={x - 2} y2="30" stroke="#60a5fa" strokeWidth="2" strokeLinecap="round" />
+          ))}
+        </svg>
+      );
+    case "snow":
+      return (
+        <svg {...common}>
+          <path d="M11 18a6 6 0 0 1 1-11.9A8 8 0 0 1 27 9.5 5.5 5.5 0 0 1 26 18H11z" fill="rgba(255,255,255,0.7)" />
+          {[13, 20, 27].map((x, i) => (
+            <circle key={i} cx={x} cy="27" r="1.6" fill="white" />
+          ))}
+        </svg>
+      );
+    case "storm":
+      return (
+        <svg {...common}>
+          <path d="M11 16a6 6 0 0 1 1-11.9A8 8 0 0 1 27 7.5 5.5 5.5 0 0 1 26 16H11z" fill="rgba(255,255,255,0.6)" />
+          <path d="M21 18l-5 8h4l-3 7 8-10h-4l3-5z" fill="#fbbf24" />
+        </svg>
+      );
+    default:
+      return (
+        <svg {...common}>
+          <path d="M11 20a6 6 0 0 1 1-11.9A8 8 0 0 1 27 11.5 5.5 5.5 0 0 1 26 20H11z" fill="rgba(255,255,255,0.6)" stroke={stroke} strokeWidth="0" />
+        </svg>
+      );
+  }
+}
+
+function WeatherWidget({ weatherInfo }: { weatherInfo: WeatherInfo }) {
+  return (
+    <div className="my-4 flex items-center gap-4 p-4 rounded-2xl border border-white/[0.09] bg-white/[0.03] max-w-[290px]">
+      <div className="flex-1 min-w-0">
+        <div className="text-3xl font-bold tracking-tight tabular-nums leading-none">{weatherInfo.tempC}°C</div>
+        <div className="text-[13px] text-white/55 mt-1.5 truncate">{weatherInfo.label}</div>
+        <div className="text-[11px] text-white/30 mt-0.5">
+          {weatherInfo.condition} · Feels {weatherInfo.feelsLikeC}°C
+        </div>
+        <div className="text-[11px] text-white/30 mt-0.5">
+          Humidity {weatherInfo.humidity}% · Wind {weatherInfo.windKph} km/h
+        </div>
+      </div>
+      <div className="shrink-0">
+        <WeatherIcon icon={weatherInfo.icon} isDay={weatherInfo.isDay} />
       </div>
     </div>
   );
