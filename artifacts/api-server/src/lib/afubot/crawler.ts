@@ -186,13 +186,31 @@ export async function crawl(query: string): Promise<CrawledPage[]> {
 
   const hop2Pages = await Promise.all(Array.from(hop2Targets).map((url) => crawlOne(url)));
 
+  // 3b. A single bare word (no spaces/dots) that isn't a widely-known topic
+  // won't turn up on Wikipedia or news search results, but it may well be
+  // someone's actual site — the same way a browser address bar guesses
+  // ".com" for a plain word. AfuBot fetches that guess directly and only
+  // keeps it if the site is real (a genuine crawl, not a fabricated link).
+  let domainGuessPage: CrawledPage | null = null;
+  const bareWord = query.trim();
+  if (/^[a-z0-9-]{2,}$/i.test(bareWord)) {
+    domainGuessPage = await crawlOne(`https://${bareWord.toLowerCase()}.com`);
+  }
+
   const allPages = [
     ...validSeedPages.map((p) => p.page).filter((p): p is CrawledPage => p !== null),
     ...hop2Pages.filter((p): p is CrawledPage => p !== null),
+    ...(domainGuessPage ? [domainGuessPage] : []),
   ];
 
   // 4. Score every page AfuBot actually visited against the query.
-  const scored = allPages.map((p) => ({ ...p, score: scorePage(p, tokens) }));
+  const scored = allPages.map((p) => {
+    const score = scorePage(p, tokens);
+    // A guessed-domain page that actually resolved is a very strong signal
+    // for a bare single-word query — rank it above generic reference hits.
+    const isDomainGuess = domainGuessPage && p.url === domainGuessPage.url;
+    return { ...p, score: isDomainGuess ? score + 50 : score };
+  });
 
   crawlCache.set(key, { at: Date.now(), pages: scored });
   // Keep the cache small.
