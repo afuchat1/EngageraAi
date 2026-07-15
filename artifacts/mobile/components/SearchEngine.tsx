@@ -25,7 +25,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
@@ -593,7 +592,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <KeyboardAvoidingView style={[s.root, { paddingTop: topPad }]} behavior="padding">
+    <View style={[s.root, { paddingTop: topPad }]}>
 
       {/* ── Landing ─────────────────────────────────────────────────────── */}
       {!hasSearch ? (
@@ -892,7 +891,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
 
       <InAppBrowser url={browserUrl} onClose={() => setBrowserUrl(null)}
         onSearchFallback={(q) => { setBrowserUrl(null); doSearch(q); }} />
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
