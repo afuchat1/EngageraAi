@@ -3,6 +3,8 @@ import { Image, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
 import { useColors } from '@/hooks/useColors';
 import { SourceStrip } from '@/components/SourceStrip';
+import { Markdown } from '@/components/Markdown';
+import { MessageActions } from '@/components/MessageActions';
 import { toPlainText } from '@/lib/plainText';
 import type { SearchInfo } from '@/lib/chat';
 
@@ -37,15 +39,28 @@ function StreamCursor({ color }: { color: string }) {
 }
 
 /**
- * Chat row — right-aligned filled bubble for the user, left-aligned plain
- * text for Engagera, matching the web app's layout. Messages never carry
- * the brand logo; only plain, unformatted text is ever rendered (no
- * markdown/rich text), per product decision.
+ * Chat row — right-aligned filled bubble for the user, left-aligned
+ * response for Engagera, matching the web app's layout. User messages
+ * always stay plain text. Assistant messages render as plain text with a
+ * blinking cursor while actively streaming (cheapest to update per token),
+ * then switch to full rich formatting — headings, clean bullets, numbered
+ * lists, quotes, code — once the response has finished, plus a small
+ * action row (copy / regenerate / read aloud / share / more).
  */
-export const ChatBubble = memo(function ChatBubble({ message }: { message: DisplayMessage }) {
+export const ChatBubble = memo(function ChatBubble({
+  message,
+  onRegenerate,
+  onDelete,
+}: {
+  message: DisplayMessage;
+  onRegenerate?: (id: string) => void;
+  onDelete?: (id: string) => void;
+}) {
   const colors = useColors();
   const isUser = message.role === 'user';
+  const isLive = !isUser && (message.streaming || message.pending);
   const plain = message.text.length > 0 ? toPlainText(message.text) : '';
+  const showActions = !isUser && !isLive && !!message.text.trim() && (onRegenerate || onDelete);
 
   return (
     <View style={[styles.row, { alignItems: isUser ? 'flex-end' : 'flex-start' }]}>
@@ -53,22 +68,34 @@ export const ChatBubble = memo(function ChatBubble({ message }: { message: Displ
         {message.imageUri ? (
           <Image source={{ uri: message.imageUri }} style={styles.image} />
         ) : null}
-        {plain.length > 0 ? (
-          <Text
-            selectable
-            style={[
-              styles.text,
-              { color: isUser ? colors.primaryForeground : colors.foreground },
-            ]}
-          >
-            {plain}
-            {!isUser && message.streaming ? <StreamCursor color={colors.foreground} /> : null}
-          </Text>
-        ) : null}
+        {isUser ? (
+          plain.length > 0 ? (
+            <Text selectable style={[styles.text, { color: colors.primaryForeground }]}>
+              {plain}
+            </Text>
+          ) : null
+        ) : isLive ? (
+          plain.length > 0 ? (
+            <Text selectable style={[styles.text, { color: colors.foreground }]}>
+              {plain}
+              {message.streaming ? <StreamCursor color={colors.foreground} /> : null}
+            </Text>
+          ) : null
+        ) : (
+          <Markdown text={message.text} color={colors.foreground} />
+        )}
       </View>
 
       {!isUser && message.searchInfo && message.searchInfo.sources.length > 0 ? (
         <SourceStrip searchInfo={message.searchInfo} />
+      ) : null}
+
+      {showActions ? (
+        <MessageActions
+          text={plain}
+          onRegenerate={() => onRegenerate?.(message.id)}
+          onDelete={() => onDelete?.(message.id)}
+        />
       ) : null}
     </View>
   );
