@@ -22,7 +22,7 @@ const COPY: Record<ChatMode, { placeholder: string; emptyTitle: string; emptyBod
     emptyBody: 'Attach a photo and I can read, describe, or reason about it too.',
   },
   lab: {
-    placeholder: 'Ask Lab to research something…',
+    placeholder: 'Ask Lab to research…',
     emptyTitle: 'Deep research',
     emptyBody: 'Lab browses the web, reasons over multiple sources, and cites everything it finds.',
   },
