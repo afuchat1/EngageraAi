@@ -42,6 +42,7 @@ import {
   fetchFinanceResults,
   fetchAiOverview,
   resolveDomain,
+  probeOfficialSite,
   getPotentialDomain,
   loadSearchHistory,
   saveToHistory,
@@ -248,6 +249,44 @@ function AiOverviewCard({ item, onPress }: { item: AiOverviewResult; onPress: (u
   );
 }
 
+function OfficialSiteCard({ url, onPress }: { url: string; onPress: (url: string) => void }) {
+  const colors = useColors();
+  let host = '';
+  let displayUrl = url;
+  try {
+    const parsed = new URL(url);
+    host = parsed.hostname.replace(/^www\./, '');
+    displayUrl = parsed.hostname;
+  } catch { /**/ }
+
+  return (
+    <Pressable
+      style={[styles.officialCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+      onPress={() => onPress(url)}
+    >
+      <View style={styles.officialHeader}>
+        <View style={[styles.officialIconWrap, { backgroundColor: colors.background }]}>
+          <Ionicons name="globe" size={14} color={colors.foreground} />
+        </View>
+        <View style={styles.officialMeta}>
+          <Text style={[styles.officialHost, { color: colors.mutedForeground }]} numberOfLines={1}>
+            {displayUrl}
+          </Text>
+        </View>
+        <View style={[styles.officialBadge, { borderColor: colors.border }]}>
+          <Text style={[styles.officialBadgeText, { color: colors.mutedForeground }]}>Official site</Text>
+        </View>
+      </View>
+      <Text style={[styles.officialTitle, { color: colors.foreground }]} numberOfLines={1}>
+        Visit {host}
+      </Text>
+      <Text style={[styles.officialSubtitle, { color: colors.mutedForeground }]} numberOfLines={1}>
+        {url}
+      </Text>
+    </Pressable>
+  );
+}
+
 function EmptyTab({ loading, query }: { loading: boolean; query: string }) {
   const colors = useColors();
   if (loading) return <ActivityIndicator color={colors.foreground} style={styles.loader} />;
@@ -329,6 +368,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
   const [loading, setLoading] = useState<LoadingState>(notLoading);
   const [browserUrl, setBrowserUrl] = useState<string | null>(null);
   const [history, setHistory] = useState<SearchHistoryItem[]>([]);
+  const [officialSiteUrl, setOfficialSiteUrl] = useState<string | null>(null);
   const searchIdRef = useRef(0);
 
   // ── Load history on mount ─────────────────────────────────────────────────
@@ -379,6 +419,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
     setSuggestions([]);
     setActiveTab('web');
     setResults(empty);
+    setOfficialSiteUrl(null);
     setLoading(allLoading);
     inputRef.current?.blur();
 
@@ -387,15 +428,24 @@ export function SearchEngine({ topPad }: { topPad: number }) {
       loadSearchHistory().then(setHistory)
     );
 
-    const [web, images, videos, news, finance] = await Promise.allSettled([
+    // For single-word queries, probe for an official website in parallel with
+    // the search — this surfaces afuchat.com at the top when you search "afuchat",
+    // just like Google's knowledge panel for brand/platform names.
+    const isSingleWord = !trimmed.includes(' ') && !trimmed.includes('.');
+    const [web, images, videos, news, finance, probeResult] = await Promise.allSettled([
       fetchWebResults(trimmed),
       fetchImageResults(trimmed, ''),
       fetchVideoResults(trimmed, ''),
       fetchNewsResults(trimmed, ''),
       fetchFinanceResults(trimmed),
+      isSingleWord ? probeOfficialSite(trimmed) : Promise.resolve(null),
     ]);
 
     if (isStale()) return;
+
+    if (probeResult.status === 'fulfilled' && probeResult.value) {
+      setOfficialSiteUrl(probeResult.value);
+    }
 
     setResults({
       ai: null,
@@ -547,10 +597,15 @@ export function SearchEngine({ topPad }: { topPad: number }) {
           ) : null}
 
           {activeTab === 'web' ? (
-            results.web.length > 0 ? (
+            results.web.length > 0 || officialSiteUrl ? (
               <FlatList
                 data={results.web}
                 keyExtractor={(_, i) => `web-${i}`}
+                ListHeaderComponent={
+                  officialSiteUrl ? (
+                    <OfficialSiteCard url={officialSiteUrl} onPress={openBrowser} />
+                  ) : null
+                }
                 renderItem={({ item }) => <WebCard item={item} onPress={openBrowser} />}
                 contentContainerStyle={styles.listPad}
                 showsVerticalScrollIndicator={false}
@@ -955,6 +1010,55 @@ const styles = StyleSheet.create({
 
   listPad: { paddingBottom: 32 },
   imageListPad: { paddingBottom: 32 },
+
+  // Official site card
+  officialCard: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 4,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 14,
+    gap: 4,
+  },
+  officialHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  officialIconWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  officialMeta: { flex: 1 },
+  officialHost: {
+    fontSize: 11,
+    fontFamily: 'Inter_400Regular',
+  },
+  officialBadge: {
+    borderRadius: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    flexShrink: 0,
+  },
+  officialBadgeText: {
+    fontSize: 10,
+    fontFamily: 'Inter_500Medium',
+  },
+  officialTitle: {
+    fontSize: 15,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  officialSubtitle: {
+    fontSize: 11,
+    fontFamily: 'Inter_400Regular',
+  },
 
   // Web results
   webCard: {

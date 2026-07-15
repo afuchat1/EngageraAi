@@ -95,6 +95,53 @@ export function looksLikeDomain(input: string): string | null {
   return /^https?:\/\//i.test(t) ? t : `https://${t}`;
 }
 
+// ── Domain probe (official-site detection) ────────────────────────────────────
+// For single-word queries (e.g. "afuchat"), tries common TLDs to see if the
+// brand has a live website. Returns the first URL that responds (any HTTP
+// status counts — even 403/301 — since it proves the domain exists).
+// Used to pin an "Official site" card at the top of web results.
+
+export async function probeDomain(word: string): Promise<string | null> {
+  const clean = word.trim().toLowerCase();
+  // Only probe single tokens — no spaces, dots, or special characters
+  if (!clean || clean.length < 2 || clean.length > 63) return null;
+  if (/[\s./\\@?#%]/.test(clean)) return null;
+  if (!/^[a-z0-9-]+$/.test(clean)) return null;
+
+  const candidates = [
+    `https://${clean}.com`,
+    `https://www.${clean}.com`,
+    `https://${clean}.io`,
+    `https://${clean}.org`,
+    `https://${clean}.co`,
+    `https://${clean}.net`,
+    `https://${clean}.app`,
+    `https://${clean}.ai`,
+  ];
+
+  // Race all candidates — return whichever responds first
+  const probe = async (url: string): Promise<string | null> => {
+    try {
+      const res = await fetch(url, {
+        method: "HEAD",
+        headers: { "User-Agent": UA },
+        signal: AbortSignal.timeout(3000),
+        redirect: "follow",
+      });
+      // Any response (2xx, 3xx, 4xx) means the domain resolves
+      if (res.status < 500) return res.url || url;
+    } catch { /* DNS failure or timeout — domain doesn't exist */ }
+    return null;
+  };
+
+  // Run in parallel; resolve with first non-null result
+  const results = await Promise.allSettled(candidates.map(probe));
+  for (const r of results) {
+    if (r.status === "fulfilled" && r.value) return r.value;
+  }
+  return null;
+}
+
 // ── Suggestions (DuckDuckGo autocomplete) ────────────────────────────────────
 
 export async function fetchSuggestions(query: string): Promise<string[]> {

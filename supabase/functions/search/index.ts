@@ -23,6 +23,7 @@
  */
 import {
   looksLikeDomain,
+  probeDomain,
   fetchSuggestions,
   fetchWebResults,
   fetchImageResults,
@@ -53,6 +54,16 @@ Deno.serve(async (req) => {
 
   if (type === "resolve") {
     return json({ domainUrl: looksLikeDomain(q) });
+  }
+
+  if (type === "probe") {
+    // Network-level probe: checks if a single-word query (e.g. "afuchat")
+    // corresponds to a live website (afuchat.com, afuchat.io, …).
+    // Returns the first responding URL so the client can pin an "Official site"
+    // card at the top of search results, just like Google does.
+    if (!q) return json({ url: null });
+    const url = await probeDomain(q);
+    return json({ url });
   }
 
   if (!q) return json({ error: "Missing q" }, 400);

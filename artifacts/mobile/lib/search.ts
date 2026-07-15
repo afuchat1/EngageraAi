@@ -92,6 +92,23 @@ export function getPotentialDomain(input: string): string | null {
   return `${t}.com`;
 }
 
+// ── Official-site probe ───────────────────────────────────────────────────────
+// For single-word queries (e.g. "afuchat"), asks the edge function to probe
+// common TLDs (afuchat.com, afuchat.io, …) and return the first live URL.
+// The result is pinned as an "Official site" card at the top of web results —
+// the same behaviour as Google's knowledge panel for brand queries.
+
+export async function probeOfficialSite(word: string): Promise<string | null> {
+  const t = word.trim();
+  if (!t || /[\s./]/.test(t)) return null;
+  try {
+    const data = await req<{ url: string | null }>('probe', t);
+    return data.url ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // ── Domain detection ─────────────────────────────────────────────────────────
 // If the input looks like a bare domain (e.g. "afuchat.com"), open it
 // directly in the in-app browser instead of running a search.
