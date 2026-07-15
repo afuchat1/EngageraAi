@@ -106,6 +106,7 @@ export default function ChatScreen() {
             role: m.role as 'user' | 'assistant',
             text: m.content,
             searchInfo: m.sources && m.sources.length > 0 ? { query: '', sources: m.sources } : undefined,
+            timeInfo: m.timeInfo,
           }));
         target.loadConversation(conv.id, displayMessages);
         setMode(targetMode);

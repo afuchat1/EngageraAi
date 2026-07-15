@@ -31,10 +31,16 @@ export interface SearchInfo {
   sources: SearchSource[];
 }
 
+export interface TimeInfo {
+  ianaZone: string;
+  label: string;
+}
+
 export interface StreamDoneEvent {
   model: string;
   conversationId?: number;
   searchInfo?: SearchInfo;
+  timeInfo?: TimeInfo;
   guestMessageCount?: number;
   guestMessageLimit?: number;
 }

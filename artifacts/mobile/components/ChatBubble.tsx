@@ -5,8 +5,9 @@ import { useColors } from '@/hooks/useColors';
 import { SourceStrip } from '@/components/SourceStrip';
 import { Markdown } from '@/components/Markdown';
 import { MessageActions } from '@/components/MessageActions';
+import { ClockWidget } from '@/components/ClockWidget';
 import { toPlainText } from '@/lib/plainText';
-import type { SearchInfo } from '@/lib/chat';
+import type { SearchInfo, TimeInfo } from '@/lib/chat';
 
 export interface DisplayMessage {
   id: string;
@@ -14,6 +15,7 @@ export interface DisplayMessage {
   text: string;
   imageUri?: string;
   searchInfo?: SearchInfo;
+  timeInfo?: TimeInfo;
   pending?: boolean;
   /** True while this assistant message is still actively receiving tokens. */
   streaming?: boolean;
@@ -87,6 +89,8 @@ export const ChatBubble = memo(function ChatBubble({
           <Markdown text={message.text} color={colors.foreground} />
         )}
       </View>
+
+      {!isUser && message.timeInfo ? <ClockWidget timeInfo={message.timeInfo} /> : null}
 
       {!isUser && message.searchInfo && message.searchInfo.sources.length > 0 ? (
         <SourceStrip searchInfo={message.searchInfo} />
