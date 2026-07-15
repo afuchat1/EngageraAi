@@ -975,8 +975,8 @@ function TabBar({ active, onChange }: { active: SearchTab; onChange: (t: SearchT
 }
 
 const tb = StyleSheet.create({
-  bar: { flexShrink: 0, borderBottomWidth: StyleSheet.hairlineWidth },
-  content: { paddingHorizontal: 12, paddingVertical: 8, gap: 6 },
+  bar: { height: 48, flexShrink: 0, borderBottomWidth: StyleSheet.hairlineWidth },
+  content: { paddingHorizontal: 12, paddingVertical: 0, gap: 6, alignItems: 'center' },
   pill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20 },
   label: { fontSize: 13, fontFamily: 'Inter_500Medium' },
   labelActive: { fontFamily: 'Inter_600SemiBold' },
