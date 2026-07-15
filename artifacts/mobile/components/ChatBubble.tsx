@@ -2,6 +2,8 @@ import React from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import { useColors } from '@/hooks/useColors';
 import { SourceStrip } from '@/components/SourceStrip';
+import { MarkdownText } from '@/components/MarkdownText';
+import { BrandMark } from '@/components/BrandMark';
 import type { SearchInfo } from '@/lib/chat';
 
 export interface DisplayMessage {
@@ -13,41 +15,31 @@ export interface DisplayMessage {
   pending?: boolean;
 }
 
+/** Flat, borderless transcript row — no chat bubbles, matches a clean editorial feel. */
 export function ChatBubble({ message }: { message: DisplayMessage }) {
   const colors = useColors();
   const isUser = message.role === 'user';
 
   return (
-    <View style={[styles.row, isUser ? styles.rowUser : styles.rowAssistant]}>
-      <View
-        style={[
-          styles.bubble,
-          {
-            backgroundColor: isUser ? colors.primary : colors.card,
-            borderColor: colors.border,
-            borderRadius: colors.radius,
-          },
-          isUser ? styles.bubbleUser : styles.bubbleAssistant,
-        ]}
-      >
+    <View style={styles.row}>
+      <View style={styles.avatarRow}>
+        {isUser ? (
+          <View style={[styles.avatarDot, { backgroundColor: colors.muted }]} />
+        ) : (
+          <BrandMark size={14} />
+        )}
+        <Text style={[styles.label, { color: colors.mutedForeground }]}>{isUser ? 'You' : 'Engagera'}</Text>
+      </View>
+
+      <View style={styles.body}>
         {message.imageUri ? (
-          <Image
-            source={{ uri: message.imageUri }}
-            style={[styles.image, { borderRadius: colors.radius - 6 }]}
-          />
+          <Image source={{ uri: message.imageUri }} style={[styles.image, { borderRadius: 12 }]} />
         ) : null}
         {message.text.length > 0 ? (
-          <Text
-            style={[
-              styles.text,
-              { color: isUser ? colors.primaryForeground : colors.foreground },
-            ]}
-            selectable
-          >
-            {message.text}
-          </Text>
+          <MarkdownText text={message.text} color={colors.foreground} />
         ) : null}
       </View>
+
       {!isUser && message.searchInfo && message.searchInfo.sources.length > 0 ? (
         <SourceStrip searchInfo={message.searchInfo} />
       ) : null}
@@ -57,31 +49,26 @@ export function ChatBubble({ message }: { message: DisplayMessage }) {
 
 const styles = StyleSheet.create({
   row: {
-    marginBottom: 14,
-    maxWidth: '86%',
+    marginBottom: 22,
   },
-  rowUser: {
-    alignSelf: 'flex-end',
+  avatarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    marginBottom: 6,
   },
-  rowAssistant: {
-    alignSelf: 'flex-start',
+  avatarDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
   },
-  bubble: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderWidth: StyleSheet.hairlineWidth,
+  label: {
+    fontSize: 12,
+    fontFamily: 'Inter_600SemiBold',
+    letterSpacing: 0.2,
+  },
+  body: {
     gap: 8,
-  },
-  bubbleUser: {
-    borderBottomRightRadius: 4,
-  },
-  bubbleAssistant: {
-    borderBottomLeftRadius: 4,
-  },
-  text: {
-    fontSize: 16,
-    lineHeight: 22,
-    fontFamily: 'Inter_400Regular',
   },
   image: {
     width: 200,

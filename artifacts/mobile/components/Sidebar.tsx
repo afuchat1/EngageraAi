@@ -23,7 +23,6 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { useAuth } from '@/hooks/useAuth';
-import { hapticImpact, hapticSelection } from '@/lib/haptics';
 import { BrandMark, Wordmark } from '@/components/BrandMark';
 import { CHAT_MODEL, LAB_MODEL } from '@/lib/chat';
 import { ConversationSummary, deleteConversation, listConversations } from '@/lib/conversations';
@@ -81,6 +80,13 @@ export function Sidebar({ open, onClose, onNewChat, onSelectConversation, active
   }, [open, translateX, backdropOpacity]);
 
   const refresh = useCallback(async () => {
+    // Guests never get server-side history in this UI — conversations are
+    // only listed for signed-in users, even though the backend can technically
+    // look them up by guest session id.
+    if (!user) {
+      setConversations([]);
+      return;
+    }
     setLoading(true);
     try {
       const data = await listConversations();
@@ -91,7 +97,7 @@ export function Sidebar({ open, onClose, onNewChat, onSelectConversation, active
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     if (open) refresh();
@@ -110,7 +116,6 @@ export function Sidebar({ open, onClose, onNewChat, onSelectConversation, active
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
-          hapticImpact();
           setConversations((prev) => prev.filter((c) => c.id !== conv.id));
           try {
             await deleteConversation(conv.id);
@@ -165,10 +170,7 @@ export function Sidebar({ open, onClose, onNewChat, onSelectConversation, active
           </View>
 
           <Pressable
-            onPress={() => {
-              hapticImpact();
-              onNewChat();
-            }}
+            onPress={onNewChat}
             style={({ pressed }) => [
               styles.newChatBtn,
               { backgroundColor: colors.primary, opacity: pressed ? 0.85 : 1 },
@@ -191,7 +193,14 @@ export function Sidebar({ open, onClose, onNewChat, onSelectConversation, active
 
           <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Recents</Text>
 
-          {loading && conversations.length === 0 ? (
+          {!user ? (
+            <View style={styles.guestNotice}>
+              <Ionicons name="lock-closed-outline" size={16} color={colors.mutedForeground} />
+              <Text style={[styles.emptyText, { color: colors.mutedForeground, paddingHorizontal: 0 }]}>
+                Guest chats aren't saved. Sign in to keep your history across sessions.
+              </Text>
+            </View>
+          ) : loading && conversations.length === 0 ? (
             <ActivityIndicator style={styles.loadingIndicator} color={colors.mutedForeground} />
           ) : filtered.length === 0 ? (
             <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
@@ -206,10 +215,7 @@ export function Sidebar({ open, onClose, onNewChat, onSelectConversation, active
                 const active = item.id === activeConversationId;
                 return (
                   <Pressable
-                    onPress={() => {
-                      hapticSelection();
-                      onSelectConversation(item);
-                    }}
+                    onPress={() => onSelectConversation(item)}
                     onLongPress={() => confirmDelete(item)}
                     style={({ pressed }) => [
                       styles.row,
@@ -338,6 +344,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginTop: 6,
     lineHeight: 18,
+  },
+  guestNotice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    paddingHorizontal: 16,
+    marginTop: 6,
   },
   listContent: { paddingHorizontal: 8, paddingBottom: 8 },
   row: {

@@ -3,7 +3,6 @@ import { ActivityIndicator, Image, Platform, Pressable, StyleSheet, TextInput, V
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
-import { hapticImpact } from '@/lib/haptics';
 
 export interface PendingImage {
   uri: string;
@@ -120,10 +119,7 @@ export function ChatInput({
           editable={!disabled}
         />
         <Pressable
-          onPress={() => {
-            hapticImpact();
-            onSend();
-          }}
+          onPress={onSend}
           disabled={!canSend}
           hitSlop={10}
           style={[styles.sendBtn, { backgroundColor: canSend ? colors.primary : colors.secondary }]}

@@ -13,7 +13,6 @@ import { BrandMark } from '@/components/BrandMark';
 import { ModeSwitch, type ChatMode } from '@/components/ModeSwitch';
 import { Sidebar } from '@/components/Sidebar';
 import { CHAT_MODEL, LAB_MODEL } from '@/lib/chat';
-import { hapticImpact } from '@/lib/haptics';
 import { fetchConversationMessages, type ConversationSummary } from '@/lib/conversations';
 
 const COPY: Record<ChatMode, { placeholder: string; emptyTitle: string; emptyBody: string }> = {
@@ -61,7 +60,6 @@ export default function ChatScreen() {
   const lastIsPending = messages.length > 0 && messages[messages.length - 1].pending;
 
   const handleNewChat = useCallback(() => {
-    hapticImpact();
     chatSession.startNewConversation();
     labSession.startNewConversation();
     setSidebarOpen(false);
@@ -96,7 +94,6 @@ export default function ChatScreen() {
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <Pressable
           onPress={() => {
-            hapticImpact();
             setSidebarOpen(true);
             setRefreshToken((t) => t + 1);
           }}

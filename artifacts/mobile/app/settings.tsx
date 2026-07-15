@@ -1,11 +1,10 @@
-import React, { useEffect, useState } from 'react';
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { useAuth } from '@/hooks/useAuth';
-import { getHapticsEnabled, hapticImpact, loadHapticsPreference, setHapticsEnabled } from '@/lib/haptics';
 import { deleteConversation, listConversations } from '@/lib/conversations';
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -60,18 +59,7 @@ function Row({
 export default function SettingsScreen() {
   const colors = useColors();
   const { user, displayName, signOut } = useAuth();
-  const [haptics, setHaptics] = useState(true);
   const [clearing, setClearing] = useState(false);
-
-  useEffect(() => {
-    loadHapticsPreference().then(setHaptics);
-  }, []);
-
-  const toggleHaptics = async (value: boolean) => {
-    setHaptics(value);
-    await setHapticsEnabled(value);
-    if (value) hapticImpact();
-  };
 
   const clearHistory = () => {
     Alert.alert('Clear all conversations?', 'This deletes every saved chat in Chat and Lab. This cannot be undone.', [
@@ -122,22 +110,6 @@ export default function SettingsScreen() {
             last
           />
         )}
-      </Section>
-
-      <Section title="Preferences">
-        <Row
-          icon="phone-portrait-outline"
-          label="Haptic feedback"
-          right={
-            <Switch
-              value={haptics}
-              onValueChange={toggleHaptics}
-              trackColor={{ false: colors.secondary, true: colors.foreground }}
-              thumbColor={Platform.OS === 'android' ? colors.background : undefined}
-            />
-          }
-          last
-        />
       </Section>
 
       <Section title="Data">

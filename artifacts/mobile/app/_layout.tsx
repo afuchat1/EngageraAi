@@ -21,7 +21,6 @@ import {
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import colors from '@/constants/colors';
-import { loadHapticsPreference } from '@/lib/haptics';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -71,10 +70,6 @@ export default function RootLayout() {
 
   const fontsLoaded = interLoaded && displayLoaded;
   const fontError = interError || displayError;
-
-  useEffect(() => {
-    loadHapticsPreference();
-  }, []);
 
   useEffect(() => {
     if (fontsLoaded || fontError) {
