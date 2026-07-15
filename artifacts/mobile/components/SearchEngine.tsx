@@ -5,8 +5,13 @@
  * aggregates DuckDuckGo, Bing News RSS, Google News RSS, curated outlet
  * RSS feeds, Bing image search, and YouTube search.
  * Real-time suggestions while typing, tabbed results
- * (Web · Images · Videos · News · Finance), and a built-in
+ * (AI · Web · Images · Videos · News · Finance), and a built-in
  * WebView browser that opens when the user taps any result.
+ *
+ * The "AI" tab is Engagera AI's advanced overview for the query — it is
+ * fetched lazily (only when the user opens that tab), since it goes through
+ * the same `chat` edge function as the Chat tab and counts against the same
+ * guest-message quota.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -33,12 +38,14 @@ import {
   fetchVideoResults,
   fetchNewsResults,
   fetchFinanceResults,
+  fetchAiOverview,
   resolveDomain,
   type WebResult,
   type ImageResult,
   type VideoResult,
   type NewsResult,
   type FinanceResult,
+  type AiOverviewResult,
 } from '@/lib/search';
 
 // Silence unused-import lint — FinanceResult is used in FinanceCard props
@@ -46,9 +53,10 @@ type _F = FinanceResult;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type SearchTab = 'web' | 'images' | 'videos' | 'news' | 'finance';
+type SearchTab = 'ai' | 'web' | 'images' | 'videos' | 'news' | 'finance';
 
 interface SearchResults {
+  ai: AiOverviewResult | null;
   web: WebResult[];
   images: ImageResult[];
   videos: VideoResult[];
@@ -59,6 +67,7 @@ interface SearchResults {
 type LoadingState = Record<SearchTab, boolean>;
 
 const TABS: { key: SearchTab; label: string; icon: string }[] = [
+  { key: 'ai', label: 'AI', icon: 'sparkles-outline' },
   { key: 'web', label: 'Web', icon: 'globe-outline' },
   { key: 'images', label: 'Images', icon: 'images-outline' },
   { key: 'videos', label: 'Videos', icon: 'play-circle-outline' },
@@ -66,9 +75,11 @@ const TABS: { key: SearchTab; label: string; icon: string }[] = [
   { key: 'finance', label: 'Finance', icon: 'trending-up-outline' },
 ];
 
-const empty: SearchResults = { web: [], images: [], videos: [], news: [], finance: [] };
-const notLoading: LoadingState = { web: false, images: false, videos: false, news: false, finance: false };
-const allLoading: LoadingState = { web: true, images: true, videos: true, news: true, finance: true };
+const empty: SearchResults = { ai: null, web: [], images: [], videos: [], news: [], finance: [] };
+// The AI tab is fetched lazily (see the effect in the component), so it never
+// starts in a "loading" state alongside the other four when a search fires.
+const notLoading: LoadingState = { ai: false, web: false, images: false, videos: false, news: false, finance: false };
+const allLoading: LoadingState = { ai: false, web: true, images: true, videos: true, news: true, finance: true };
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const IMG_SIZE = (SCREEN_W - 3) / 2; // 2-col image grid with 3px gap
@@ -192,6 +203,45 @@ function FinanceCard({ item, onPress }: { item: FinanceResult; onPress: (url: st
   );
 }
 
+function AiOverviewCard({ item, onPress }: { item: AiOverviewResult; onPress: (url: string) => void }) {
+  const colors = useColors();
+  const hasAnswer = item.answer.trim().length > 0;
+  return (
+    <ScrollView contentContainerStyle={styles.aiPad} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      <View style={[styles.aiCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={styles.aiHeader}>
+          <Ionicons name="sparkles" size={16} color={colors.foreground} />
+          <Text style={[styles.aiHeaderText, { color: colors.foreground }]}>Engagera AI</Text>
+        </View>
+        {hasAnswer ? (
+          <Text style={[styles.aiAnswer, { color: colors.foreground }]}>{item.answer}</Text>
+        ) : (
+          <Text style={[styles.aiAnswer, { color: colors.mutedForeground }]}>
+            Engagera AI couldn't generate an overview for this search. Try the Web tab instead.
+          </Text>
+        )}
+      </View>
+
+      {item.sources.length > 0 ? (
+        <View style={styles.aiSourcesWrap}>
+          {item.sources.map((s, i) => (
+            <Pressable
+              key={i}
+              style={[styles.aiSourceChip, { backgroundColor: colors.card, borderColor: colors.border }]}
+              onPress={() => onPress(s.url)}
+            >
+              <Ionicons name="link-outline" size={11} color={colors.mutedForeground} />
+              <Text style={[styles.aiSourceText, { color: colors.mutedForeground }]} numberOfLines={1}>
+                {s.source || s.title}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+    </ScrollView>
+  );
+}
+
 function EmptyTab({ loading, query }: { loading: boolean; query: string }) {
   const colors = useColors();
   if (loading) return <ActivityIndicator color={colors.foreground} style={styles.loader} />;
@@ -284,6 +334,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
     if (isStale()) return;
 
     setResults({
+      ai: null,
       web: web.status === 'fulfilled' ? web.value.results : [],
       images: images.status === 'fulfilled' ? images.value : [],
       videos: videos.status === 'fulfilled' ? videos.value : [],
@@ -292,6 +343,21 @@ export function SearchEngine({ topPad }: { topPad: number }) {
     });
     setLoading(notLoading);
   }, []);
+
+  // ── Engagera AI overview (lazy) ──────────────────────────────────────────────
+  // Only fetched once the user actually opens the AI tab for the current
+  // query, since it goes through the chat model and counts against the same
+  // guest-message quota as the Chat tab.
+  useEffect(() => {
+    if (activeTab !== 'ai' || !submittedQuery || results.ai || loading.ai) return;
+    let cancelled = false;
+    setLoading((l) => ({ ...l, ai: true }));
+    fetchAiOverview(submittedQuery)
+      .then((ai) => { if (!cancelled) setResults((r) => ({ ...r, ai })); })
+      .catch(() => { if (!cancelled) setResults((r) => ({ ...r, ai: { answer: '', sources: [] } })); })
+      .finally(() => { if (!cancelled) setLoading((l) => ({ ...l, ai: false })); });
+    return () => { cancelled = true; };
+  }, [activeTab, submittedQuery, results.ai, loading.ai]);
 
   const openBrowser = useCallback((url: string) => setBrowserUrl(url), []);
 
@@ -308,7 +374,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
           </View>
           <Text style={[styles.landingTitle, { color: colors.foreground }]}>Engagera Search</Text>
           <Text style={[styles.landingBody, { color: colors.mutedForeground }]}>
-            Web · Images · Videos · News · Finance{'\n'}powered by Engagera's AfuBot search
+            AI · Web · Images · Videos · News · Finance{'\n'}powered by Engagera's AfuBot search
           </Text>
         </View>
       ) : null}
@@ -350,6 +416,21 @@ export function SearchEngine({ topPad }: { topPad: number }) {
           </ScrollView>
 
           {/* Tab content */}
+          {activeTab === 'ai' ? (
+            results.ai ? (
+              <AiOverviewCard item={results.ai} onPress={openBrowser} />
+            ) : (
+              loading.ai ? (
+                <View style={styles.aiLoading}>
+                  <ActivityIndicator color={colors.foreground} />
+                  <Text style={[styles.aiLoadingText, { color: colors.mutedForeground }]}>Engagera AI is thinking…</Text>
+                </View>
+              ) : (
+                <EmptyTab loading={false} query={submittedQuery} />
+              )
+            )
+          ) : null}
+
           {activeTab === 'web' ? (
             results.web.length > 0 ? (
               <FlatList
@@ -815,6 +896,61 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_700Bold',
     color: 'white',
     letterSpacing: 0.5,
+  },
+
+  // Engagera AI overview
+  aiPad: { padding: 16, paddingBottom: 32 },
+  aiCard: {
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 16,
+    gap: 10,
+  },
+  aiHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  aiHeaderText: {
+    fontSize: 13,
+    fontFamily: 'Inter_600SemiBold',
+    letterSpacing: 0.2,
+  },
+  aiAnswer: {
+    fontSize: 15,
+    fontFamily: 'Inter_400Regular',
+    lineHeight: 22,
+  },
+  aiSourcesWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  aiSourceChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    maxWidth: 160,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  aiSourceText: {
+    fontSize: 11,
+    fontFamily: 'Inter_400Regular',
+  },
+  aiLoading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingBottom: 80,
+  },
+  aiLoadingText: {
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
   },
 
   // Empty / loader

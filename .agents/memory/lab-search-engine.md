@@ -17,6 +17,19 @@ The Lab tab renders `<SearchEngine>` (`artifacts/mobile/components/SearchEngine.
 - **Finance**: reuses the news pipeline with a "<query> stock" modifier, plus DuckDuckGo web results for "<query> stock price market". No live quote provider (see gotcha below).
 - **Resolve** (bare-domain detection, e.g. "afuchat.com"): pure regex, no network call.
 
+## Engagera AI tab
+The Lab search results also have an "AI" tab (Engagera AI overview) that calls the `chat` edge function
+directly (model `engagera-2.1`/`LAB_MODEL`, `stream:false`, a `contextHint` describing it's a search-page
+overview) instead of the `search` edge function. It is fetched **lazily** — only when the user opens that
+tab for the current query — not alongside the other four tabs on every search.
+
+**Why:** the `chat` function meters usage against the same guest-message quota (5 free messages) as the
+Chat tab. Firing it automatically on every Lab search would silently burn a user's chat quota just for
+looking at search results.
+
+**How to apply:** any future Lab tab that goes through `chat` (as opposed to the keyless `search` function)
+must follow the same lazy/on-open fetch pattern, gated on the tab actually being viewed.
+
 ## How to apply
 - Never route search calls directly from the mobile client to a third party — always through the `search` edge function (mirrors `lib/chat.ts`'s auth pattern: bearer session token or anon key, `x-guest-session-id` header when unauthenticated).
 - All scraping fetches must have a timeout and fail soft to `[]`/`null` — never fabricate a result if a source's HTML layout changes or a request is blocked.

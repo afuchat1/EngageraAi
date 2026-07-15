@@ -7,9 +7,10 @@
  * dedicated backend is needed here — same pattern as `chat.ts`.
  */
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from '@/lib/supabase';
-import { getOrCreateGuestSessionId } from '@/lib/chat';
+import { getOrCreateGuestSessionId, LAB_MODEL } from '@/lib/chat';
 
 const BASE = `${SUPABASE_URL}/functions/v1/search`;
+const CHAT_URL = `${SUPABASE_URL}/functions/v1/chat`;
 
 async function buildHeaders(): Promise<Record<string, string>> {
   const { data: sessionData } = await supabase.auth.getSession();
@@ -143,4 +144,58 @@ export interface FinanceResult {
 export async function fetchFinanceResults(query: string): Promise<FinanceResult[]> {
   const data = await req<{ results: FinanceResult[] }>('finance', query);
   return data.results ?? [];
+}
+
+// ── Engagera AI overview ─────────────────────────────────────────────────────
+// A search-results-page AI summary, generated on demand (only when the user
+// opens the "AI" tab) by calling the same `chat` edge function the Chat tab
+// uses, so it counts against the same guest-message quota rather than being
+// fired silently on every search.
+
+export interface AiOverviewSource {
+  title: string;
+  url: string;
+  source: string;
+}
+
+export interface AiOverviewResult {
+  answer: string;
+  sources: AiOverviewSource[];
+}
+
+const AI_OVERVIEW_CONTEXT_HINT = [
+  'You are generating the "Engagera AI" overview shown at the top of a search-results page for the',
+  "user's query below — not a normal chat reply. Answer it directly in 2-5 sentences of plain prose",
+  '(no markdown headers; a short list is fine only if the query is itself asking for a list).',
+  'Be concise and confident. If the query concerns something time-sensitive that you cannot verify',
+  "live, say so briefly instead of guessing.",
+].join(' ');
+
+export async function fetchAiOverview(query: string): Promise<AiOverviewResult> {
+  const headers = await buildHeaders();
+  const res = await fetch(CHAT_URL, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      messages: [{ role: 'user', content: query }],
+      model: LAB_MODEL,
+      stream: false,
+      contextHint: AI_OVERVIEW_CONTEXT_HINT,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    throw new Error(err?.error ?? `AI overview failed (${res.status})`);
+  }
+  const data = await res.json();
+  const answer: string = typeof data?.message?.content === 'string' ? data.message.content : '';
+  const rawSources: { title?: string; url?: string }[] = data?.searchInfo?.sources ?? [];
+  const sources: AiOverviewSource[] = rawSources
+    .filter((s) => typeof s.url === 'string' && s.url)
+    .map((s) => {
+      let host = '';
+      try { host = new URL(s.url as string).hostname; } catch { /**/ }
+      return { title: s.title ?? host, url: s.url as string, source: host };
+    });
+  return { answer, sources };
 }
