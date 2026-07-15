@@ -291,9 +291,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sendIcon: {
-    // Telegram's paper plane points up-and-right; nudge it to sit visually
-    // centered against its own diagonal silhouette instead of the box.
-    transform: [{ translateX: 1 }, { translateY: -1 }],
+    // Ionicons' "send" glyph points up-and-right by default; rotate it to
+    // point straight up like Telegram's send button, then nudge it back to
+    // sit centered against its own (now vertical) silhouette.
+    transform: [{ rotate: '-45deg' }, { translateY: -1 }],
   },
   menuBackdrop: {
     position: 'absolute',
