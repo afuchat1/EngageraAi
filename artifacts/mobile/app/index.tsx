@@ -168,7 +168,7 @@ export default function ChatScreen() {
                 keyboardShouldPersistTaps="handled"
                 renderItem={({ item }) =>
                   item.pending && item.text.length === 0 ? (
-                    item.imageGenerating ? <ImageGenIndicator /> : <TypingDots />
+                    item.imageGenerating ? <ImageGenIndicator /> : <TypingDots label={item.searchStatus} />
                   ) : (
                     <ChatBubble message={item} />
                   )

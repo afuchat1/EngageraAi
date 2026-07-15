@@ -23,6 +23,8 @@ export interface DisplayMessage {
   streaming?: boolean;
   /** True while an image-generation reply for this message is in flight. */
   imageGenerating?: boolean;
+  /** Live search status message shown while external tools are running. */
+  searchStatus?: string;
 }
 
 /**

@@ -217,8 +217,11 @@ export function useChatSession(model: string, contextHint?: string) {
             revealQueueRef.current += chunk;
             startReveal(assistantId);
           },
+          onSearchStatus: (message: string) => {
+            setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, searchStatus: message } : m)));
+          },
           onMeta: (searchInfo: SearchInfo) => {
-            setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, searchInfo } : m)));
+            setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, searchInfo, searchStatus: undefined } : m)));
           },
           onDone: (done) => {
             if (done.conversationId) setConversationId(done.conversationId);

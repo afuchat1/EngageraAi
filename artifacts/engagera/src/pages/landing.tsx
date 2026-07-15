@@ -21,6 +21,7 @@ interface DisplayMessage {
   timeInfo?: TimeInfo;
   streaming?: boolean; // true while the SSE stream is open
   imageGenerating?: boolean; // true while an image-generation reply is in flight
+  searchStatus?: string; // live search progress message shown while tools are running
 }
 
 export default function Landing() {
@@ -183,11 +184,23 @@ export default function Landing() {
             }
             pendingCharsRef.current += chunk;
           },
+          onSearchStatus: (message) => {
+            if (assistantIndex === -1) return;
+            setMessages((prev) => {
+              const next = [...prev];
+              next[assistantIndex] = { ...next[assistantIndex], searchStatus: message };
+              return next;
+            });
+          },
           onMeta: (searchInfo) => {
             if (assistantIndex === -1) return;
             setMessages((prev) => {
               const next = [...prev];
-              next[assistantIndex] = { ...next[assistantIndex], sources: searchInfo.sources as Source[] };
+              next[assistantIndex] = {
+                ...next[assistantIndex],
+                sources: searchInfo.sources as Source[],
+                searchStatus: undefined,
+              };
               return next;
             });
           },
@@ -404,15 +417,18 @@ export default function Landing() {
                             </span>
                           </div>
                         ) : msg.streaming && !msg.content ? (
-                          /* Waiting for first token — show thinking animation */
+                          /* Waiting for first token — show search status if a tool is running,
+                             orb only if the model is reasoning internally (no label per spec) */
                           <div className="flex items-center gap-2.5 py-2">
                             <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
                               <span className="thinking-orb-ring absolute inset-0 rounded-full border border-white/40" />
                               <span className="thinking-orb-core absolute inset-[3px] rounded-full bg-white" />
                             </span>
-                            <span className="thinking-shimmer text-[13px] font-medium tracking-wide">
-                              Thinking
-                            </span>
+                            {msg.searchStatus && (
+                              <span className="thinking-shimmer text-[13px] font-medium tracking-wide">
+                                {msg.searchStatus}
+                              </span>
+                            )}
                           </div>
                         ) : (
                           <div className="relative">
@@ -438,9 +454,6 @@ export default function Landing() {
                         <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
                           <span className="thinking-orb-ring absolute inset-0 rounded-full border border-white/40" />
                           <span className="thinking-orb-core absolute inset-[3px] rounded-full bg-white" />
-                        </span>
-                        <span className="thinking-shimmer text-[13px] font-medium tracking-wide">
-                          Thinking
                         </span>
                       </div>
                     </div>

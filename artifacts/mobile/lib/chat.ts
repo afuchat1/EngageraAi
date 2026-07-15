@@ -60,6 +60,7 @@ export interface StreamDoneEvent {
 export interface StreamHandlers {
   onToken?: (content: string) => void;
   onMeta?: (searchInfo: SearchInfo) => void;
+  onSearchStatus?: (message: string) => void;
   onDone?: (done: StreamDoneEvent) => void;
 }
 
@@ -261,6 +262,7 @@ export async function streamChat(
 
         if (evt.type === 'token' && evt.content) handlers.onToken?.(evt.content);
         else if (evt.type === 'meta' && evt.searchInfo) handlers.onMeta?.(evt.searchInfo);
+        else if (evt.type === 'searchStatus' && (evt as any).message) handlers.onSearchStatus?.((evt as any).message);
         else if (evt.type === 'error') {
           throw new ChatRequestError(evt.error ?? 'The AI could not process that message. Please try again.', 502, {
             error: evt.error ?? 'stream_error',

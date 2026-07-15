@@ -15,7 +15,7 @@ import { useColors } from '@/hooks/useColors';
  * state. Intentionally carries no brand logo/avatar: per product decision,
  * the logo never appears inside chat messages.
  */
-export function TypingDots() {
+export function TypingDots({ label }: { label?: string }) {
   const colors = useColors();
   const pulse = useSharedValue(0.85);
   const ringOpacity = useSharedValue(0.6);
@@ -49,7 +49,9 @@ export function TypingDots() {
         <Animated.View style={[styles.orbRing, { borderColor: colors.foreground }, ringStyle]} />
         <Animated.View style={[styles.orbCore, { backgroundColor: colors.foreground }, coreStyle]} />
       </View>
-      <Animated.Text style={[styles.label, { color: colors.foreground }, textStyle]}>Thinking</Animated.Text>
+      {label ? (
+        <Animated.Text style={[styles.label, { color: colors.foreground }, textStyle]}>{label}</Animated.Text>
+      ) : null}
     </View>
   );
 }

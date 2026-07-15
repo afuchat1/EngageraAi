@@ -261,6 +261,27 @@ Before producing any reply, silently work through this internally (never show th
 - If a request is ambiguous, answer the most direct, literal reading of it rather than substituting a different question you find more interesting to answer.
 - Staying on-topic means staying focused on the user's actual request — it does not mean refusing topics or being evasive; once you know what they're asking, answer it fully and directly.
 
+## Source Priority — when search results are in context
+When answering from search results, prefer sources in this order:
+1. **Official source** — the subject's own website or official statement
+2. **Government or regulatory source** — .gov sites, official bodies
+3. **Company or organisation website** — the organisation's own pages
+4. **Official documentation** — developer portals, official docs
+5. **Trusted news sources** — Reuters, AP, BBC, Bloomberg, Financial Times
+6. **Community sources** — Wikipedia, forums, only when no better source exists
+
+When two sources conflict: prefer the official source, briefly note the discrepancy, and express appropriate uncertainty rather than picking a side arbitrarily.
+
+## Confidence & Accuracy — internal only
+Before answering, silently assess confidence (never reveal or mention this score):
+- **95–100%**: Answer immediately from knowledge.
+- **70–94%**: Answer; note uncertainty only if it materially affects the answer.
+- **Below 70%**: Rely on search results if available in context; say "I'm not certain" if they aren't.
+- **Below 40%**: State honestly that you cannot verify — never fabricate to fill the gap.
+
+## Conversation Focus
+Every response should advance what the user is actually trying to accomplish. When the user changes subject, pivot completely — do not drag in the previous topic. Track the conversation goal and stay aligned with it throughout.
+
 ## Response Style — MANDATORY
 - **Direct.** Answer immediately. No preamble.
 - **Conversational by default.** Match the energy and register of the person you're talking to.
@@ -2231,6 +2252,24 @@ function buildSearchQuery(userText: string, conversationContext?: string): strin
   return q;
 }
 
+/** Pick a contextually appropriate search-status message for the given query. */
+function getSearchStatusMessage(query: string): string {
+  const q = query.toLowerCase();
+  if (/weather|forecast|temperature|rain|snow|sun|wind|humidity/.test(q))
+    return "Fetching live results...";
+  if (/price|cost|stock|bitcoin|crypto|currency|rate|exchange/.test(q))
+    return "Fetching live results...";
+  if (/news|breaking|latest|today|recent/.test(q))
+    return "Looking up the latest information...";
+  if (/ceo|president|founder|owner|minister|governor|official|director|chairman/.test(q))
+    return "Checking official sources...";
+  if (/score|result|match|game|winner|election|vote/.test(q))
+    return "Fetching live results...";
+  if (/version|release|update|changelog|docs|documentation/.test(q))
+    return "Finding accurate information...";
+  return "Searching the web...";
+}
+
 // ── Search trigger: ONLY search when the user's message explicitly calls for it ─
 // The model answers from its own knowledge by default.
 // Web search is reserved for: explicit requests, live/current data, news, prices, scores.
@@ -2278,6 +2317,21 @@ function needsWebSearch(messages: ChatMessage[]): string | null {
   const recencySignals = /\b(new|newly|recently|just (launched|released|announced|appointed|elected)|latest version|2025|2026)\b/i;
   const entityLookup   = /\b(who is|what is|tell me about|info (on|about)|details (on|about))\b/i;
   if (recencySignals.test(t) && entityLookup.test(t)) return text;
+
+  // ── Leadership, pricing, software versions — frequently changing facts ─────────
+  const currentFacts = [
+    // CEO, founder, executive roles, company ownership
+    /\b(who is (the )?(ceo|cto|cfo|coo|cmo|cpo|president|founder|co-?founder|chairman|owner|director|head|chief|leader|boss|vp|vice president) of|current (ceo|president|founder|chairman|owner) of|who (owns|runs|leads|heads|founded|controls) (?!this|our|my)\w)/i,
+    // Product and service pricing
+    /\b(how much (is|does|do|costs?) (?!it (take|weigh|measure))|price of|cost of|subscription (price|cost|fee|plan)|monthly (plan|fee|cost|price)|annual (plan|fee|cost|price)|pricing (for|of)|current price)\b/i,
+    // Package versions, software releases
+    /\b(latest (stable )?(version|release) of|current (stable )?(version|release) of|what version (is|of)|how to (install|set up|configure|integrate) .{3,40})\b/i,
+    // Government and official positions
+    /\b(who is (the )?(prime minister|president|governor|secretary of state|home secretary|chancellor|senator|mayor|minister|attorney general) of|current (prime minister|president|governor|chancellor) of)\b/i,
+    // Live event status and operating hours
+    /\b(is .{2,40} (open|closed|live|happening|on) (today|right now|tonight|now)|what (time|hours?) (does|do|are) .{2,30} (open|close|start|end|begin) (today|tonight))\b/i,
+  ];
+  if (currentFacts.some((re) => re.test(text))) return text;
 
   // Everything else: model answers from its own knowledge. No search.
   return null;
@@ -3039,22 +3093,17 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      // Pre-search (lightweight — snippets only, no deep crawl to keep TTFT low)
+      // Detect if search is needed — actual search runs inside the stream so real-time
+      // status events ("Searching the web...", "Verifying...") reach the client while
+      // the network request is in-flight, instead of blocking the response start.
       let streamSearchInfo: { query: string; sources: Source[] } | undefined;
       const searchText2 = needsWebSearch(validMessages as IncomingMessage[]);
+      let pendingSearchQuery: string | undefined;
       if (searchText2) {
         try {
           const recentCtx2 = validMessages.filter((m) => m.role === "user").slice(-3)
             .map((m) => (typeof m.content === "string" ? m.content : "")).join(" ").slice(0, 120);
-          const q2 = buildSearchQuery(searchText2, recentCtx2);
-          const sr2 = await webSearch(q2, braveKey);
-          if (sr2.sources.length > 0) {
-            const ctxBlk = `\n\n---\n🌐 **Live search results** (retrieved just now):\n\n${sr2.text.slice(0, 2000)}\n---\n\n` +
-              `INSTRUCTIONS: Use ONLY the results above for any fact, figure, date, name, or claim. Report exactly what they say — do not invent, alter, or "fill in" anything not explicitly present. If something asked for isn't in the results, say it wasn't found rather than guessing.`;
-            const si2 = streamMsgs.findIndex((m) => m.role === "system");
-            if (si2 >= 0) streamMsgs[si2] = { ...streamMsgs[si2], content: (streamMsgs[si2].content as string) + ctxBlk };
-            streamSearchInfo = { query: q2, sources: sr2.sources.slice(0, 8) };
-          }
+          pendingSearchQuery = buildSearchQuery(searchText2, recentCtx2);
         } catch { /* non-fatal */ }
       }
 
@@ -3065,7 +3114,24 @@ Deno.serve(async (req: Request) => {
             controller.enqueue(encoder2.encode(`data: ${JSON.stringify(obj)}\n\n`));
 
           try {
-            if (streamSearchInfo) send({ type: "meta", searchInfo: streamSearchInfo });
+            // Run the search inside the stream so status events ("Searching the web...",
+            // "Verifying current information...") reach the client in real time while
+            // the web request is in flight — not after it completes.
+            if (pendingSearchQuery) {
+              try {
+                send({ type: "searchStatus", message: getSearchStatusMessage(pendingSearchQuery) });
+                const sr2 = await webSearch(pendingSearchQuery, braveKey);
+                if (sr2.sources.length > 0) {
+                  send({ type: "searchStatus", message: "Verifying current information..." });
+                  const ctxBlk = `\n\n---\n🌐 **Live search results** (retrieved just now):\n\n${sr2.text.slice(0, 2000)}\n---\n\n` +
+                    `INSTRUCTIONS: Use ONLY the results above for any fact, figure, date, name, or claim. Report exactly what they say — do not invent, alter, or "fill in" anything not explicitly present. If something asked for isn't in the results, say it wasn't found rather than guessing.`;
+                  const si2 = streamMsgs.findIndex((m) => m.role === "system");
+                  if (si2 >= 0) streamMsgs[si2] = { ...streamMsgs[si2], content: (streamMsgs[si2].content as string) + ctxBlk };
+                  streamSearchInfo = { query: pendingSearchQuery, sources: sr2.sources.slice(0, 8) };
+                  send({ type: "meta", searchInfo: streamSearchInfo });
+                }
+              } catch { /* non-fatal — model answers from its own knowledge */ }
+            }
 
             let fullReply = "";
             let didStream = false;
