@@ -625,28 +625,26 @@ export function SearchEngine({ topPad }: { topPad: number }) {
           </ScrollView>
 
           {/* ── AI chat ──────────────────────────────────────────────────── */}
-          {activeTab === 'ai' ? (<View style={s.flex}>
+          {activeTab === 'ai' ? (<View style={s.aiTab}>
             {aiError && aiMessages.length === 0 ? (
               <View style={s.aiErrorWrap}>
                 <Ionicons name="alert-circle-outline" size={28} color={colors.mutedForeground} />
                 <Text style={[s.aiErrorText, { color: colors.mutedForeground }]}>{aiError}</Text>
               </View>
             ) : (
-              <FlatList
-                data={aiMessages}
-                keyExtractor={(_, i) => String(i)}
-                style={s.flex}
+              <ScrollView
+                style={StyleSheet.absoluteFill}
                 contentContainerStyle={s.aiChatPad}
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
-                ListFooterComponent={<View style={{ height: 16 }} />}
-                renderItem={({ item: msg, index: i }) => {
+              >
+                {aiMessages.map((msg, i) => {
                   const isUser = msg.role === 'user';
                   const isLastAssistant = !isUser && i === aiMessages.length - 1;
 
                   if (isUser) {
                     return (
-                      <View style={s.aiUserRow}>
+                      <View key={i} style={s.aiUserRow}>
                         <View style={[s.aiUserBubble, { backgroundColor: colors.card, borderColor: colors.border }]}>
                           <Text style={[s.aiUserText, { color: colors.foreground }]}>{msg.content}</Text>
                         </View>
@@ -655,7 +653,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
                   }
 
                   return (
-                    <View style={s.aiAssistantRow}>
+                    <View key={i} style={s.aiAssistantRow}>
                       {i === 1 ? (
                         <View style={s.aiAssistantHeader}>
                           <Ionicons name="sparkles" size={13} color={colors.foreground} />
@@ -696,8 +694,9 @@ export function SearchEngine({ topPad }: { topPad: number }) {
                       ) : null}
                     </View>
                   );
-                }}
-              />
+                })}
+                <View style={{ height: 16 }} />
+              </ScrollView>
             )}
           </View>) : null}
 
@@ -908,7 +907,8 @@ const s = StyleSheet.create({
   tabUnderline: { height: 2, width: '100%', borderRadius: 1, marginTop: -1 },
 
   // AI chat
-  aiChatPad: { flexGrow: 1, paddingTop: 14, paddingHorizontal: 14, paddingBottom: 8 },
+  aiTab: { flex: 1, overflow: 'hidden' },
+  aiChatPad: { paddingTop: 14, paddingHorizontal: 14, paddingBottom: 24 },
 
   // User bubble (right-aligned)
   aiUserRow: { alignItems: 'flex-end', marginBottom: 16 },
