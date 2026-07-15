@@ -8,9 +8,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Copy, Check, ImageOff, Film,
   ThumbsUp, ThumbsDown, Volume2, VolumeX,
-  Share2, Globe, FileDown, ChevronLeft, ChevronRight, X,
+  Share2, Globe, FileDown, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, X,
   Download,
 } from "lucide-react";
+import { DocumentBlock } from "./DocumentBlock";
 import type { TimeInfo, WeatherInfo } from "@/hooks/useEdgeChatCompletion";
 
 export interface Source {
@@ -66,6 +67,72 @@ function sanitizeLinkNoise(md: string): string {
     // Collapse the blank-line gaps left behind
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+// ── Brand name lookup — maps known domains to human-readable names ─────────────
+const BRAND_NAMES: Record<string, string> = {
+  "microsoft.com": "Microsoft", "github.com": "GitHub", "google.com": "Google",
+  "apple.com": "Apple", "amazon.com": "Amazon", "amazon.co.uk": "Amazon",
+  "meta.com": "Meta", "facebook.com": "Facebook", "instagram.com": "Instagram",
+  "twitter.com": "X", "x.com": "X", "linkedin.com": "LinkedIn",
+  "youtube.com": "YouTube", "reddit.com": "Reddit", "discord.com": "Discord",
+  "slack.com": "Slack", "notion.so": "Notion", "figma.com": "Figma",
+  "openai.com": "OpenAI", "anthropic.com": "Anthropic", "huggingface.co": "HuggingFace",
+  "supabase.com": "Supabase", "firebase.google.com": "Firebase",
+  "cloudflare.com": "Cloudflare", "vercel.com": "Vercel", "netlify.com": "Netlify",
+  "stripe.com": "Stripe", "paypal.com": "PayPal",
+  "stackoverflow.com": "Stack Overflow", "npmjs.com": "npm", "pypi.org": "PyPI",
+  "developer.mozilla.org": "MDN", "w3schools.com": "W3Schools",
+  "docs.python.org": "Python Docs", "kubernetes.io": "Kubernetes",
+  "docker.com": "Docker", "aws.amazon.com": "AWS",
+  "cloud.google.com": "Google Cloud", "azure.microsoft.com": "Azure",
+  "bbc.com": "BBC", "bbc.co.uk": "BBC", "reuters.com": "Reuters",
+  "apnews.com": "AP News", "bloomberg.com": "Bloomberg",
+  "theguardian.com": "The Guardian", "nytimes.com": "NYT",
+  "wsj.com": "WSJ", "ft.com": "FT", "techcrunch.com": "TechCrunch",
+  "wired.com": "Wired", "arstechnica.com": "Ars Technica",
+  "en.wikipedia.org": "Wikipedia", "wikipedia.org": "Wikipedia",
+  "medium.com": "Medium", "substack.com": "Substack",
+  "producthunt.com": "Product Hunt", "news.ycombinator.com": "Hacker News",
+  "arxiv.org": "arXiv", "scholar.google.com": "Google Scholar",
+  "airbnb.com": "Airbnb", "spotify.com": "Spotify",
+  "netflix.com": "Netflix", "twitch.tv": "Twitch",
+  "wordpress.com": "WordPress", "shopify.com": "Shopify",
+  "ebay.com": "eBay", "alibaba.com": "Alibaba",
+};
+
+function getBrandName(domain: string): string {
+  if (BRAND_NAMES[domain]) return BRAND_NAMES[domain];
+  for (const [key, name] of Object.entries(BRAND_NAMES)) {
+    if (domain === key || domain.endsWith(`.${key}`)) return name;
+  }
+  // Fallback: capitalize second-to-last domain segment
+  const parts = domain.split(".");
+  const main = parts.length >= 2 ? parts[parts.length - 2] : domain;
+  return main.charAt(0).toUpperCase() + main.slice(1);
+}
+
+// ── Document content detection ─────────────────────────────────────────────────
+// Returns true when the content looks like a self-contained document (email,
+// letter, essay, report, etc.) rather than a conversational answer.
+function isDocumentContent(content: string): boolean {
+  const words = content.trim().split(/\s+/).filter(Boolean).length;
+  if (words < 130) return false;
+
+  // Formal email / letter openers — short documents count too
+  const isEmailOrLetter = /^(Dear\s+\w|Subject:\s*\S|To:\s*\S|From:\s*\S)/im
+    .test(content.slice(0, 400));
+  if (isEmailOrLetter) return true;
+
+  // Long structured documents with headings
+  const hasHeadings = /^#{1,3}\s+\w/m.test(content);
+  const hasMultipleSections = (content.match(/^#{2,3}\s+/gm) ?? []).length >= 2;
+
+  // Exclude code-heavy responses (tutorials, debugging help, etc.)
+  const codeBlocks = (content.match(/^```/gm) ?? []).length / 2;
+  if (codeBlocks > 3) return false;
+
+  return (hasHeadings || hasMultipleSections) && words > 220;
 }
 
 /** Extract display name from a source (e.g. "Wikipedia" from "en.wikipedia.org") */
@@ -580,21 +647,91 @@ function SvgBlock({ code }: { code: string }) {
 }
 
 // ── Code block ────────────────────────────────────────────────────────────────
+const CODE_COLLAPSE_LINES = 50;
+
 function CodeBlock({ language, code }: { language: string; code: string }) {
   const [copied, setCopied] = useState(false);
+  const [showLineNums, setShowLineNums] = useState(false);
+  const lineCount = code.split("\n").length;
+  const isLong = lineCount > CODE_COLLAPSE_LINES;
+  const [collapsed, setCollapsed] = useState(isLong);
+
+  const displayCode = collapsed
+    ? code.split("\n").slice(0, CODE_COLLAPSE_LINES).join("\n")
+    : code;
+
+  const handleCopy = () =>
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+
   return (
     <div className="relative my-3 overflow-hidden rounded-xl">
-      <div className="flex items-center justify-between px-4 py-2 bg-[#1e1e1e] border border-white/10 rounded-t-xl">
-        <span className="text-[10px] text-white/35 font-mono uppercase tracking-wider">{language || "code"}</span>
-        <button onClick={() => navigator.clipboard.writeText(code).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); })} className="flex items-center gap-1.5 text-[11px] text-white/35 hover:text-white/70 transition-colors rounded-lg px-1.5 py-0.5">
-          {copied ? <><Check className="h-3 w-3" /> Copied</> : <><Copy className="h-3 w-3" /> Copy</>}
-        </button>
+      {/* Header */}
+      <div className="flex items-center justify-between gap-2 px-4 py-2 bg-[#1e1e1e] border border-white/10 rounded-t-xl">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-white/35 font-mono uppercase tracking-wider">
+            {language || "code"}
+          </span>
+          {lineCount > 1 && (
+            <span className="text-[9px] text-white/20 font-mono">{lineCount} lines</span>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          {lineCount >= 10 && (
+            <button
+              onClick={() => setShowLineNums(v => !v)}
+              title="Toggle line numbers"
+              className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                showLineNums ? "text-white/55 bg-white/[0.07]" : "text-white/25 hover:text-white/50"
+              }`}
+            >
+              #
+            </button>
+          )}
+          <button
+            onClick={handleCopy}
+            className="flex items-center gap-1.5 text-[11px] text-white/35 hover:text-white/70 transition-colors rounded-lg px-1.5 py-0.5"
+          >
+            {copied
+              ? <><Check className="h-3 w-3 text-emerald-400" /> Copied</>
+              : <><Copy className="h-3 w-3" /> Copy</>}
+          </button>
+        </div>
       </div>
-      <SyntaxHighlighter language={language || "text"} style={oneDark} PreTag="div"
-        customStyle={{ margin: 0, borderRadius: "0 0 0.75rem 0.75rem", border: "1px solid rgba(255,255,255,0.1)", borderTop: "none", fontSize: "0.8rem", lineHeight: "1.6", background: "#1a1a1a" }}
-        codeTagProps={{ style: { fontFamily: "JetBrains Mono, Fira Code, Consolas, monospace" } }}>
-        {code}
+
+      {/* Code body */}
+      <SyntaxHighlighter
+        language={language || "text"}
+        style={oneDark}
+        PreTag="div"
+        showLineNumbers={showLineNums}
+        customStyle={{
+          margin: 0,
+          borderRadius: isLong ? "0" : "0 0 0.75rem 0.75rem",
+          border: "1px solid rgba(255,255,255,0.1)",
+          borderTop: "none",
+          fontSize: "0.8rem",
+          lineHeight: "1.6",
+          background: "#1a1a1a",
+        }}
+        codeTagProps={{ style: { fontFamily: "JetBrains Mono, Fira Code, Consolas, monospace" } }}
+      >
+        {displayCode}
       </SyntaxHighlighter>
+
+      {/* Collapse toggle */}
+      {isLong && (
+        <button
+          onClick={() => setCollapsed(v => !v)}
+          className="w-full flex items-center justify-center gap-1.5 py-2 bg-[#1a1a1a] border border-white/10 border-t-0 rounded-b-xl text-[11px] text-white/30 hover:text-white/60 hover:bg-white/[0.03] transition-colors"
+        >
+          {collapsed
+            ? <><ChevronDown className="h-3.5 w-3.5" /> Show {lineCount - CODE_COLLAPSE_LINES} more lines</>
+            : <><ChevronUp className="h-3.5 w-3.5" /> Collapse</>}
+        </button>
+      )}
     </div>
   );
 }
@@ -988,6 +1125,11 @@ export function MessageContent({ content, sources, timeInfo }: MessageContentPro
       {/* Movie / show discovery carousel — only when no web sources */}
       {mediaTitles.length >= 2 && <MediaCardsRow titles={mediaTitles} />}
 
+      {/* Document block — long-form content (emails, essays, reports, letters…)
+          renders as a lightweight editor instead of a plain chat bubble */}
+      {isDocumentContent(cleanContent) ? (
+        <DocumentBlock content={cleanContent} />
+      ) : (
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         urlTransform={(url) => (/^data:image\//i.test(url) ? url : defaultUrlTransform(url))}
@@ -1039,15 +1181,21 @@ export function MessageContent({ content, sources, timeInfo }: MessageContentPro
             const label = childrenToText(children).trim();
             const isBareUrl = !label || label === href || /^https?:\/\//i.test(label);
             if (isBareUrl) {
+              const domain = getDomain(href);
+              const brandName = getBrandName(domain);
               return (
                 <a
                   href={href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  title={getDomain(href)}
-                  className="inline-flex items-center justify-center w-4 h-4 mx-0.5 align-text-bottom rounded-full overflow-hidden hover:opacity-75 transition-opacity"
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-white/[0.05] border border-white/[0.08] hover:bg-white/[0.10] hover:border-white/20 transition-all no-underline align-baseline"
                 >
-                  <Favicon url={href} size={14} />
+                  <span className="flex items-center justify-center w-3 h-3 shrink-0 overflow-hidden rounded-full">
+                    <Favicon url={href} size={12} />
+                  </span>
+                  <span className="text-[11px] font-medium text-white/55 hover:text-white/80 transition-colors leading-none">
+                    {brandName}
+                  </span>
                 </a>
               );
             }
@@ -1061,11 +1209,43 @@ export function MessageContent({ content, sources, timeInfo }: MessageContentPro
           del: ({ children }) => <del className="line-through text-white/35">{children}</del>,
 
           // ── Block elements ────────────────────────────────────────────────────
-          blockquote: ({ children }) => (
-            <blockquote className="border-l-2 border-white/20 pl-4 my-3 text-white/50 italic text-sm py-0.5 bg-white/[0.02] rounded-r-lg">
-              {children}
-            </blockquote>
-          ),
+          blockquote: ({ children }) => {
+            const text = childrenToText(children).trim();
+            const isWarning = /^[⚠]|^\*\*Warning|^Warning:/i.test(text);
+            const isInfo    = /^[ℹ💡]|^\*\*Note|^Note:|^\*\*Info/i.test(text);
+            const isSuccess = /^[✅✓]|^\*\*Tip|^Tip:|^\*\*Success/i.test(text);
+            const isError   = /^[❌🚫]|^\*\*Error|^Error:/i.test(text);
+
+            if (isWarning) return (
+              <div className="flex gap-3 my-3 px-4 py-3 rounded-xl border border-amber-500/25 bg-amber-500/[0.07] text-amber-100/80 text-sm">
+                <span className="shrink-0 text-base leading-none mt-0.5">⚠️</span>
+                <div className="min-w-0">{children}</div>
+              </div>
+            );
+            if (isInfo) return (
+              <div className="flex gap-3 my-3 px-4 py-3 rounded-xl border border-blue-400/25 bg-blue-400/[0.07] text-blue-100/80 text-sm">
+                <span className="shrink-0 text-base leading-none mt-0.5">ℹ️</span>
+                <div className="min-w-0">{children}</div>
+              </div>
+            );
+            if (isSuccess) return (
+              <div className="flex gap-3 my-3 px-4 py-3 rounded-xl border border-emerald-500/25 bg-emerald-500/[0.07] text-emerald-100/80 text-sm">
+                <span className="shrink-0 text-base leading-none mt-0.5">✅</span>
+                <div className="min-w-0">{children}</div>
+              </div>
+            );
+            if (isError) return (
+              <div className="flex gap-3 my-3 px-4 py-3 rounded-xl border border-red-500/25 bg-red-500/[0.07] text-red-100/80 text-sm">
+                <span className="shrink-0 text-base leading-none mt-0.5">❌</span>
+                <div className="min-w-0">{children}</div>
+              </div>
+            );
+            return (
+              <blockquote className="border-l-2 border-white/20 pl-4 my-3 text-white/50 italic text-sm py-0.5 bg-white/[0.02] rounded-r-lg">
+                {children}
+              </blockquote>
+            );
+          },
           hr: () => <hr className="border-white/[0.08] my-5" />,
           pre: ({ children }) => <>{children}</>,
 
@@ -1087,15 +1267,16 @@ export function MessageContent({ content, sources, timeInfo }: MessageContentPro
               <table className="w-full text-xs border-collapse">{children}</table>
             </div>
           ),
-          thead: ({ children }) => <thead className="bg-white/[0.04]">{children}</thead>,
-          tbody: ({ children }) => <tbody>{children}</tbody>,
-          tr: ({ children }) => <tr className="border-b border-white/[0.05] last:border-0">{children}</tr>,
-          th: ({ children }) => <th className="text-left px-3 py-2.5 font-semibold text-white/70 text-[11px] uppercase tracking-wide">{children}</th>,
-          td: ({ children }) => <td className="px-3 py-2 text-white/60 border-l border-white/[0.04] first:border-l-0">{children}</td>,
+          thead:  ({ children }) => <thead className="bg-white/[0.05] sticky top-0 backdrop-blur-sm">{children}</thead>,
+          tbody:  ({ children }) => <tbody>{children}</tbody>,
+          tr:     ({ children }) => <tr className="border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02] transition-colors">{children}</tr>,
+          th:     ({ children }) => <th className="text-left px-3 py-2.5 font-semibold text-white/65 text-[11px] uppercase tracking-wide border-b border-white/[0.08]">{children}</th>,
+          td:     ({ children }) => <td className="px-3 py-2.5 text-white/60 border-l border-white/[0.04] first:border-l-0">{children}</td>,
         }}
       >
         {cleanContent}
       </ReactMarkdown>
+      )}
 
       {/* Source favicon strip — only when sources exist, shown once below content */}
       {hasSources && (

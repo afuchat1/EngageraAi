@@ -38,6 +38,32 @@ function getSiteName(source: SearchSource): string {
   return getDomain(source.url);
 }
 
+// ── Source ranking — order by trustworthiness ─────────────────────────────────
+// Lower number = higher priority in the displayed list.
+function rankSource(source: SearchSource): number {
+  const domain = getDomain(source.url).toLowerCase();
+  // Government / official bodies
+  if (/\.gov(\.[a-z]{2})?$/.test(domain)) return 1;
+  // Official developer documentation
+  if (/^docs?\.|^developer\.|^developers\./.test(domain)) return 2;
+  // Tier-1 news & wire services
+  const tier1News = ["reuters.com", "apnews.com", "bbc.com", "bbc.co.uk",
+    "bloomberg.com", "wsj.com", "ft.com", "nytimes.com", "theguardian.com"];
+  if (tier1News.some(n => domain.includes(n))) return 3;
+  // Academic / research
+  if (/\.edu$|arxiv\.org|scholar\.google|researchgate\.net/.test(domain)) return 4;
+  // Reference encyclopaedias
+  if (/wikipedia\.org|britannica\.com/.test(domain)) return 5;
+  // Community sites (Reddit, Quora, Medium, forums)
+  if (/reddit\.com|quora\.com|medium\.com|stackexchange\.com|stackoverflow\.com/.test(domain)) return 7;
+  // Everything else (company sites, blogs, etc.)
+  return 6;
+}
+
+function rankSources(sources: SearchSource[]): SearchSource[] {
+  return [...sources].sort((a, b) => rankSource(a) - rankSource(b));
+}
+
 function Favicon({ url, size = 16 }: { url: string; size?: number }) {
   const [src, setSrc] = useState(() => getFaviconUrl(url));
   const [tries, setTries] = useState(0);
@@ -132,7 +158,7 @@ interface WebSearchIndicatorProps {
 
 export function WebSearchIndicator({ searchInfo }: WebSearchIndicatorProps) {
   const [expanded, setExpanded] = useState(false);
-  const sources = searchInfo.sources ?? [];
+  const sources = rankSources(searchInfo.sources ?? []);
   const hasMore = sources.length > 3;
 
   if (sources.length === 0 && !searchInfo.query) return null;
