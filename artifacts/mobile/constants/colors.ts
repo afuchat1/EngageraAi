@@ -45,10 +45,17 @@ const colors = {
     // Borders and input outlines
     border: 'rgba(255,255,255,0.15)',
     input: 'rgba(255,255,255,0.15)',
+
+    // Subtle glow used behind the brand mark and floating surfaces.
+    glow: 'rgba(255,255,255,0.06)',
   },
 
   // Border radius (px) — matches the web app's --radius: 0.5rem.
   radius: 16,
+
+  // Fully-rounded "pill" radius used for the floating input, segmented
+  // switch, and banners — the app's signature shape language.
+  pill: 999,
 };
 
 export default colors;

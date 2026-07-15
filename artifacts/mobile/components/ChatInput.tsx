@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Image, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,6 +22,11 @@ interface Props {
   placeholder?: string;
 }
 
+/**
+ * The app's signature floating pill input — always fully rounded, elevated
+ * above the content with a real shadow rather than docked to the bottom
+ * edge, so it never feels like an ordinary form field.
+ */
 export function ChatInput({
   value,
   onChangeText,
@@ -75,11 +80,11 @@ export function ChatInput({
     <View style={styles.wrapper}>
       {image ? (
         <View style={styles.previewRow}>
-          <View style={[styles.previewWrap, { borderColor: colors.border }]}>
+          <View style={[styles.previewWrap, { borderColor: colors.border, backgroundColor: colors.card }]}>
             <Image source={{ uri: image.uri }} style={styles.previewImage} />
             <Pressable
               onPress={() => onImagePicked(null)}
-              style={[styles.removeBtn, { backgroundColor: colors.background }]}
+              style={[styles.removeBtn, { backgroundColor: colors.background, borderColor: colors.border }]}
               hitSlop={8}
             >
               <Ionicons name="close" size={12} color={colors.foreground} />
@@ -90,14 +95,19 @@ export function ChatInput({
       <View
         style={[
           styles.row,
-          { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 8 },
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+            borderRadius: colors.pill,
+          },
+          Platform.OS === 'ios' ? styles.shadowIOS : styles.shadowAndroid,
         ]}
       >
         <Pressable onPress={pickImage} disabled={picking || disabled} hitSlop={10} style={styles.iconBtn}>
           {picking ? (
             <ActivityIndicator size="small" color={colors.mutedForeground} />
           ) : (
-            <Ionicons name="image-outline" size={22} color={colors.mutedForeground} />
+            <Ionicons name="image-outline" size={20} color={colors.mutedForeground} />
           )}
         </Pressable>
         <TextInput
@@ -116,17 +126,14 @@ export function ChatInput({
           }}
           disabled={!canSend}
           hitSlop={10}
-          style={[
-            styles.sendBtn,
-            { backgroundColor: canSend ? colors.primary : colors.secondary },
-          ]}
+          style={[styles.sendBtn, { backgroundColor: canSend ? colors.primary : colors.secondary }]}
         >
           {busy ? (
             <ActivityIndicator size="small" color={colors.primaryForeground} />
           ) : (
             <Ionicons
               name="arrow-up"
-              size={18}
+              size={17}
               color={canSend ? colors.primaryForeground : colors.mutedForeground}
             />
           )}
@@ -139,15 +146,15 @@ export function ChatInput({
 const styles = StyleSheet.create({
   wrapper: {
     paddingHorizontal: 16,
-    paddingTop: 8,
   },
   previewRow: {
-    marginBottom: 8,
+    marginBottom: 10,
+    paddingLeft: 4,
   },
   previewWrap: {
-    width: 64,
-    height: 64,
-    borderRadius: 12,
+    width: 60,
+    height: 60,
+    borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
   },
@@ -162,6 +169,7 @@ const styles = StyleSheet.create({
     width: 18,
     height: 18,
     borderRadius: 9,
+    borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -171,25 +179,32 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 8,
     paddingVertical: 6,
-    gap: 6,
+    gap: 4,
+  },
+  shadowIOS: {
+    boxShadow: '0px 10px 20px rgba(0,0,0,0.5)',
+  },
+  shadowAndroid: {
+    elevation: 14,
   },
   iconBtn: {
-    width: 34,
-    height: 34,
+    width: 36,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center',
   },
   input: {
     flex: 1,
     fontSize: 16,
+    fontFamily: 'Inter_400Regular',
     maxHeight: 120,
     paddingHorizontal: 4,
-    paddingVertical: 6,
+    paddingVertical: 8,
   },
   sendBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },

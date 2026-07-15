@@ -1,6 +1,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { GUEST_MESSAGE_LIMIT } from '@/lib/chat';
 
@@ -15,17 +16,17 @@ export function GuestBanner({ remaining }: { remaining: number }) {
         {
           backgroundColor: colors.card,
           borderColor: colors.border,
-          borderRadius: colors.radius,
           opacity: pressed ? 0.75 : 1,
         },
       ]}
     >
-      <Text style={[styles.text, { color: colors.mutedForeground }]}>
-        {remaining > 0
-          ? `Guest mode · ${remaining} of ${GUEST_MESSAGE_LIMIT} messages left`
-          : 'Guest limit reached'}
-      </Text>
-      <Text style={[styles.cta, { color: colors.foreground }]}>Sign in for unlimited</Text>
+      <View style={styles.left}>
+        <Ionicons name="sparkles" size={12} color={colors.mutedForeground} />
+        <Text style={[styles.text, { color: colors.mutedForeground }]}>
+          {remaining > 0 ? `${remaining}/${GUEST_MESSAGE_LIMIT} guest messages left` : 'Guest limit reached'}
+        </Text>
+      </View>
+      <Text style={[styles.cta, { color: colors.foreground }]}>Sign in</Text>
     </Pressable>
   );
 }
@@ -33,21 +34,29 @@ export function GuestBanner({ remaining }: { remaining: number }) {
 const styles = StyleSheet.create({
   banner: {
     marginHorizontal: 16,
-    marginBottom: 8,
+    marginBottom: 10,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 9,
+    borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 10,
   },
+  left: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 1,
+  },
   text: {
     fontSize: 12,
+    fontFamily: 'Inter_500Medium',
     flexShrink: 1,
   },
   cta: {
     fontSize: 12,
-    fontWeight: '600',
+    fontFamily: 'Inter_700Bold',
   },
 });

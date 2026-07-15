@@ -81,6 +81,7 @@ const styles = StyleSheet.create({
   text: {
     fontSize: 16,
     lineHeight: 22,
+    fontFamily: 'Inter_400Regular',
   },
   image: {
     width: 200,
