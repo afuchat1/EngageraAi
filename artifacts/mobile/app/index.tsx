@@ -117,8 +117,8 @@ export default function ChatScreen() {
       <KeyboardAvoidingView style={styles.flex} behavior="padding">
         {messages.length === 0 ? (
           <View style={styles.empty}>
-            <View style={[styles.emptyGlow, { backgroundColor: colors.glow }]}>
-              <BrandMark size={34} />
+            <View style={styles.emptyMark}>
+              <BrandMark size={48} />
             </View>
             <Text style={[styles.emptyTitle, { color: colors.foreground }]}>{copy.emptyTitle}</Text>
             <Text style={[styles.emptyBody, { color: colors.mutedForeground }]}>{copy.emptyBody}</Text>
@@ -191,10 +191,7 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 40,
   },
-  emptyGlow: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
+  emptyMark: {
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 6,
