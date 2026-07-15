@@ -8,8 +8,40 @@ import {
   looksLikeImageRequest,
   streamChat,
 } from '@/lib/chat';
+import { fetchConversationMessages, listConversations } from '@/lib/conversations';
 import type { DisplayMessage } from '@/components/ChatBubble';
 import type { PendingImage } from '@/components/ChatInput';
+
+/**
+ * Image-generation replies are large (a full base64 JPEG in one JSON body)
+ * and can outlast a flaky/slow mobile connection even though the backend
+ * already finished generating *and persisting* the reply before the client
+ * finished downloading/parsing it — the request only fails locally. Rather
+ * than surface a false "something went wrong" for a reply that actually
+ * exists, re-fetch the conversation from the server and recover the
+ * assistant message that's already there. Returns null if nothing usable
+ * was found, so the caller can fall back to the normal error message.
+ */
+async function tryRecoverPersistedReply(
+  conversationId: number | undefined,
+): Promise<{ conversationId: number; text: string } | null> {
+  try {
+    let targetId = conversationId;
+    if (!targetId) {
+      const conversations = await listConversations();
+      if (conversations.length === 0) return null;
+      targetId = conversations.reduce((latest, c) =>
+        new Date(c.updatedAt) > new Date(latest.updatedAt) ? c : latest,
+      ).id;
+    }
+    const history = await fetchConversationMessages(targetId);
+    const last = history[history.length - 1];
+    if (!last || last.role !== 'assistant' || !last.content) return null;
+    return { conversationId: targetId, text: last.content };
+  } catch {
+    return null;
+  }
+}
 
 function randomId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 11);
@@ -204,6 +236,27 @@ export function useChatSession(model: string, contextHint?: string) {
         const data = err.data as { guestMessageCount?: number } | undefined;
         if (data?.guestMessageCount) setGuestCount(data.guestMessageCount);
       }
+
+      // Image replies are especially likely to fail locally (slow network
+      // downloading a large base64 payload) after the backend has already
+      // generated and saved them — check the server before showing an error.
+      const isRateLimited = err instanceof ChatRequestError && err.status === 429;
+      if (isImageReq && !isRateLimited) {
+        const recovered = await tryRecoverPersistedReply(conversationId);
+        if (recovered) {
+          setConversationId(recovered.conversationId);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? { ...m, text: recovered.text, pending: false, streaming: false, imageGenerating: false }
+                : m,
+            ),
+          );
+          setBusy(false);
+          return;
+        }
+      }
+
       const message =
         err instanceof ChatRequestError
           ? err.status === 429
