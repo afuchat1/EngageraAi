@@ -191,16 +191,46 @@ export async function crawl(query: string): Promise<CrawledPage[]> {
   // someone's actual site — the same way a browser address bar guesses
   // ".com" for a plain word. AfuBot fetches that guess directly and only
   // keeps it if the site is real (a genuine crawl, not a fabricated link).
-  let domainGuessPage: CrawledPage | null = null;
   const bareWord = query.trim();
-  if (/^[a-z0-9-]{2,}$/i.test(bareWord)) {
-    domainGuessPage = await crawlOne(`https://${bareWord.toLowerCase()}.com`);
+  const isBareWord = /^[a-z0-9-]{2,}$/i.test(bareWord);
+  const domainGuessPromise = isBareWord ? crawlOne(`https://${bareWord.toLowerCase()}.com`) : Promise.resolve(null);
+
+  // 3c. GitHub's own repository search is another primary source AfuBot can
+  // read directly — useful for brand/project names, usernames, and anything
+  // code-related that reference sites and news outlets won't cover.
+  const githubHtml = await fetchHtml(`https://github.com/search?q=${encodeURIComponent(query)}&type=repositories`);
+  let githubPages: CrawledPage[] = [];
+  if (githubHtml) {
+    // GitHub's search results are a heavily-nested React app, so plain
+    // <a>text</a> extraction misses most repo links — read raw hrefs instead.
+    const RESERVED = new Set([
+      "search", "about", "features", "topics", "marketplace", "pricing", "sponsors",
+      "login", "join", "signup", "explore", "collections", "trending", "settings",
+      "notifications", "orgs", "enterprise", "customer-stories", "readme", "security",
+      "contact", "site",
+    ]);
+    const repoLinks = new Set<string>();
+    const hrefRe = /href=["'](\/[A-Za-z0-9][\w.-]*\/[A-Za-z0-9][\w.-]*)["']/g;
+    let m: RegExpExecArray | null;
+    while ((m = hrefRe.exec(githubHtml)) !== null) {
+      const parts = m[1].split("/").filter(Boolean);
+      if (parts.length !== 2) continue;
+      if (RESERVED.has(parts[0].toLowerCase())) continue;
+      repoLinks.add(`https://github.com${m[1]}`);
+      if (repoLinks.size >= 20) break;
+    }
+    const uniqueRepos = Array.from(repoLinks).slice(0, 4);
+    const fetched = await Promise.all(uniqueRepos.map((url) => crawlOne(url)));
+    githubPages = fetched.filter((p): p is CrawledPage => p !== null);
   }
+
+  const domainGuessPage = await domainGuessPromise;
 
   const allPages = [
     ...validSeedPages.map((p) => p.page).filter((p): p is CrawledPage => p !== null),
     ...hop2Pages.filter((p): p is CrawledPage => p !== null),
     ...(domainGuessPage ? [domainGuessPage] : []),
+    ...githubPages,
   ];
 
   // 4. Score every page AfuBot actually visited against the query.
