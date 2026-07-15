@@ -37,6 +37,9 @@ import {
   type FinanceResult,
 } from '@/lib/search';
 
+// Silence unused-import lint — FinanceResult is used in FinanceCard props
+type _F = FinanceResult;
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type SearchTab = 'web' | 'images' | 'videos' | 'news' | 'finance';
@@ -230,7 +233,10 @@ export function SearchEngine({ topPad }: { topPad: number }) {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [query]);
 
-  // ── Search ─────────────────────────────────────────────────────────────────
+  // ── Search (two-phase) ────────────────────────────────────────────────────
+  // Phase 1: web + finance in parallel (finance is self-contained).
+  //          Web response includes a vqd session token from DuckDuckGo.
+  // Phase 2: images / videos / news in parallel using that vqd token.
   const doSearch = useCallback(async (q: string) => {
     const trimmed = q.trim();
     if (!trimmed) return;
@@ -243,21 +249,33 @@ export function SearchEngine({ topPad }: { topPad: number }) {
     setLoading(allLoading);
     inputRef.current?.blur();
 
-    const [web, images, videos, news, finance] = await Promise.allSettled([
+    // Phase 1 — web (needed for vqd) + finance
+    const [webRes, financeRes] = await Promise.allSettled([
       fetchWebResults(trimmed),
-      fetchImageResults(trimmed),
-      fetchVideoResults(trimmed),
-      fetchNewsResults(trimmed),
       fetchFinanceResults(trimmed),
     ]);
 
-    setResults({
-      web: web.status === 'fulfilled' ? web.value : [],
+    const vqd = webRes.status === 'fulfilled' ? webRes.value.vqd : '';
+    setResults((prev) => ({
+      ...prev,
+      web: webRes.status === 'fulfilled' ? webRes.value.results : [],
+      finance: financeRes.status === 'fulfilled' ? financeRes.value : [],
+    }));
+    setLoading((prev) => ({ ...prev, web: false, finance: false }));
+
+    // Phase 2 — images / videos / news (all need the vqd token from web)
+    const [images, videos, news] = await Promise.allSettled([
+      fetchImageResults(trimmed, vqd),
+      fetchVideoResults(trimmed, vqd),
+      fetchNewsResults(trimmed, vqd),
+    ]);
+
+    setResults((prev) => ({
+      ...prev,
       images: images.status === 'fulfilled' ? images.value : [],
       videos: videos.status === 'fulfilled' ? videos.value : [],
       news: news.status === 'fulfilled' ? news.value : [],
-      finance: finance.status === 'fulfilled' ? finance.value : [],
-    });
+    }));
     setLoading(notLoading);
   }, []);
 
