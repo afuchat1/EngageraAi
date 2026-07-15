@@ -15,6 +15,7 @@ import { ModeSwitch, type ChatMode } from '@/components/ModeSwitch';
 import { Sidebar } from '@/components/Sidebar';
 import { CHAT_MODEL, LAB_MODEL } from '@/lib/chat';
 import { fetchConversationMessages, type ConversationSummary } from '@/lib/conversations';
+import { SearchEngine } from '@/components/SearchEngine';
 
 const COPY: Record<ChatMode, { placeholder: string; emptyTitle: string; emptyBody: string }> = {
   chat: {
@@ -140,52 +141,56 @@ export default function ChatScreen() {
         </Pressable>
       </View>
 
-      {isGuest ? <GuestBanner remaining={remaining} /> : null}
+      {mode === 'lab' ? (
+        /* ── Lab: full search engine ──────────────────────────────────── */
+        <SearchEngine topPad={0} />
+      ) : (
+        /* ── Chat ─────────────────────────────────────────────────────── */
+        <>
+          {isGuest ? <GuestBanner remaining={remaining} /> : null}
 
-      <KeyboardAvoidingView style={styles.flex} behavior="padding">
-        {messages.length === 0 ? (
-          <View style={styles.empty}>
-            <View style={styles.emptyMark}>
-              <BrandMark size={48} />
+          <KeyboardAvoidingView style={styles.flex} behavior="padding">
+            {messages.length === 0 ? (
+              <View style={styles.empty}>
+                <View style={styles.emptyMark}>
+                  <BrandMark size={48} />
+                </View>
+                <Text style={[styles.emptyTitle, { color: colors.foreground }]}>{copy.emptyTitle}</Text>
+                <Text style={[styles.emptyBody, { color: colors.mutedForeground }]}>{copy.emptyBody}</Text>
+              </View>
+            ) : (
+              <FlatList
+                ref={listRef}
+                data={messages}
+                keyExtractor={(item) => item.id}
+                contentContainerStyle={styles.listContent}
+                keyboardDismissMode="interactive"
+                keyboardShouldPersistTaps="handled"
+                renderItem={({ item }) =>
+                  item.pending && item.text.length === 0 ? (
+                    item.imageGenerating ? <ImageGenIndicator /> : <TypingDots />
+                  ) : (
+                    <ChatBubble message={item} />
+                  )
+                }
+                onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: !lastIsStreaming })}
+              />
+            )}
+
+            <View style={{ paddingBottom: insets.bottom + 10, paddingTop: 8 }}>
+              <ChatInput
+                value={inputText}
+                onChangeText={setInputText}
+                onSend={handleSend}
+                image={pendingImage}
+                onImagePicked={setPendingImage}
+                busy={busy || lastIsPending}
+                placeholder={copy.placeholder}
+              />
             </View>
-            <Text style={[styles.emptyTitle, { color: colors.foreground }]}>{copy.emptyTitle}</Text>
-            <Text style={[styles.emptyBody, { color: colors.mutedForeground }]}>{copy.emptyBody}</Text>
-          </View>
-        ) : (
-          <FlatList
-            ref={listRef}
-            data={messages}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.listContent}
-            keyboardDismissMode="interactive"
-            keyboardShouldPersistTaps="handled"
-            renderItem={({ item }) =>
-              item.pending && item.text.length === 0 ? (
-                item.imageGenerating ? <ImageGenIndicator /> : <TypingDots />
-              ) : (
-                <ChatBubble message={item} />
-              )
-            }
-            // While tokens are streaming in, snap to bottom without animating —
-            // re-triggering a spring/ease animation on every frame is what
-            // produces visible "shaking"; a hard jump keeps pace with the
-            // growing text smoothly instead.
-            onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: !lastIsStreaming })}
-          />
-        )}
-
-        <View style={{ paddingBottom: insets.bottom + 10, paddingTop: 8 }}>
-          <ChatInput
-            value={inputText}
-            onChangeText={setInputText}
-            onSend={handleSend}
-            image={pendingImage}
-            onImagePicked={setPendingImage}
-            busy={busy || lastIsPending}
-            placeholder={copy.placeholder}
-          />
-        </View>
-      </KeyboardAvoidingView>
+          </KeyboardAvoidingView>
+        </>
+      )}
 
       <Sidebar
         open={sidebarOpen}
