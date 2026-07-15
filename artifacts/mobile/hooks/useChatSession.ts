@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import {
   ChatMessage,
@@ -23,19 +23,6 @@ export function useChatSession(model: string, contextHint?: string) {
   const [guestCount, setGuestCount] = useState(0);
   const [guestBlocked, setGuestBlocked] = useState(false);
   const [conversationId, setConversationId] = useState<number | undefined>(undefined);
-
-  // Tokens arrive in rapid bursts; buffering them and flushing at most once
-  // per animation frame keeps the UI stable instead of re-rendering the
-  // whole message list on every single chunk.
-  const pendingTextRef = useRef('');
-  const rafRef = useRef<number | null>(null);
-
-  useEffect(
-    () => () => {
-      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
-    },
-    [],
-  );
 
   const remaining = Math.max(0, GUEST_MESSAGE_LIMIT - guestCount);
 
@@ -95,22 +82,6 @@ export function useChatSession(model: string, contextHint?: string) {
     setPendingImage(null);
     setBusy(true);
 
-    pendingTextRef.current = '';
-    if (rafRef.current != null) {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-    }
-
-    const flush = () => {
-      rafRef.current = null;
-      const chunk = pendingTextRef.current;
-      if (!chunk) return;
-      pendingTextRef.current = '';
-      setMessages((prev) =>
-        prev.map((m) => (m.id === assistantId ? { ...m, text: m.text + chunk, pending: false } : m)),
-      );
-    };
-
     try {
       await streamChat(
         {
@@ -120,11 +91,12 @@ export function useChatSession(model: string, contextHint?: string) {
           contextHint,
         },
         {
+          // Applied to state the instant each token arrives — no batching —
+          // so the text visibly grows token by token as the model writes it.
           onToken: (chunk) => {
-            pendingTextRef.current += chunk;
-            if (rafRef.current == null) {
-              rafRef.current = requestAnimationFrame(flush);
-            }
+            setMessages((prev) =>
+              prev.map((m) => (m.id === assistantId ? { ...m, text: m.text + chunk, pending: false } : m)),
+            );
           },
           onMeta: (searchInfo: SearchInfo) => {
             setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, searchInfo } : m)));
@@ -135,20 +107,8 @@ export function useChatSession(model: string, contextHint?: string) {
           },
         },
       );
-      // Make sure the final buffered chunk lands even if it arrived after
-      // the last scheduled frame flush.
-      if (rafRef.current != null) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
-      flush();
       setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, streaming: false } : m)));
     } catch (err) {
-      if (rafRef.current != null) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
-      flush();
       if (err instanceof ChatRequestError && err.status === 429) {
         setGuestBlocked(true);
         const data = err.data as { guestMessageCount?: number } | undefined;
