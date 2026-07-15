@@ -808,6 +808,7 @@ function AiResearchTab({
         data={messages}
         keyExtractor={(_, i) => `ai-msg-${i}`}
         renderItem={renderItem}
+        style={{ flex: 1 }}
         contentContainerStyle={art.content}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -1207,7 +1208,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
         ) : null}
       </View>
 
-      {/* ── Suggestions ────────────────────────────────────────────────────── */}
+      {/* ── Suggestions (absolute overlay — never affects flow layout) ────── */}
       {shouldShowSug ? (
         <View style={[ms.sugBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
           {potentialDomain ? (
@@ -1333,14 +1334,14 @@ export function SearchEngine({ topPad }: { topPad: number }) {
 const ms = StyleSheet.create({
   root: { flex: 1 },
   // Search bar
-  searchWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
+  searchWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, zIndex: 10 },
   backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   searchBar: { flex: 1, flexDirection: 'row', alignItems: 'center', height: 42, borderRadius: 21, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 14, gap: 8 },
   searchIcon: { flexShrink: 0 },
   searchInput: { flex: 1, fontSize: 15, fontFamily: 'Inter_400Regular', padding: 0 },
   goBtn: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  // Suggestions
-  sugBox: { marginHorizontal: 14, marginTop: 6, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden', zIndex: 10 },
+  // Suggestions — absolute overlay so it never shifts the tab bar or results below
+  sugBox: { position: 'absolute', top: 62, left: 14, right: 14, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden', zIndex: 100, elevation: 10 },
   sugRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 13, borderBottomWidth: StyleSheet.hairlineWidth, gap: 10 },
   sugText: { flex: 1, fontSize: 14, fontFamily: 'Inter_400Regular' },
   domainRow: { paddingVertical: 11, gap: 12 },
