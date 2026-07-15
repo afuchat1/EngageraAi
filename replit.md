@@ -43,7 +43,7 @@ Engagera is a black-and-white AI chat product: a web app (`artifacts/engagera`),
 
 ## Gotchas
 
-- `artifacts/api-server` currently fails to start (missing esbuild) — this is a known, currently-unaddressed issue and is not required for the chat feature to work.
+- `artifacts/api-server` currently fails to start (missing esbuild) — this is a known, currently-unaddressed issue and is not required for the chat feature to work. Left broken intentionally: do not migrate any data flow onto it; web and mobile must keep talking directly to the Supabase edge functions.
 - Replit's built-in Expo publish flow (EAS via Expo Launch) only supports iOS App Store submission, not Google Play — keep this in mind since the mobile app's target platform is Android.
 
 ## Pointers
