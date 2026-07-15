@@ -1,12 +1,14 @@
 import React, { memo, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image as RNImage, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { SvgXml } from 'react-native-svg';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { parseMarkdown, type InlineSegment, type MarkdownBlock } from '@/lib/markdown';
+import { faviconSrc } from '@/lib/favicon';
 
 const MONOSPACE = Platform.select({ ios: 'Courier', android: 'monospace', default: 'monospace' });
 
@@ -96,6 +98,36 @@ function SvgBlockView({ code }: { code: string }) {
   );
 }
 
+/**
+ * A tappable favicon for a link, embedded inline inside surrounding text.
+ * The URL itself is never rendered as text — only the site's icon, which
+ * opens the real destination when tapped. Falls back to a generic link
+ * glyph if the favicon fails to load (still never showing the raw URL).
+ */
+function LinkFavicon({ url, color }: { url: string; color: string }) {
+  const [failed, setFailed] = useState(false);
+  const src = faviconSrc(url);
+  const open = () => {
+    WebBrowser.openBrowserAsync(url).catch(() => {});
+  };
+  if (failed || !src) {
+    return (
+      <Text onPress={open} style={{ color }}>
+        {' '}
+        <Ionicons name="link" size={13} color={color} />
+        {' '}
+      </Text>
+    );
+  }
+  return (
+    <Text onPress={open}>
+      {' '}
+      <RNImage source={{ uri: src }} style={styles.faviconInline} onError={() => setFailed(true)} />
+      {' '}
+    </Text>
+  );
+}
+
 function InlineText({
   segments,
   color,
@@ -111,21 +143,35 @@ function InlineText({
 }) {
   return (
     <Text style={style} selectable>
-      {segments.map((seg, idx) => (
-        <Text
-          key={idx}
-          style={[
-            { color },
-            seg.bold ? styles.bold : null,
-            seg.italic ? styles.italic : null,
-            seg.code
-              ? [styles.inlineCode, { color: codeColor, backgroundColor: codeBg }]
-              : null,
-          ]}
-        >
-          {seg.text}
-        </Text>
-      ))}
+      {segments.map((seg, idx) => {
+        if (seg.link) {
+          return (
+            <Text key={idx}>
+              {seg.text ? (
+                <Text onPress={() => WebBrowser.openBrowserAsync(seg.link!).catch(() => {})} style={[styles.linkLabel, { color }]}>
+                  {seg.text}
+                </Text>
+              ) : null}
+              <LinkFavicon url={seg.link} color={color} />
+            </Text>
+          );
+        }
+        return (
+          <Text
+            key={idx}
+            style={[
+              { color },
+              seg.bold ? styles.bold : null,
+              seg.italic ? styles.italic : null,
+              seg.code
+                ? [styles.inlineCode, { color: codeColor, backgroundColor: codeBg }]
+                : null,
+            ]}
+          >
+            {seg.text}
+          </Text>
+        );
+      })}
     </Text>
   );
 }
@@ -259,5 +305,13 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  linkLabel: {
+    textDecorationLine: 'underline',
+  },
+  faviconInline: {
+    width: 14,
+    height: 14,
+    borderRadius: 3,
   },
 });

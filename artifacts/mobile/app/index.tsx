@@ -1,5 +1,5 @@
-import React, { useCallback, useRef, useState } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, FlatList, Keyboard, Pressable, StyleSheet, Text, View } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -61,6 +61,31 @@ export default function ChatScreen() {
   const lastMessage = messages.length > 0 ? messages[messages.length - 1] : undefined;
   const lastIsPending = !!lastMessage?.pending;
   const lastIsStreaming = !!lastMessage?.streaming;
+
+  // Belt-and-suspenders auto-scroll: onContentSizeChange (below) already
+  // snaps to the newest message as it grows, but the keyboard opening or
+  // closing also resizes the visible list area — re-anchor to the bottom
+  // whenever that happens so the latest message is never left off-screen.
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => {
+      listRef.current?.scrollToEnd({ animated: true });
+    });
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => {
+      listRef.current?.scrollToEnd({ animated: false });
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  const handleSend = useCallback(() => {
+    // Close the keyboard the instant Send is tapped so the just-sent
+    // message and the reply that follows are fully visible immediately,
+    // instead of staying hidden behind the keyboard until it's dismissed.
+    Keyboard.dismiss();
+    send();
+  }, [send]);
 
   const handleNewChat = useCallback(() => {
     chatSession.startNewConversation();
@@ -151,7 +176,7 @@ export default function ChatScreen() {
           <ChatInput
             value={inputText}
             onChangeText={setInputText}
-            onSend={send}
+            onSend={handleSend}
             image={pendingImage}
             onImagePicked={setPendingImage}
             busy={busy || lastIsPending}

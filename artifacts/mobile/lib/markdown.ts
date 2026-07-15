@@ -16,6 +16,13 @@ export type InlineSegment = {
   bold?: boolean;
   italic?: boolean;
   code?: boolean;
+  /**
+   * Present when this segment is a link. `text` holds a human-readable
+   * label to show before the favicon (empty when the label is itself a
+   * URL or missing, so no raw link/URL text is ever rendered — only a
+   * clickable favicon represents the destination).
+   */
+  link?: string;
 };
 
 export type MarkdownBlock =
@@ -42,13 +49,21 @@ export function parseInline(text: string): InlineSegment[] {
   const segments: InlineSegment[] = [];
   // Order matters: code first (its contents are literal), then bold before
   // italic so "**x**" isn't mistaken for an unmatched "*x*" pair.
-  const re = /`([^`]+)`|\*\*\*([^*]+)\*\*\*|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*]+)\*|_([^_]+)_|!?\[([^\]]*)\]\(([^)]+)\)/g;
+  // Group 7/8 = markdown link `[text](url)`; group 9 = a bare "https://…"
+  // URL typed directly with no markdown syntax around it — both are
+  // converted into link segments so raw URLs never render as plain text.
+  const re =
+    /`([^`]+)`|\*\*\*([^*]+)\*\*\*|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*]+)\*|_([^_]+)_|!?\[([^\]]*)\]\(([^)]+)\)|(https?:\/\/[^\s<>()]+)/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
   const pushPlain = (s: string) => {
     if (s) segments.push({ text: s });
   };
+
+  // A visible label is only worth showing if it's not itself a raw URL —
+  // otherwise the point of hiding URLs would be defeated.
+  const isUrlLike = (s: string) => /^https?:\/\//i.test(s.trim());
 
   while ((match = re.exec(text))) {
     pushPlain(text.slice(lastIndex, match.index));
@@ -58,7 +73,18 @@ export function parseInline(text: string): InlineSegment[] {
     else if (match[4] !== undefined) segments.push({ text: match[4], bold: true });
     else if (match[5] !== undefined) segments.push({ text: match[5], italic: true });
     else if (match[6] !== undefined) segments.push({ text: match[6], italic: true });
-    else if (match[7] !== undefined) segments.push({ text: match[7] || match[8] || '' });
+    else if (match[8] !== undefined) {
+      const label = match[7] || '';
+      segments.push({ text: !label || isUrlLike(label) ? '' : label, link: match[8] });
+    } else if (match[9] !== undefined) {
+      // Trim trailing punctuation that's clearly sentence punctuation
+      // rather than part of the URL (e.g. "...see example.com." or "(link)").
+      let url = match[9];
+      const trailing = url.match(/[.,!?;:)\]]+$/);
+      if (trailing) url = url.slice(0, -trailing[0].length);
+      segments.push({ text: '', link: url });
+      if (trailing) pushPlain(trailing[0]);
+    }
     lastIndex = re.lastIndex;
   }
   pushPlain(text.slice(lastIndex));

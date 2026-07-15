@@ -1,9 +1,18 @@
-import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
+import { faviconSrc } from '@/lib/favicon';
 import type { SearchInfo } from '@/lib/chat';
+
+/** Site favicon with a generic-link fallback — the raw URL is never shown, only the icon. */
+function SourceFavicon({ url, color }: { url: string; color: string }) {
+  const [failed, setFailed] = useState(false);
+  const src = faviconSrc(url);
+  if (failed || !src) return <Ionicons name="link" size={12} color={color} />;
+  return <Image source={{ uri: src }} style={styles.favicon} onError={() => setFailed(true)} />;
+}
 
 export function SourceStrip({ searchInfo }: { searchInfo: SearchInfo }) {
   const colors = useColors();
@@ -28,7 +37,7 @@ export function SourceStrip({ searchInfo }: { searchInfo: SearchInfo }) {
             },
           ]}
         >
-          <Ionicons name="link" size={12} color={colors.mutedForeground} />
+          <SourceFavicon url={source.url} color={colors.mutedForeground} />
           <Text style={[styles.chipText, { color: colors.mutedForeground }]} numberOfLines={1}>
             {source.title}
           </Text>
@@ -58,5 +67,10 @@ const styles = StyleSheet.create({
   },
   chipText: {
     fontSize: 12,
+  },
+  favicon: {
+    width: 12,
+    height: 12,
+    borderRadius: 3,
   },
 });

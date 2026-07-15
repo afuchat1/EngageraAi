@@ -943,12 +943,35 @@ export function MessageContent({ content, sources, timeInfo }: MessageContentPro
           // ── Inline ────────────────────────────────────────────────────────────
           strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
           em: ({ children }) => <em className="italic text-white/70">{children}</em>,
-          a: ({ href, children }) => (
-            <a href={href} target="_blank" rel="noopener noreferrer"
-              className="text-white/75 underline underline-offset-2 decoration-white/20 hover:text-white hover:decoration-white/60 transition-all">
-              {children}
-            </a>
-          ),
+          // Links never expose a raw URL as visible text — if the link's
+          // label is empty, a bare URL, or identical to its own href (the
+          // common case for autolinked plain-text URLs), it renders as a
+          // clickable favicon-only chip instead. A real descriptive label
+          // (e.g. "OpenAI's docs") still shows as normal underlined text.
+          a: ({ href, children }) => {
+            if (!href) return <>{children}</>;
+            const label = childrenToText(children).trim();
+            const isBareUrl = !label || label === href || /^https?:\/\//i.test(label);
+            if (isBareUrl) {
+              return (
+                <a
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={getDomain(href)}
+                  className="inline-flex items-center justify-center w-4 h-4 mx-0.5 align-text-bottom rounded-full overflow-hidden hover:opacity-75 transition-opacity"
+                >
+                  <Favicon url={href} size={14} />
+                </a>
+              );
+            }
+            return (
+              <a href={href} target="_blank" rel="noopener noreferrer"
+                className="text-white/75 underline underline-offset-2 decoration-white/20 hover:text-white hover:decoration-white/60 transition-all">
+                {children}
+              </a>
+            );
+          },
           del: ({ children }) => <del className="line-through text-white/35">{children}</del>,
 
           // ── Block elements ────────────────────────────────────────────────────

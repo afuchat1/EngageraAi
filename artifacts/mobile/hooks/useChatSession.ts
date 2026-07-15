@@ -91,16 +91,20 @@ export function useChatSession(model: string, contextHint?: string) {
           }
           return;
         }
-        // Reveal a handful of characters per tick; scale up when a big
-        // backlog has piled up so a fast/complete response still catches
-        // up quickly instead of trailing behind for seconds.
-        const step = Math.max(2, Math.ceil(queued.length / 8));
+        // Reveal only a couple of characters per tick, at a deliberately
+        // unhurried pace, so a reply always reads like it's being typed at
+        // a comfortable reading speed rather than flashing onto the
+        // screen. Only a very large backlog (a huge response arriving in
+        // one big network chunk) speeds up slightly, and only enough to
+        // avoid trailing minutes behind — normal replies stay slow and
+        // readable throughout.
+        const step = queued.length > 400 ? 4 : queued.length > 120 ? 3 : 2;
         const piece = queued.slice(0, step);
         revealQueueRef.current = queued.slice(step);
         setMessages((prev) =>
           prev.map((m) => (m.id === assistantId ? { ...m, text: m.text + piece, pending: false } : m)),
         );
-      }, 24);
+      }, 45);
     },
     [stopReveal],
   );
