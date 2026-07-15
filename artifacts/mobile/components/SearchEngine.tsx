@@ -714,7 +714,7 @@ function AiResearchTab({
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const scrollRef = useRef<ScrollView>(null);
+  const listRef = useRef<FlatList>(null);
   const cursorAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -736,81 +736,84 @@ function AiResearchTab({
     </View>
   );
 
+  const renderItem = ({ item: msg, index: i }: { item: AiMessage; index: number }) => {
+    if (msg.role === 'user') return (
+      <View style={art.userRow}>
+        <View style={[art.userBubble, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[art.userText, { color: colors.foreground }]}>{msg.content}</Text>
+        </View>
+      </View>
+    );
+
+    const isLast = i === messages.length - 1;
+    const showHeader = i === 1 || (i > 1 && messages[i - 1]?.role === 'user');
+    return (
+      <View style={art.assistantRow}>
+        {showHeader ? (
+          <View style={art.assistantHeader}>
+            <View style={[art.assistantIcon, { backgroundColor: 'rgba(255,255,255,0.1)' }]}>
+              <Ionicons name="sparkles" size={11} color={colors.foreground} />
+            </View>
+            <Text style={[art.assistantLabel, { color: colors.foreground }]}>Engagera AI</Text>
+            {streaming && isLast ? (
+              <ActivityIndicator size="small" color={colors.mutedForeground} style={{ transform: [{ scale: 0.7 }] }} />
+            ) : null}
+          </View>
+        ) : null}
+
+        {msg.content ? (
+          <Text style={[art.assistantText, { color: colors.foreground }]}>
+            {msg.content}
+            {streaming && isLast ? (
+              <Animated.Text style={{ opacity: cursorAnim, color: colors.foreground }}> ▋</Animated.Text>
+            ) : null}
+          </Text>
+        ) : streaming && isLast ? (
+          <View style={{ gap: 6 }}>
+            <SkeletonBox height={12} radius={4} />
+            <SkeletonBox width="80%" height={12} radius={4} />
+          </View>
+        ) : null}
+
+        {/* Numbered citations */}
+        {!streaming && isLast && sources.length > 0 ? (
+          <View style={art.citations}>
+            <Text style={[art.citationsLabel, { color: colors.mutedForeground }]}>Sources</Text>
+            {sources.map((src, si) => (
+              <Pressable key={si}
+                style={[art.citation, { backgroundColor: colors.card, borderColor: colors.border }]}
+                onPress={() => onOpenBrowser(src.url)}>
+                <View style={[art.citationNum, { backgroundColor: colors.background }]}>
+                  <Text style={[art.citationNumText, { color: colors.mutedForeground }]}>{si + 1}</Text>
+                </View>
+                <View style={art.citationInfo}>
+                  <Text style={[art.citationTitle, { color: colors.foreground }]} numberOfLines={1}>
+                    {src.title || src.host}
+                  </Text>
+                  <Text style={[art.citationHost, { color: colors.mutedForeground }]} numberOfLines={1}>{src.host}</Text>
+                </View>
+                <Ionicons name="open-outline" size={13} color={colors.mutedForeground} />
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+      </View>
+    );
+  };
+
   return (
     <View style={{ flex: 1 }}>
-      <ScrollView
-        ref={scrollRef}
-        style={{ flex: 1 }}
+      <FlatList
+        ref={listRef}
+        data={messages}
+        keyExtractor={(_, i) => `ai-msg-${i}`}
+        renderItem={renderItem}
         contentContainerStyle={art.content}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}>
-
-        {messages.map((msg, i) => {
-          if (msg.role === 'user') return (
-            <View key={i} style={art.userRow}>
-              <View style={[art.userBubble, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Text style={[art.userText, { color: colors.foreground }]}>{msg.content}</Text>
-              </View>
-            </View>
-          );
-
-          const isLast = i === messages.length - 1;
-          return (
-            <View key={i} style={art.assistantRow}>
-              {i === 1 || (i > 1 && msg.role === 'assistant' && messages[i - 1]?.role === 'user') ? (
-                <View style={art.assistantHeader}>
-                  <View style={[art.assistantIcon, { backgroundColor: 'rgba(255,255,255,0.1)' }]}>
-                    <Ionicons name="sparkles" size={11} color={colors.foreground} />
-                  </View>
-                  <Text style={[art.assistantLabel, { color: colors.foreground }]}>Engagera AI</Text>
-                  {streaming && isLast ? (
-                    <ActivityIndicator size="small" color={colors.mutedForeground} style={{ transform: [{ scale: 0.7 }] }} />
-                  ) : null}
-                </View>
-              ) : null}
-
-              {msg.content ? (
-                <Text style={[art.assistantText, { color: colors.foreground }]}>
-                  {msg.content}
-                  {streaming && isLast ? (
-                    <Animated.Text style={{ opacity: cursorAnim, color: colors.foreground }}> ▋</Animated.Text>
-                  ) : null}
-                </Text>
-              ) : streaming && isLast ? (
-                <View style={{ gap: 6 }}>
-                  <SkeletonBox height={12} radius={4} />
-                  <SkeletonBox width="80%" height={12} radius={4} />
-                </View>
-              ) : null}
-
-              {/* Numbered citations */}
-              {!streaming && isLast && sources.length > 0 ? (
-                <View style={art.citations}>
-                  <Text style={[art.citationsLabel, { color: colors.mutedForeground }]}>Sources</Text>
-                  {sources.map((src, si) => (
-                    <Pressable key={si}
-                      style={[art.citation, { backgroundColor: colors.card, borderColor: colors.border }]}
-                      onPress={() => onOpenBrowser(src.url)}>
-                      <View style={[art.citationNum, { backgroundColor: colors.background }]}>
-                        <Text style={[art.citationNumText, { color: colors.mutedForeground }]}>{si + 1}</Text>
-                      </View>
-                      <View style={art.citationInfo}>
-                        <Text style={[art.citationTitle, { color: colors.foreground }]} numberOfLines={1}>
-                          {src.title || src.host}
-                        </Text>
-                        <Text style={[art.citationHost, { color: colors.mutedForeground }]} numberOfLines={1}>{src.host}</Text>
-                      </View>
-                      <Ionicons name="open-outline" size={13} color={colors.mutedForeground} />
-                    </Pressable>
-                  ))}
-                </View>
-              ) : null}
-            </View>
-          );
-        })}
-        <View style={{ height: 8 }} />
-      </ScrollView>
+        onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
+        ListFooterComponent={<View style={{ height: 8 }} />}
+      />
 
       {/* Follow-up input */}
       <View style={[art.inputWrap, { paddingBottom: insets.bottom + 12, borderTopColor: colors.border }]}>
