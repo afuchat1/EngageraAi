@@ -1,7 +1,7 @@
 /**
  * Lab Search Engine
  *
- * Full search engine powered by AfuBot / Brave Search.
+ * Full search engine powered by Engagera's AfuBot crawler.
  * Real-time suggestions while typing, tabbed results
  * (Web · Images · Videos · News · Finance), and a built-in
  * WebView browser that opens when the user taps any result.
@@ -370,9 +370,9 @@ export function SearchEngine({ topPad }: { topPad: number }) {
           <View style={styles.landingIcon}>
             <Ionicons name="search" size={40} color={colors.mutedForeground} />
           </View>
-          <Text style={[styles.landingTitle, { color: colors.foreground }]}>AfuBot Search</Text>
+          <Text style={[styles.landingTitle, { color: colors.foreground }]}>Engagera Search</Text>
           <Text style={[styles.landingBody, { color: colors.mutedForeground }]}>
-            Web · Images · Videos · News · Finance{'\n'}powered by AfuBot crawler & Brave Search
+            Web · Images · Videos · News · Finance{'\n'}powered by Engagera's AfuBot crawler
           </Text>
         </View>
       ) : null}
