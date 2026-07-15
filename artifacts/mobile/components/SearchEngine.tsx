@@ -394,7 +394,8 @@ export function SearchEngine({ topPad }: { topPad: number }) {
   const [aiStreaming, setAiStreaming]  = useState(false);
   const [aiError, setAiError]         = useState('');
   const [aiInput, setAiInput]         = useState('');
-  const aiAbortRef = useRef<AbortController | null>(null);
+  const aiAbortRef  = useRef<AbortController | null>(null);
+  const aiScrollRef = useRef<ScrollView>(null);
   const aiInitializedForQuery = useRef('');
 
   // ── Load history on mount ─────────────────────────────────────────────────
@@ -469,11 +470,20 @@ export function SearchEngine({ topPad }: { topPad: number }) {
   // ── Start AI when the AI tab is first opened for a query ─────────────────
   useEffect(() => {
     if (activeTab !== 'ai' || !submittedQuery) return;
-    // Guard: only run once per submitted query
     if (aiInitializedForQuery.current === submittedQuery) return;
     aiInitializedForQuery.current = submittedQuery;
     startAiStream([{ role: 'user', content: submittedQuery }]);
   }, [activeTab, submittedQuery, startAiStream]);
+
+  // ── Always show AI messages from the top ──────────────────────────────────
+  // Snap to y=0 every time a new query starts, no matter what scrolled it.
+  useEffect(() => {
+    if (!submittedQuery) return;
+    const id = setTimeout(() => {
+      aiScrollRef.current?.scrollTo({ x: 0, y: 0, animated: false });
+    }, 0);
+    return () => clearTimeout(id);
+  }, [submittedQuery]);
 
   // ── Send AI follow-up ─────────────────────────────────────────────────────
   const handleAiSend = useCallback(() => {
@@ -625,7 +635,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
           </ScrollView>
 
           {/* ── AI chat ──────────────────────────────────────────────────── */}
-          {activeTab === 'ai' ? (<View style={s.aiTab}>
+          {activeTab === 'ai' ? (<View style={s.flex}>
             {aiError && aiMessages.length === 0 ? (
               <View style={s.aiErrorWrap}>
                 <Ionicons name="alert-circle-outline" size={28} color={colors.mutedForeground} />
@@ -633,7 +643,8 @@ export function SearchEngine({ topPad }: { topPad: number }) {
               </View>
             ) : (
               <ScrollView
-                style={StyleSheet.absoluteFill}
+                ref={aiScrollRef}
+                style={s.flex}
                 contentContainerStyle={s.aiChatPad}
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
@@ -907,7 +918,6 @@ const s = StyleSheet.create({
   tabUnderline: { height: 2, width: '100%', borderRadius: 1, marginTop: -1 },
 
   // AI chat
-  aiTab: { flex: 1, overflow: 'hidden' },
   aiChatPad: { paddingTop: 14, paddingHorizontal: 14, paddingBottom: 24 },
 
   // User bubble (right-aligned)
