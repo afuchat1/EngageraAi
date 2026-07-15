@@ -398,6 +398,14 @@ export function SearchEngine({ topPad }: { topPad: number }) {
   const [aiInput, setAiInput]         = useState('');
   const aiAbortRef = useRef<AbortController | null>(null);
   const aiInitializedForQuery = useRef('');
+  // Track heights so we only auto-scroll when content actually overflows
+  const aiScrollViewHeight = useRef(0);
+  const aiContentHeight    = useRef(0);
+  const scrollAiToEnd = useCallback((animated: boolean) => {
+    if (aiContentHeight.current > aiScrollViewHeight.current) {
+      aiScrollRef.current?.scrollToEnd({ animated });
+    }
+  }, []);
 
   // ── Load history on mount ─────────────────────────────────────────────────
   useEffect(() => { loadSearchHistory().then(setHistory); }, []);
@@ -428,7 +436,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
     setAiMessages(withPlaceholder);
 
     // Small delay so the scroll can settle before new content pushes it down
-    setTimeout(() => aiScrollRef.current?.scrollToEnd({ animated: true }), 80);
+    setTimeout(() => scrollAiToEnd(true), 80);
 
     streamChat(
       {
@@ -448,7 +456,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
             return next;
           });
           // Keep scrolled to bottom as tokens stream in
-          aiScrollRef.current?.scrollToEnd({ animated: false });
+          scrollAiToEnd(false);
         },
         onMeta: (searchInfo) => {
           const mapped = searchInfo.sources
@@ -463,7 +471,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
         },
         onDone: () => {
           setAiStreaming(false);
-          setTimeout(() => aiScrollRef.current?.scrollToEnd({ animated: true }), 50);
+          setTimeout(() => scrollAiToEnd(true), 50);
         },
       },
       aiAbortRef.current.signal,
@@ -472,7 +480,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
       setAiError(err?.message ?? 'Something went wrong. Please try again.');
       setAiStreaming(false);
     });
-  }, []);
+  }, [scrollAiToEnd]);
 
   // ── Start AI when the AI tab is first opened for a query ─────────────────
   useEffect(() => {
@@ -647,6 +655,8 @@ export function SearchEngine({ topPad }: { topPad: number }) {
                 contentContainerStyle={s.aiChatPad}
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
+                onLayout={(e) => { aiScrollViewHeight.current = e.nativeEvent.layout.height; }}
+                onContentSizeChange={(_, h) => { aiContentHeight.current = h; }}
               >
                 {aiMessages.map((msg, i) => {
                   const isUser = msg.role === 'user';
@@ -920,7 +930,7 @@ const s = StyleSheet.create({
   tabUnderline: { height: 2, width: '100%', borderRadius: 1, marginTop: -1 },
 
   // AI chat
-  aiChatPad: { flexGrow: 1, paddingTop: 6, paddingHorizontal: 14, paddingBottom: 8 },
+  aiChatPad: { paddingTop: 6, paddingHorizontal: 14, paddingBottom: 8 },
 
   // User bubble (right-aligned)
   aiUserRow: { alignItems: 'flex-end', marginBottom: 16 },
