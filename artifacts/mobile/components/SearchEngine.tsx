@@ -12,7 +12,6 @@ import {
   Dimensions,
   FlatList,
   Image,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -288,10 +287,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
   const hasSearch = submittedQuery.length > 0;
 
   return (
-    <KeyboardAvoidingView
-      style={[styles.root, { paddingTop: topPad }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
+    <KeyboardAvoidingView style={[styles.root, { paddingTop: topPad }]} behavior="padding">
       {/* ── Empty landing ────────────────────────────────────────────────── */}
       {!hasSearch ? (
         <View style={styles.landing}>
