@@ -1,15 +1,14 @@
 /**
  * Lab Search Engine
  *
- * Full-featured SERP powered by Engagera's AfuBot backend (DuckDuckGo,
- * Bing images, YouTube, RSS news feeds) with:
- *
- *  - "All" tab: mixed SERP feed — web + images strip + videos + news in one scroll
- *  - Dedicated Images / Videos / News / Finance tabs for organised browsing
- *  - AI tab: live-streaming Engagera AI answer (uses streamChat, not fetch)
- *  - Omnibox domain chip + bare-domain resolution
- *  - Official-site card pinned at top for brand queries
- *  - Persistent search history (AsyncStorage)
+ * - "All" mixed SERP: official site + web + image strip + videos + news
+ * - Dedicated Images / Videos / News / Finance tabs
+ * - AI tab: live-streaming chat (state lifted to parent — never reloads on tab switch)
+ *   • Search query becomes first user message
+ *   • Follow-up chat via bottom input (replaces search bar on AI tab)
+ * - Omnibox domain chip + bare-domain resolution
+ * - Official-site card pinned at top for brand queries
+ * - Persistent search history
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -18,6 +17,7 @@ import {
   Dimensions,
   FlatList,
   Image,
+  Keyboard,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -53,17 +53,12 @@ import {
   type SearchHistoryItem,
 } from '@/lib/search';
 
-// ── Constants ─────────────────────────────────────────────────────────────────
-
-const AI_CONTEXT_HINT = [
-  'You are the "Engagera AI" overview on a search-results page.',
-  'Answer the query directly in 2–6 sentences of plain prose.',
-  'No markdown headers. A short bullet list is fine only when the query explicitly asks for a list.',
-  'Be concise and confident.',
-  'If the topic is time-sensitive and you cannot verify it live, say so briefly.',
-].join(' ');
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 type SearchTab = 'ai' | 'all' | 'images' | 'videos' | 'news' | 'finance';
+
+interface AiMessage { role: 'user' | 'assistant'; content: string; }
+interface AiSource  { title: string; url: string; host: string; }
 
 interface SearchResults {
   web: WebResult[];
@@ -75,13 +70,22 @@ interface SearchResults {
 
 type LoadingState = Record<'web' | 'images' | 'videos' | 'news' | 'finance', boolean>;
 
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const AI_CONTEXT_HINT = [
+  'You are "Engagera AI" answering the user\'s query on a search-results page.',
+  'For the opening message answer in 3–6 clear sentences of plain prose (no markdown headers).',
+  'For follow-up questions keep the conversational context.',
+  'Be concise and direct. If the topic is time-sensitive and you cannot verify it live, say so briefly.',
+].join(' ');
+
 const TABS: { key: SearchTab; label: string; icon: string }[] = [
-  { key: 'ai',      label: 'AI',      icon: 'sparkles-outline'      },
-  { key: 'all',     label: 'All',     icon: 'globe-outline'         },
-  { key: 'images',  label: 'Images',  icon: 'images-outline'        },
-  { key: 'videos',  label: 'Videos',  icon: 'play-circle-outline'   },
-  { key: 'news',    label: 'News',    icon: 'newspaper-outline'     },
-  { key: 'finance', label: 'Finance', icon: 'trending-up-outline'   },
+  { key: 'ai',      label: 'AI',      icon: 'sparkles-outline'    },
+  { key: 'all',     label: 'All',     icon: 'globe-outline'       },
+  { key: 'images',  label: 'Images',  icon: 'images-outline'      },
+  { key: 'videos',  label: 'Videos',  icon: 'play-circle-outline' },
+  { key: 'news',    label: 'News',    icon: 'newspaper-outline'   },
+  { key: 'finance', label: 'Finance', icon: 'trending-up-outline' },
 ];
 
 const empty: SearchResults = { web: [], images: [], videos: [], news: [], finance: [] };
@@ -89,10 +93,10 @@ const notLoading: LoadingState = { web: false, images: false, videos: false, new
 const allLoading: LoadingState = { web: true, images: true, videos: true, news: true, finance: true };
 
 const { width: SCREEN_W } = Dimensions.get('window');
-const IMG_THUMB = 110; // horizontal strip thumbnail size
-const IMG_GRID  = (SCREEN_W - 3) / 2; // 2-col grid size
+const IMG_THUMB = 110;
+const IMG_GRID  = (SCREEN_W - 3) / 2;
 
-// ── Shared cards ──────────────────────────────────────────────────────────────
+// ── Shared sub-components ─────────────────────────────────────────────────────
 
 function Favicon({ uri }: { uri: string }) {
   const [err, setErr] = useState(false);
@@ -108,7 +112,7 @@ function SectionHeader({ title, icon }: { title: string; icon: string }) {
   const colors = useColors();
   return (
     <View style={[s.sectionHeader, { borderBottomColor: colors.border }]}>
-      <Ionicons name={icon as any} size={13} color={colors.mutedForeground} />
+      <Ionicons name={icon as any} size={12} color={colors.mutedForeground} />
       <Text style={[s.sectionHeaderText, { color: colors.mutedForeground }]}>{title}</Text>
     </View>
   );
@@ -168,11 +172,11 @@ function ImageGridCard({ item, onPress }: { item: ImageResult; onPress: (url: st
   );
 }
 
-function VideoCard({ item, onPress, compact }: { item: VideoResult; onPress: (url: string) => void; compact?: boolean }) {
+function VideoCard({ item, onPress }: { item: VideoResult; onPress: (url: string) => void }) {
   const colors = useColors();
   const [err, setErr] = useState(false);
   return (
-    <Pressable style={[s.videoCard, { borderBottomColor: colors.border }, compact && s.videoCardCompact]} onPress={() => onPress(item.url)}>
+    <Pressable style={[s.videoCard, { borderBottomColor: colors.border }]} onPress={() => onPress(item.url)}>
       <View style={s.videoThumbWrap}>
         {!err && item.thumbnail ? (
           <Image source={{ uri: item.thumbnail }} style={s.videoThumb} onError={() => setErr(true)} resizeMode="cover" />
@@ -254,9 +258,9 @@ function OfficialSiteCard({ url, onPress }: { url: string; onPress: (url: string
   );
 }
 
-function EmptyState({ loading, query }: { loading: boolean; query: string }) {
+function EmptyState({ loading: isLoading, query }: { loading: boolean; query: string }) {
   const colors = useColors();
-  if (loading) return <ActivityIndicator color={colors.foreground} style={s.loader} />;
+  if (isLoading) return <ActivityIndicator color={colors.foreground} style={s.loader} />;
   if (!query) return null;
   return (
     <View style={s.emptyTab}>
@@ -269,202 +273,58 @@ function EmptyState({ loading, query }: { loading: boolean; query: string }) {
 // ── Mixed "All" SERP feed ─────────────────────────────────────────────────────
 
 function MixedFeed({
-  results,
-  officialSiteUrl,
-  loading,
-  query,
-  onPress,
+  results, officialSiteUrl, loading, query, onPress,
 }: {
-  results: SearchResults;
-  officialSiteUrl: string | null;
-  loading: LoadingState;
-  query: string;
-  onPress: (url: string) => void;
+  results: SearchResults; officialSiteUrl: string | null;
+  loading: LoadingState; query: string; onPress: (url: string) => void;
 }) {
   const colors = useColors();
   const anyLoading = loading.web || loading.images || loading.videos || loading.news;
   const hasAny = officialSiteUrl || results.web.length > 0 || results.images.length > 0
     || results.videos.length > 0 || results.news.length > 0;
 
-  if (anyLoading && !hasAny) {
-    return <ActivityIndicator color={colors.foreground} style={s.loader} />;
-  }
+  if (anyLoading && !hasAny) return <ActivityIndicator color={colors.foreground} style={s.loader} />;
   if (!hasAny) return <EmptyState loading={false} query={query} />;
 
   const topWeb  = results.web.slice(0, 4);
   const restWeb = results.web.slice(4);
-  const images  = results.images.slice(0, 12);
-  const videos  = results.videos.slice(0, 2);
-  const news    = results.news.slice(0, 4);
 
   return (
     <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={s.mixedPad}>
-
-      {/* Official site */}
       {officialSiteUrl ? <OfficialSiteCard url={officialSiteUrl} onPress={onPress} /> : null}
+      {topWeb.map((item, i) => <WebCard key={`tw-${i}`} item={item} onPress={onPress} />)}
 
-      {/* Top web results */}
-      {topWeb.map((item, i) => <WebCard key={`web-top-${i}`} item={item} onPress={onPress} />)}
-
-      {/* Horizontal image strip */}
-      {images.length > 0 ? (
+      {results.images.length > 0 ? (
         <View>
           <SectionHeader title="Images" icon="images-outline" />
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={s.imageStrip}
-          >
-            {images.map((item, i) => (
-              <ImageThumb key={`img-${i}`} item={item} onPress={onPress} />
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.imageStrip}>
+            {results.images.slice(0, 12).map((item, i) => (
+              <ImageThumb key={`it-${i}`} item={item} onPress={onPress} />
             ))}
           </ScrollView>
         </View>
       ) : null}
 
-      {/* Inline videos */}
-      {videos.length > 0 ? (
+      {results.videos.slice(0, 2).length > 0 ? (
         <View>
           <SectionHeader title="Videos" icon="play-circle-outline" />
-          {videos.map((item, i) => <VideoCard key={`vid-${i}`} item={item} onPress={onPress} compact />)}
+          {results.videos.slice(0, 2).map((item, i) => <VideoCard key={`v-${i}`} item={item} onPress={onPress} />)}
         </View>
       ) : null}
 
-      {/* News section */}
-      {news.length > 0 ? (
+      {results.news.slice(0, 4).length > 0 ? (
         <View>
           <SectionHeader title="News" icon="newspaper-outline" />
-          {news.map((item, i) => <NewsCard key={`news-${i}`} item={item} onPress={onPress} />)}
+          {results.news.slice(0, 4).map((item, i) => <NewsCard key={`n-${i}`} item={item} onPress={onPress} />)}
         </View>
       ) : null}
 
-      {/* More web results */}
       {restWeb.length > 0 ? (
         <View>
           <View style={[s.moreDivider, { borderBottomColor: colors.border }]}>
             <Text style={[s.moreDividerText, { color: colors.mutedForeground }]}>More results</Text>
           </View>
-          {restWeb.map((item, i) => <WebCard key={`web-rest-${i}`} item={item} onPress={onPress} />)}
-        </View>
-      ) : null}
-
-    </ScrollView>
-  );
-}
-
-// ── AI tab — live-streaming answer ────────────────────────────────────────────
-
-function AiTab({
-  query,
-  onPress,
-}: {
-  query: string;
-  onPress: (url: string) => void;
-}) {
-  const colors = useColors();
-  const [answer, setAnswer] = useState('');
-  const [sources, setSources] = useState<{ title: string; url: string; host: string }[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const abortRef = useRef<AbortController | null>(null);
-  const latestQuery = useRef('');
-
-  useEffect(() => {
-    if (!query) return;
-    // Don't re-fetch if query hasn't changed
-    if (latestQuery.current === query && (answer || error)) return;
-    latestQuery.current = query;
-
-    abortRef.current?.abort();
-    abortRef.current = new AbortController();
-    setAnswer('');
-    setSources([]);
-    setError('');
-    setLoading(true);
-
-    streamChat(
-      {
-        messages: [{ role: 'user', content: query }],
-        model: LAB_MODEL,
-        stream: true,
-        contextHint: AI_CONTEXT_HINT,
-      },
-      {
-        onToken: (token) => setAnswer((prev) => prev + token),
-        onMeta: (searchInfo) => {
-          const mapped = searchInfo.sources
-            .filter((src) => !!src.url)
-            .slice(0, 8)
-            .map((src) => {
-              let host = '';
-              try { host = new URL(src.url).hostname; } catch { /**/ }
-              return { title: src.title, url: src.url, host };
-            });
-          setSources(mapped);
-        },
-        onDone: () => setLoading(false),
-      },
-      abortRef.current.signal,
-    ).catch((err) => {
-      if (abortRef.current?.signal.aborted) return;
-      setError(err?.message ?? 'Something went wrong. Try again.');
-      setLoading(false);
-    });
-
-    return () => { abortRef.current?.abort(); };
-  // Re-run only when the query changes
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query]);
-
-  // Error state
-  if (error) {
-    return (
-      <View style={s.aiError}>
-        <Ionicons name="alert-circle-outline" size={28} color={colors.mutedForeground} />
-        <Text style={[s.aiErrorText, { color: colors.mutedForeground }]}>{error}</Text>
-      </View>
-    );
-  }
-
-  return (
-    <ScrollView contentContainerStyle={s.aiPad} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-      {/* AI answer card */}
-      <View style={[s.aiCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <View style={s.aiCardHeader}>
-          <Ionicons name="sparkles" size={15} color={colors.foreground} />
-          <Text style={[s.aiCardTitle, { color: colors.foreground }]}>Engagera AI</Text>
-          {loading ? <ActivityIndicator size="small" color={colors.mutedForeground} style={s.aiSpinner} /> : null}
-        </View>
-
-        {answer ? (
-          <Text style={[s.aiAnswer, { color: colors.foreground }]}>{answer}</Text>
-        ) : loading ? (
-          <Text style={[s.aiAnswer, { color: colors.mutedForeground }]}>Thinking…</Text>
-        ) : (
-          <Text style={[s.aiAnswer, { color: colors.mutedForeground }]}>
-            No overview available for this query. Try the All tab.
-          </Text>
-        )}
-      </View>
-
-      {/* Source chips */}
-      {sources.length > 0 ? (
-        <View>
-          <Text style={[s.aiSourcesLabel, { color: colors.mutedForeground }]}>Sources</Text>
-          <View style={s.aiSourcesWrap}>
-            {sources.map((src, i) => (
-              <Pressable
-                key={i}
-                style={[s.aiSourceChip, { backgroundColor: colors.card, borderColor: colors.border }]}
-                onPress={() => onPress(src.url)}
-              >
-                <Ionicons name="link-outline" size={11} color={colors.mutedForeground} />
-                <Text style={[s.aiSourceText, { color: colors.mutedForeground }]} numberOfLines={1}>
-                  {src.host || src.title}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+          {restWeb.map((item, i) => <WebCard key={`rw-${i}`} item={item} onPress={onPress} />)}
         </View>
       ) : null}
     </ScrollView>
@@ -473,9 +333,7 @@ function AiTab({
 
 // ── History section ───────────────────────────────────────────────────────────
 
-function HistorySection({
-  history, onSelect, onRemove, onClearAll,
-}: {
+function HistorySection({ history, onSelect, onRemove, onClearAll }: {
   history: SearchHistoryItem[];
   onSelect: (q: string) => void;
   onRemove: (q: string) => void;
@@ -492,11 +350,9 @@ function HistorySection({
         </Pressable>
       </View>
       {history.map((item) => (
-        <Pressable
-          key={item.query}
+        <Pressable key={item.query}
           style={({ pressed }) => [s.historyRow, { borderBottomColor: colors.border }, pressed && { opacity: 0.6 }]}
-          onPress={() => onSelect(item.query)}
-        >
+          onPress={() => onSelect(item.query)}>
           <Ionicons name="time-outline" size={15} color={colors.mutedForeground} style={s.historyRowIcon} />
           <Text style={[s.historyRowText, { color: colors.foreground }]} numberOfLines={1}>{item.query}</Text>
           <Pressable hitSlop={10} onPress={() => onRemove(item.query)} style={s.historyRowDelete}>
@@ -513,40 +369,133 @@ function HistorySection({
 export function SearchEngine({ topPad }: { topPad: number }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const inputRef = useRef<TextInput>(null);
+  const inputRef    = useRef<TextInput>(null);
+  const aiInputRef  = useRef<TextInput>(null);
+  const aiScrollRef = useRef<ScrollView>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [query, setQuery]               = useState('');
+  // ── Search state ───────────────────────────────────────────────────────────
+  const [query, setQuery]                   = useState('');
   const [submittedQuery, setSubmittedQuery] = useState('');
-  const [suggestions, setSuggestions]   = useState<string[]>([]);
+  const [suggestions, setSuggestions]       = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [inputFocused, setInputFocused] = useState(false);
-  const [activeTab, setActiveTab]       = useState<SearchTab>('all');
-  const [results, setResults]           = useState<SearchResults>(empty);
-  const [loading, setLoading]           = useState<LoadingState>(notLoading);
-  const [browserUrl, setBrowserUrl]     = useState<string | null>(null);
-  const [history, setHistory]           = useState<SearchHistoryItem[]>([]);
+  const [inputFocused, setInputFocused]     = useState(false);
+  const [activeTab, setActiveTab]           = useState<SearchTab>('all');
+  const [results, setResults]               = useState<SearchResults>(empty);
+  const [loading, setLoading]               = useState<LoadingState>(notLoading);
+  const [browserUrl, setBrowserUrl]         = useState<string | null>(null);
+  const [history, setHistory]               = useState<SearchHistoryItem[]>([]);
   const [officialSiteUrl, setOfficialSiteUrl] = useState<string | null>(null);
   const searchIdRef = useRef(0);
 
-  // Load history on mount
+  // ── AI state (lifted here so it NEVER resets on tab switch) ───────────────
+  // aiInitializedForQuery tracks which query we've already started streaming
+  // for — prevents double-fetch on tab re-focus without resetting conversation.
+  const [aiMessages, setAiMessages]   = useState<AiMessage[]>([]);
+  const [aiSources, setAiSources]     = useState<AiSource[]>([]);
+  const [aiStreaming, setAiStreaming]  = useState(false);
+  const [aiError, setAiError]         = useState('');
+  const [aiInput, setAiInput]         = useState('');
+  const aiAbortRef = useRef<AbortController | null>(null);
+  const aiInitializedForQuery = useRef('');
+
+  // ── Load history on mount ─────────────────────────────────────────────────
   useEffect(() => { loadSearchHistory().then(setHistory); }, []);
 
-  // Real-time suggestions
+  // ── Real-time suggestions ─────────────────────────────────────────────────
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (!query.trim() || query.length < 2) {
       setSuggestions([]); setShowSuggestions(false); return;
     }
     debounceRef.current = setTimeout(async () => {
-      const s = await fetchSuggestions(query);
-      setSuggestions(s);
-      setShowSuggestions(s.length > 0 || !!getPotentialDomain(query));
+      const sug = await fetchSuggestions(query);
+      setSuggestions(sug);
+      setShowSuggestions(sug.length > 0 || !!getPotentialDomain(query));
     }, 150);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [query]);
 
-  // Search
+  // ── AI streaming helper ───────────────────────────────────────────────────
+  const startAiStream = useCallback((msgs: AiMessage[]) => {
+    aiAbortRef.current?.abort();
+    aiAbortRef.current = new AbortController();
+    setAiStreaming(true);
+    setAiError('');
+
+    // Add empty assistant placeholder — tokens will be appended to it
+    const withPlaceholder: AiMessage[] = [...msgs, { role: 'assistant', content: '' }];
+    setAiMessages(withPlaceholder);
+
+    // Small delay so the scroll can settle before new content pushes it down
+    setTimeout(() => aiScrollRef.current?.scrollToEnd({ animated: true }), 80);
+
+    streamChat(
+      {
+        messages: msgs.map((m) => ({ role: m.role, content: m.content })),
+        model: LAB_MODEL,
+        stream: true,
+        contextHint: AI_CONTEXT_HINT,
+      },
+      {
+        onToken: (token) => {
+          setAiMessages((prev) => {
+            const next = [...prev];
+            const last = next[next.length - 1];
+            if (last?.role === 'assistant') {
+              next[next.length - 1] = { ...last, content: last.content + token };
+            }
+            return next;
+          });
+          // Keep scrolled to bottom as tokens stream in
+          aiScrollRef.current?.scrollToEnd({ animated: false });
+        },
+        onMeta: (searchInfo) => {
+          const mapped = searchInfo.sources
+            .filter((src) => !!src.url)
+            .slice(0, 8)
+            .map((src) => {
+              let host = '';
+              try { host = new URL(src.url).hostname; } catch { /**/ }
+              return { title: src.title, url: src.url, host };
+            });
+          setAiSources(mapped);
+        },
+        onDone: () => {
+          setAiStreaming(false);
+          setTimeout(() => aiScrollRef.current?.scrollToEnd({ animated: true }), 50);
+        },
+      },
+      aiAbortRef.current.signal,
+    ).catch((err) => {
+      if (aiAbortRef.current?.signal.aborted) return;
+      setAiError(err?.message ?? 'Something went wrong. Please try again.');
+      setAiStreaming(false);
+    });
+  }, []);
+
+  // ── Start AI when the AI tab is first opened for a query ─────────────────
+  useEffect(() => {
+    if (activeTab !== 'ai' || !submittedQuery) return;
+    // Guard: only run once per submitted query
+    if (aiInitializedForQuery.current === submittedQuery) return;
+    aiInitializedForQuery.current = submittedQuery;
+    startAiStream([{ role: 'user', content: submittedQuery }]);
+  }, [activeTab, submittedQuery, startAiStream]);
+
+  // ── Send AI follow-up ─────────────────────────────────────────────────────
+  const handleAiSend = useCallback(() => {
+    const text = aiInput.trim();
+    if (!text || aiStreaming) return;
+    setAiInput('');
+    Keyboard.dismiss();
+    // Build the full conversation to send (existing messages + new user message)
+    const userMsg: AiMessage = { role: 'user', content: text };
+    const msgsToSend = [...aiMessages, userMsg];
+    startAiStream(msgsToSend);
+  }, [aiInput, aiMessages, aiStreaming, startAiStream]);
+
+  // ── Search ────────────────────────────────────────────────────────────────
   const doSearch = useCallback(async (q: string) => {
     const trimmed = q.trim();
     if (!trimmed) return;
@@ -554,7 +503,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
     const myId = ++searchIdRef.current;
     const isStale = () => searchIdRef.current !== myId;
 
-    // Bare domain → open directly
+    // Bare domain → open directly, no search
     const domainUrl = await resolveDomain(trimmed);
     if (isStale()) return;
     if (domainUrl) {
@@ -564,6 +513,15 @@ export function SearchEngine({ topPad }: { topPad: number }) {
       setBrowserUrl(domainUrl);
       return;
     }
+
+    // Reset AI state for the new query
+    aiAbortRef.current?.abort();
+    aiInitializedForQuery.current = '';
+    setAiMessages([]);
+    setAiSources([]);
+    setAiStreaming(false);
+    setAiError('');
+    setAiInput('');
 
     setQuery(trimmed); setSubmittedQuery(trimmed);
     setShowSuggestions(false); setSuggestions([]);
@@ -617,16 +575,21 @@ export function SearchEngine({ topPad }: { topPad: number }) {
     ]);
   }, []);
 
+  // ── Derived ───────────────────────────────────────────────────────────────
   const hasSearch = submittedQuery.length > 0;
+  const isAiTab   = hasSearch && activeTab === 'ai';
   const potentialDomain = getPotentialDomain(query);
-  const shouldShowSuggestions = inputFocused && query.trim().length >= 1 && (showSuggestions || !!potentialDomain);
+  // Suppress search suggestions while on AI tab (bottom bar is chat input there)
+  const shouldShowSuggestions = !isAiTab && inputFocused && query.trim().length >= 1
+    && (showSuggestions || !!potentialDomain);
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <KeyboardAvoidingView style={[s.root, { paddingTop: topPad }]} behavior="padding">
 
-      {/* Landing */}
+      {/* ── Landing ─────────────────────────────────────────────────────── */}
       {!hasSearch ? (
-        <ScrollView style={s.landingScroll} contentContainerStyle={s.landingContent}
+        <ScrollView style={s.flex} contentContainerStyle={s.landingContent}
           keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <View style={s.landingHero}>
             <View style={s.landingIcon}>
@@ -642,10 +605,11 @@ export function SearchEngine({ topPad }: { topPad: number }) {
         </ScrollView>
       ) : null}
 
-      {/* Results */}
+      {/* ── Results ──────────────────────────────────────────────────────── */}
       {hasSearch ? (
-        <View style={s.results}>
-          {/* Tab bar */}
+        <View style={s.flex}>
+
+          {/* Tab bar — always flush at the top */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false}
             style={[s.tabBar, { borderBottomColor: colors.border }]}
             contentContainerStyle={s.tabBarContent}>
@@ -656,7 +620,8 @@ export function SearchEngine({ topPad }: { topPad: number }) {
                   <View style={s.tabInner}>
                     <Ionicons name={tab.icon as any} size={14}
                       color={active ? colors.foreground : colors.mutedForeground} />
-                    <Text style={[s.tabLabel, { color: active ? colors.foreground : colors.mutedForeground },
+                    <Text style={[s.tabLabel,
+                      { color: active ? colors.foreground : colors.mutedForeground },
                       active && s.tabLabelActive]}>
                       {tab.label}
                     </Text>
@@ -667,18 +632,94 @@ export function SearchEngine({ topPad }: { topPad: number }) {
             })}
           </ScrollView>
 
-          {/* AI tab — streams answer live */}
-          {activeTab === 'ai' ? (
-            <AiTab query={submittedQuery} onPress={openBrowser} />
-          ) : null}
+          {/* ── AI chat (always rendered when hasSearch so state is kept) ── */}
+          {/* Using visibility trick instead of conditional unmount */}
+          <View style={[s.flex, activeTab !== 'ai' && s.hidden]}>
+            {aiError && aiMessages.length === 0 ? (
+              <View style={s.aiErrorWrap}>
+                <Ionicons name="alert-circle-outline" size={28} color={colors.mutedForeground} />
+                <Text style={[s.aiErrorText, { color: colors.mutedForeground }]}>{aiError}</Text>
+              </View>
+            ) : (
+              <ScrollView
+                ref={aiScrollRef}
+                style={s.flex}
+                contentContainerStyle={s.aiChatPad}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                {aiMessages.map((msg, i) => {
+                  const isUser = msg.role === 'user';
+                  const isLastAssistant = !isUser && i === aiMessages.length - 1;
 
-          {/* All tab — mixed SERP */}
+                  if (isUser) {
+                    return (
+                      <View key={i} style={s.aiUserRow}>
+                        <View style={[s.aiUserBubble, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                          <Text style={[s.aiUserText, { color: colors.foreground }]}>{msg.content}</Text>
+                        </View>
+                      </View>
+                    );
+                  }
+
+                  return (
+                    <View key={i} style={s.aiAssistantRow}>
+                      {/* Header only on first assistant message */}
+                      {i === 1 ? (
+                        <View style={s.aiAssistantHeader}>
+                          <Ionicons name="sparkles" size={13} color={colors.foreground} />
+                          <Text style={[s.aiAssistantLabel, { color: colors.foreground }]}>Engagera AI</Text>
+                          {aiStreaming && isLastAssistant ? (
+                            <ActivityIndicator size="small" color={colors.mutedForeground} />
+                          ) : null}
+                        </View>
+                      ) : (
+                        aiStreaming && isLastAssistant ? (
+                          <View style={s.aiAssistantHeader}>
+                            <ActivityIndicator size="small" color={colors.mutedForeground} />
+                          </View>
+                        ) : null
+                      )}
+                      {msg.content ? (
+                        <Text style={[s.aiAssistantText, { color: colors.foreground }]}>{msg.content}</Text>
+                      ) : aiStreaming && isLastAssistant ? (
+                        <Text style={[s.aiAssistantText, { color: colors.mutedForeground }]}>Thinking…</Text>
+                      ) : null}
+
+                      {/* Sources below the last completed assistant message */}
+                      {!aiStreaming && isLastAssistant && aiSources.length > 0 ? (
+                        <View style={s.aiSourcesWrap}>
+                          <Text style={[s.aiSourcesLabel, { color: colors.mutedForeground }]}>Sources</Text>
+                          <View style={s.aiSourceChips}>
+                            {aiSources.map((src, si) => (
+                              <Pressable key={si}
+                                style={[s.aiSourceChip, { backgroundColor: colors.card, borderColor: colors.border }]}
+                                onPress={() => openBrowser(src.url)}>
+                                <Ionicons name="link-outline" size={11} color={colors.mutedForeground} />
+                                <Text style={[s.aiSourceText, { color: colors.mutedForeground }]} numberOfLines={1}>
+                                  {src.host || src.title}
+                                </Text>
+                              </Pressable>
+                            ))}
+                          </View>
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                })}
+                {/* Spacer so last message isn't hidden behind input bar */}
+                <View style={{ height: 16 }} />
+              </ScrollView>
+            )}
+          </View>
+
+          {/* ── All tab ──────────────────────────────────────────────────── */}
           {activeTab === 'all' ? (
             <MixedFeed results={results} officialSiteUrl={officialSiteUrl}
               loading={loading} query={submittedQuery} onPress={openBrowser} />
           ) : null}
 
-          {/* Images tab — 2-col grid */}
+          {/* ── Images tab ───────────────────────────────────────────────── */}
           {activeTab === 'images' ? (
             results.images.length > 0 ? (
               <FlatList data={results.images} keyExtractor={(_, i) => `img-${i}`}
@@ -689,7 +730,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
             ) : <EmptyState loading={loading.images} query={submittedQuery} />
           ) : null}
 
-          {/* Videos tab */}
+          {/* ── Videos tab ───────────────────────────────────────────────── */}
           {activeTab === 'videos' ? (
             results.videos.length > 0 ? (
               <FlatList data={results.videos} keyExtractor={(_, i) => `vid-${i}`}
@@ -699,7 +740,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
             ) : <EmptyState loading={loading.videos} query={submittedQuery} />
           ) : null}
 
-          {/* News tab */}
+          {/* ── News tab ─────────────────────────────────────────────────── */}
           {activeTab === 'news' ? (
             results.news.length > 0 ? (
               <FlatList data={results.news} keyExtractor={(_, i) => `news-${i}`}
@@ -709,7 +750,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
             ) : <EmptyState loading={loading.news} query={submittedQuery} />
           ) : null}
 
-          {/* Finance tab */}
+          {/* ── Finance tab ──────────────────────────────────────────────── */}
           {activeTab === 'finance' ? (
             results.finance.length > 0 ? (
               <FlatList data={results.finance} keyExtractor={(_, i) => `fin-${i}`}
@@ -718,14 +759,18 @@ export function SearchEngine({ topPad }: { topPad: number }) {
                 keyboardShouldPersistTaps="handled" />
             ) : <EmptyState loading={loading.finance} query={submittedQuery} />
           ) : null}
+
         </View>
       ) : null}
 
-      {/* Bottom search bar */}
+      {/* ── Bottom bar ───────────────────────────────────────────────────────
+           On the AI tab this becomes a chat input; everywhere else it's the
+           search bar. Keeps the same visual footprint so layout doesn't jump. */}
       <View style={[s.bottomWrap, { paddingBottom: insets.bottom + 10 }]}>
+
+        {/* Search suggestions (hidden on AI tab) */}
         {shouldShowSuggestions ? (
           <View style={[s.suggestionsFloating, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            {/* Domain chip */}
             {potentialDomain ? (
               <Pressable
                 style={({ pressed }) => [s.suggestionRow, s.domainRow, { borderBottomColor: colors.border },
@@ -741,7 +786,6 @@ export function SearchEngine({ topPad }: { topPad: number }) {
                 <Ionicons name="arrow-forward" size={15} color={colors.mutedForeground} />
               </Pressable>
             ) : null}
-            {/* Autocomplete suggestions */}
             {suggestions.map((sug, i) => (
               <Pressable key={i}
                 style={({ pressed }) => [s.suggestionRow, { borderBottomColor: colors.border },
@@ -758,43 +802,81 @@ export function SearchEngine({ topPad }: { topPad: number }) {
           </View>
         ) : null}
 
-        <View style={s.searchRow}>
-          <View style={[s.searchBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Ionicons name="search-outline" size={18} color={colors.mutedForeground} style={s.searchIcon} />
-            <TextInput
-              ref={inputRef}
-              style={[s.searchInput, { color: colors.foreground }]}
-              placeholder="Search or enter a site…"
-              placeholderTextColor={colors.mutedForeground}
-              value={query}
-              onChangeText={(t) => {
-                setQuery(t);
-                if (!t.trim()) { setSubmittedQuery(''); setResults(empty); setLoading(notLoading); }
-              }}
-              onFocus={() => setInputFocused(true)}
-              onBlur={() => setTimeout(() => setInputFocused(false), 150)}
-              onSubmitEditing={() => doSearch(query)}
-              returnKeyType="search"
-              autoCapitalize="none"
-              autoCorrect={false}
-              clearButtonMode="never"
-            />
-            {query.length > 0 ? (
-              <Pressable onPress={() => {
-                setQuery(''); setSubmittedQuery(''); setSuggestions([]);
-                setShowSuggestions(false); setResults(empty); setLoading(notLoading);
-                inputRef.current?.focus();
-              }} hitSlop={8} style={s.clearBtn}>
-                <Ionicons name="close-circle" size={17} color={colors.mutedForeground} />
+        {/* ── AI chat input (only when on AI tab with an active search) ── */}
+        {isAiTab ? (
+          <View style={s.searchRow}>
+            <View style={[s.searchBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Ionicons name="sparkles-outline" size={17} color={colors.mutedForeground} style={s.searchIcon} />
+              <TextInput
+                ref={aiInputRef}
+                style={[s.searchInput, { color: colors.foreground }]}
+                placeholder="Ask a follow-up…"
+                placeholderTextColor={colors.mutedForeground}
+                value={aiInput}
+                onChangeText={setAiInput}
+                onSubmitEditing={handleAiSend}
+                returnKeyType="send"
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!aiStreaming}
+              />
+              {aiInput.length > 0 ? (
+                <Pressable onPress={() => setAiInput('')} hitSlop={8} style={s.clearBtn}>
+                  <Ionicons name="close-circle" size={17} color={colors.mutedForeground} />
+                </Pressable>
+              ) : null}
+            </View>
+            <Pressable
+              style={[s.goBtn, { backgroundColor: aiStreaming ? colors.card : colors.foreground }]}
+              onPress={handleAiSend}
+              disabled={aiStreaming || !aiInput.trim()}>
+              {aiStreaming ? (
+                <ActivityIndicator size="small" color={colors.mutedForeground} />
+              ) : (
+                <Ionicons name="arrow-up" size={18} color={colors.background} />
+              )}
+            </Pressable>
+          </View>
+        ) : (
+          /* ── Normal search bar ─────────────────────────────────────── */
+          <View style={s.searchRow}>
+            <View style={[s.searchBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Ionicons name="search-outline" size={18} color={colors.mutedForeground} style={s.searchIcon} />
+              <TextInput
+                ref={inputRef}
+                style={[s.searchInput, { color: colors.foreground }]}
+                placeholder="Search or enter a site…"
+                placeholderTextColor={colors.mutedForeground}
+                value={query}
+                onChangeText={(t) => {
+                  setQuery(t);
+                  if (!t.trim()) { setSubmittedQuery(''); setResults(empty); setLoading(notLoading); }
+                }}
+                onFocus={() => setInputFocused(true)}
+                onBlur={() => setTimeout(() => setInputFocused(false), 150)}
+                onSubmitEditing={() => doSearch(query)}
+                returnKeyType="search"
+                autoCapitalize="none"
+                autoCorrect={false}
+                clearButtonMode="never"
+              />
+              {query.length > 0 ? (
+                <Pressable onPress={() => {
+                  setQuery(''); setSubmittedQuery(''); setSuggestions([]);
+                  setShowSuggestions(false); setResults(empty); setLoading(notLoading);
+                  inputRef.current?.focus();
+                }} hitSlop={8} style={s.clearBtn}>
+                  <Ionicons name="close-circle" size={17} color={colors.mutedForeground} />
+                </Pressable>
+              ) : null}
+            </View>
+            {query.trim() ? (
+              <Pressable style={[s.goBtn, { backgroundColor: colors.foreground }]} onPress={() => doSearch(query)}>
+                <Ionicons name="arrow-forward" size={18} color={colors.background} />
               </Pressable>
             ) : null}
           </View>
-          {query.trim() ? (
-            <Pressable style={[s.goBtn, { backgroundColor: colors.foreground }]} onPress={() => doSearch(query)}>
-              <Ionicons name="arrow-forward" size={18} color={colors.background} />
-            </Pressable>
-          ) : null}
-        </View>
+        )}
       </View>
 
       <InAppBrowser url={browserUrl} onClose={() => setBrowserUrl(null)}
@@ -806,10 +888,12 @@ export function SearchEngine({ topPad }: { topPad: number }) {
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
-  root: { flex: 1 },
+  root:   { flex: 1 },
+  flex:   { flex: 1 },
+  // Used to keep the AI view in the tree (preserves state) but invisible
+  hidden: { position: 'absolute', width: 0, height: 0, overflow: 'hidden', opacity: 0 },
 
   // Landing
-  landingScroll: { flex: 1 },
   landingContent: { flexGrow: 1 },
   landingHero: { alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 40, paddingTop: 60, paddingBottom: 32 },
   landingIcon: { width: 72, height: 72, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.05)', marginBottom: 4 },
@@ -826,9 +910,6 @@ const s = StyleSheet.create({
   historyRowText: { flex: 1, fontSize: 14, fontFamily: 'Inter_400Regular' },
   historyRowDelete: { flexShrink: 0, padding: 4 },
 
-  // Results container
-  results: { flex: 1 },
-
   // Tab bar
   tabBar: { height: 44, flexShrink: 0, borderBottomWidth: StyleSheet.hairlineWidth },
   tabBarContent: { paddingHorizontal: 12, gap: 4 },
@@ -838,19 +919,40 @@ const s = StyleSheet.create({
   tabLabelActive: { fontFamily: 'Inter_600SemiBold' },
   tabUnderline: { height: 2, width: '100%', borderRadius: 1, marginTop: -1 },
 
+  // AI chat
+  aiChatPad: { paddingTop: 6, paddingHorizontal: 14, paddingBottom: 8 },
+
+  // User bubble (right-aligned)
+  aiUserRow: { alignItems: 'flex-end', marginBottom: 16 },
+  aiUserBubble: { maxWidth: '80%', borderRadius: 18, borderBottomRightRadius: 5, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 14, paddingVertical: 10 },
+  aiUserText: { fontSize: 15, fontFamily: 'Inter_400Regular', lineHeight: 22 },
+
+  // Assistant message (left-aligned, no bubble — clean prose)
+  aiAssistantRow: { marginBottom: 20 },
+  aiAssistantHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  aiAssistantLabel: { fontSize: 13, fontFamily: 'Inter_600SemiBold' },
+  aiAssistantText: { fontSize: 15, fontFamily: 'Inter_400Regular', lineHeight: 24 },
+
+  // Sources
+  aiSourcesWrap: { marginTop: 14 },
+  aiSourcesLabel: { fontSize: 11, fontFamily: 'Inter_600SemiBold', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 8 },
+  aiSourceChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  aiSourceChip: { flexDirection: 'row', alignItems: 'center', gap: 5, maxWidth: 160, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 10, paddingVertical: 6 },
+  aiSourceText: { fontSize: 11, fontFamily: 'Inter_400Regular' },
+
+  // AI error
+  aiErrorWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingBottom: 80, paddingHorizontal: 40 },
+  aiErrorText: { fontSize: 14, fontFamily: 'Inter_400Regular', textAlign: 'center', lineHeight: 20 },
+
   // Mixed feed
   mixedPad: { paddingBottom: 32 },
-
-  // Section headers in mixed feed
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
   sectionHeaderText: { fontSize: 11, fontFamily: 'Inter_600SemiBold', letterSpacing: 0.5, textTransform: 'uppercase' },
-
-  // More results divider
   moreDivider: { paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
   moreDividerText: { fontSize: 11, fontFamily: 'Inter_500Medium', letterSpacing: 0.3 },
 
   // Official site card
-  officialCard: { marginHorizontal: 16, marginTop: 12, marginBottom: 4, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, padding: 14, gap: 4 },
+  officialCard: { marginHorizontal: 16, marginTop: 10, marginBottom: 2, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, padding: 14, gap: 4 },
   officialHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
   officialIconWrap: { width: 24, height: 24, borderRadius: 6, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   officialHost: { flex: 1, fontSize: 11, fontFamily: 'Inter_400Regular' },
@@ -886,7 +988,6 @@ const s = StyleSheet.create({
 
   // Video cards
   videoCard: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 14, gap: 12, borderBottomWidth: StyleSheet.hairlineWidth },
-  videoCardCompact: { paddingVertical: 12 },
   videoThumbWrap: { position: 'relative', flexShrink: 0 },
   videoThumb: { width: 130, height: 78, borderRadius: 8, backgroundColor: '#111' },
   videoThumbFallback: { alignItems: 'center', justifyContent: 'center' },
@@ -897,33 +998,17 @@ const s = StyleSheet.create({
   videoMeta: { fontSize: 12, fontFamily: 'Inter_400Regular' },
   videoAge: { fontSize: 11, fontFamily: 'Inter_400Regular' },
 
-  // News cards
+  // News / Finance cards
   newsCard: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 14, gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, alignItems: 'flex-start' },
   newsContent: { flex: 1, gap: 4 },
   newsSource: { fontSize: 11, fontFamily: 'Inter_400Regular' },
   newsTitle: { fontSize: 15, fontFamily: 'Inter_600SemiBold', lineHeight: 20 },
   newsDesc: { fontSize: 12, fontFamily: 'Inter_400Regular', lineHeight: 17 },
   newsThumb: { width: 80, height: 80, borderRadius: 8, flexShrink: 0 },
-
-  // Finance cards
   financeSourceRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   financeBadge: { borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1, backgroundColor: 'rgba(34,197,94,0.2)' },
   financeBadgeWeb: { backgroundColor: 'rgba(99,102,241,0.2)' },
   financeBadgeText: { fontSize: 9, fontFamily: 'Inter_700Bold', color: 'white', letterSpacing: 0.5 },
-
-  // AI tab
-  aiPad: { padding: 16, paddingBottom: 32 },
-  aiCard: { borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, padding: 16, gap: 10 },
-  aiCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  aiCardTitle: { fontSize: 13, fontFamily: 'Inter_600SemiBold', letterSpacing: 0.2, flex: 1 },
-  aiSpinner: { flexShrink: 0 },
-  aiAnswer: { fontSize: 15, fontFamily: 'Inter_400Regular', lineHeight: 24 },
-  aiSourcesLabel: { fontSize: 11, fontFamily: 'Inter_600SemiBold', letterSpacing: 0.5, textTransform: 'uppercase', marginTop: 16, marginBottom: 8 },
-  aiSourcesWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  aiSourceChip: { flexDirection: 'row', alignItems: 'center', gap: 5, maxWidth: 160, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 10, paddingVertical: 6 },
-  aiSourceText: { fontSize: 11, fontFamily: 'Inter_400Regular' },
-  aiError: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingBottom: 80, paddingHorizontal: 40 },
-  aiErrorText: { fontSize: 14, fontFamily: 'Inter_400Regular', textAlign: 'center', lineHeight: 20 },
 
   // Bottom bar
   bottomWrap: { paddingHorizontal: 16, paddingTop: 8 },
@@ -940,8 +1025,6 @@ const s = StyleSheet.create({
   suggestionIcon: { flexShrink: 0 },
   suggestionText: { flex: 1, fontSize: 14, fontFamily: 'Inter_400Regular' },
   fillBtn: { flexShrink: 0, padding: 4 },
-
-  // Domain chip
   domainRow: { paddingVertical: 11, gap: 12 },
   domainIconWrap: { width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   domainTextCol: { flex: 1, gap: 1 },
