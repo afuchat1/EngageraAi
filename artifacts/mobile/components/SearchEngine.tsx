@@ -218,6 +218,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
   const [results, setResults] = useState<SearchResults>(empty);
   const [loading, setLoading] = useState<LoadingState>(notLoading);
   const [browserUrl, setBrowserUrl] = useState<string | null>(null);
+  const searchIdRef = useRef(0);
 
   // ── Real-time suggestions ──────────────────────────────────────────────────
   useEffect(() => {
@@ -242,8 +243,15 @@ export function SearchEngine({ topPad }: { topPad: number }) {
     const trimmed = q.trim();
     if (!trimmed) return;
 
+    // Guard against out-of-order responses: if the user fires off another
+    // search before this one resolves, this call's results must not clobber
+    // the newer one's state.
+    const myId = ++searchIdRef.current;
+    const isStale = () => searchIdRef.current !== myId;
+
     // A bare domain (e.g. "afuchat.com") is opened directly — no search step.
     const domainUrl = await resolveDomain(trimmed);
+    if (isStale()) return;
     if (domainUrl) {
       setQuery('');
       setSubmittedQuery('');
@@ -270,6 +278,8 @@ export function SearchEngine({ topPad }: { topPad: number }) {
       fetchNewsResults(trimmed, ''),
       fetchFinanceResults(trimmed),
     ]);
+
+    if (isStale()) return;
 
     setResults({
       web: web.status === 'fulfilled' ? web.value.results : [],

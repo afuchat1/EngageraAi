@@ -7,7 +7,7 @@
  * Bing, Google, Brave, or DuckDuckGo anywhere in this file — every result
  * comes from a page AfuBot actually fetched and read.
  */
-import { SEEDS, type Seed } from "./seeds";
+import { SEEDS, UNIVERSAL_SEED_NAMES, type Seed } from "./seeds";
 import {
   extractTitle,
   extractMeta,
@@ -141,32 +141,45 @@ export async function crawl(query: string): Promise<CrawledPage[]> {
 
   const tokens = tokenize(query);
 
-  // 1. Pick which seeds AfuBot should visit for this query.
-  let candidateSeeds = SEEDS
+  // 1. Pick which seeds AfuBot should visit for this query: topical keyword
+  // matches, plus the universal reference seeds (Wikipedia etc.) every time
+  // so AfuBot can answer virtually any query, not just ones its curated
+  // keyword lists happen to recognize.
+  const byScore = SEEDS
     .map((s) => ({ seed: s, score: scoreSeed(s, tokens) }))
     .sort((a, b) => b.score - a.score);
-  const anyMatch = candidateSeeds.some((c) => c.score > 0);
-  candidateSeeds = anyMatch
-    ? candidateSeeds.filter((c) => c.score > 0).slice(0, 8)
-    : candidateSeeds.slice(0, 6); // generic fallback set — still a real crawl, just unguided by keywords
+  const topical = byScore.filter((c) => c.score > 0).slice(0, 6);
+  const chosenNames = new Set(topical.map((c) => c.seed.name));
+  const universal = SEEDS.filter((s) => UNIVERSAL_SEED_NAMES.includes(s.name) && !chosenNames.has(s.name));
+  const candidateSeeds = [...topical.map((c) => c.seed), ...universal];
 
-  // 2. Fetch each seed homepage directly.
+  // 2. Fetch each seed's own on-site search results for the query (falling
+  // back to its homepage if it has no search feature). This is still
+  // AfuBot reading one real site directly — never a third-party search API.
   const seedPages = await Promise.all(
-    candidateSeeds.map(async ({ seed }) => {
-      const html = await fetchHtml(seed.url);
+    candidateSeeds.map(async (seed) => {
+      const fetchUrl = seed.search ? seed.search(query) : seed.url;
+      const html = await fetchHtml(fetchUrl);
       if (!html) return null;
-      const page = await crawlOne(seed.url);
-      return page ? { page, html, seed } : null;
+      // A search-results page itself isn't a useful standalone result for
+      // "searchOnly" sites (it's just a listing) — only keep it as a page
+      // AfuBot can hop out from, not as a rankable result.
+      const page = seed.searchOnly ? null : await crawlOne(fetchUrl);
+      return { page, html, seed, fetchUrl };
     }),
   );
 
-  const validSeedPages = seedPages.filter((p): p is { page: CrawledPage; html: string; seed: Seed } => p !== null);
+  const validSeedPages = seedPages.filter(
+    (p): p is { page: CrawledPage | null; html: string; seed: Seed; fetchUrl: string } => p !== null,
+  );
 
-  // 3. From each seed homepage, follow the links most relevant to the query (one hop).
+  // 3. From each seed's search/homepage page, follow the links most relevant
+  // to the query (one hop) — this is where the actual matched content lives.
   const hop2Targets = new Set<string>();
-  for (const { html, seed } of validSeedPages) {
-    const links = extractLinks(html, seed.url, 250);
-    for (const href of pickRelevantLinks(links, seed.host, tokens, 3)) {
+  for (const { html, fetchUrl } of validSeedPages) {
+    const actualHost = hostOf(fetchUrl);
+    const links = extractLinks(html, fetchUrl, 250);
+    for (const href of pickRelevantLinks(links, actualHost, tokens, 4)) {
       if (hop2Targets.size < HOP2_LIMIT) hop2Targets.add(href);
     }
   }
@@ -174,7 +187,7 @@ export async function crawl(query: string): Promise<CrawledPage[]> {
   const hop2Pages = await Promise.all(Array.from(hop2Targets).map((url) => crawlOne(url)));
 
   const allPages = [
-    ...validSeedPages.map((p) => p.page),
+    ...validSeedPages.map((p) => p.page).filter((p): p is CrawledPage => p !== null),
     ...hop2Pages.filter((p): p is CrawledPage => p !== null),
   ];
 
@@ -191,9 +204,11 @@ export async function crawl(query: string): Promise<CrawledPage[]> {
 }
 
 export function toWebResults(pages: CrawledPage[], limit = 12) {
+  const relevant = pages.filter((p) => p.score > 0);
+  // Only fall back to "everything AfuBot visited" (even 0-scored) if nothing matched at all.
+  const pool = relevant.length > 0 ? relevant : pages;
   const seenHost = new Map<string, number>();
-  return pages
-    .filter((p) => p.score > 0 || pages.length <= 6)
+  return pool
     .sort((a, b) => b.score - a.score)
     .filter((p) => {
       const count = seenHost.get(p.host) ?? 0;
