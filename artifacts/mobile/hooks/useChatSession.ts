@@ -86,7 +86,11 @@ export function useChatSession(model: string, contextHint?: string) {
         return { role: m.role, content: m.text };
       });
 
-    setMessages((prev) => [...prev, userMessage, { id: assistantId, role: 'assistant', text: '', pending: true }]);
+    setMessages((prev) => [
+      ...prev,
+      userMessage,
+      { id: assistantId, role: 'assistant', text: '', pending: true, streaming: true },
+    ]);
     setInputText('');
     setPendingImage(null);
     setBusy(true);
@@ -138,6 +142,7 @@ export function useChatSession(model: string, contextHint?: string) {
         rafRef.current = null;
       }
       flush();
+      setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, streaming: false } : m)));
     } catch (err) {
       if (rafRef.current != null) {
         cancelAnimationFrame(rafRef.current);
@@ -156,7 +161,7 @@ export function useChatSession(model: string, contextHint?: string) {
             : err.message
           : 'Something went wrong. Please try again.';
       setMessages((prev) =>
-        prev.map((m) => (m.id === assistantId ? { ...m, text: message, pending: false } : m)),
+        prev.map((m) => (m.id === assistantId ? { ...m, text: message, pending: false, streaming: false } : m)),
       );
     } finally {
       setBusy(false);

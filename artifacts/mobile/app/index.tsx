@@ -57,7 +57,9 @@ export default function ChatScreen() {
     startNewConversation,
     loadConversation,
   } = session;
-  const lastIsPending = messages.length > 0 && messages[messages.length - 1].pending;
+  const lastMessage = messages.length > 0 ? messages[messages.length - 1] : undefined;
+  const lastIsPending = !!lastMessage?.pending;
+  const lastIsStreaming = !!lastMessage?.streaming;
 
   const handleNewChat = useCallback(() => {
     chatSession.startNewConversation();
@@ -132,7 +134,11 @@ export default function ChatScreen() {
             renderItem={({ item }) =>
               item.pending && item.text.length === 0 ? <TypingDots /> : <ChatBubble message={item} />
             }
-            onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
+            // While tokens are streaming in, snap to bottom without animating —
+            // re-triggering a spring/ease animation on every frame is what
+            // produces visible "shaking"; a hard jump keeps pace with the
+            // growing text smoothly instead.
+            onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: !lastIsStreaming })}
           />
         )}
 

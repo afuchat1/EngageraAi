@@ -4,13 +4,13 @@
     "slug": "mobile",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/logo.png",
     "scheme": "mobile",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#000000",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/icon.png",
+      "image": "./assets/images/logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#000000"
     },
@@ -21,12 +21,12 @@
       "package": "com.engagera.mobile",
       "backgroundColor": "#000000",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/icon.png",
+        "foregroundImage": "./assets/images/logo.png",
         "backgroundColor": "#000000"
       }
     },
     "web": {
-      "favicon": "./assets/images/icon.png"
+      "favicon": "./assets/images/logo.png"
     },
     "plugins": [
       [
