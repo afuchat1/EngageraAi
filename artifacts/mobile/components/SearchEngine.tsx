@@ -55,7 +55,7 @@ import {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type SearchTab = 'all' | 'ai' | 'images' | 'videos' | 'news' | 'finance';
+type SearchTab = 'all' | 'images' | 'videos' | 'news' | 'finance';
 
 interface AiMessage { role: 'user' | 'assistant'; content: string }
 interface AiSource  { title: string; url: string; host: string }
@@ -81,7 +81,6 @@ const AI_CONTEXT_HINT = [
 
 const TABS: { key: SearchTab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { key: 'all',     label: 'All',     icon: 'globe-outline'        },
-  { key: 'ai',      label: 'AI',      icon: 'sparkles-outline'     },
   { key: 'images',  label: 'Images',  icon: 'images-outline'       },
   { key: 'videos',  label: 'Videos',  icon: 'play-circle-outline'  },
   { key: 'news',    label: 'News',    icon: 'newspaper-outline'    },
@@ -166,10 +165,10 @@ function Favicon({ uri, size = 15 }: { uri: string; size?: number }) {
 // ── AI Overview Card ──────────────────────────────────────────────────────────
 
 function AiOverviewCard({
-  messages, streaming, error, sources, onOpenBrowser, onGoToAiTab,
+  messages, streaming, error, sources, onOpenBrowser,
 }: {
   messages: AiMessage[]; streaming: boolean; error: string;
-  sources: AiSource[]; onOpenBrowser: (url: string) => void; onGoToAiTab: () => void;
+  sources: AiSource[]; onOpenBrowser: (url: string) => void;
 }) {
   const colors = useColors();
   const assistantMsg = messages.find((m) => m.role === 'assistant');
@@ -243,14 +242,6 @@ function AiOverviewCard({
         </View>
       ) : null}
 
-      {/* Footer CTA */}
-      {!streaming && text ? (
-        <Pressable style={[aio.cta, { borderTopColor: colors.border }]} onPress={onGoToAiTab}>
-          <Ionicons name="chatbubble-ellipses-outline" size={13} color={colors.mutedForeground} />
-          <Text style={[aio.ctaText, { color: colors.mutedForeground }]}>Continue researching with AI</Text>
-          <Ionicons name="arrow-forward" size={13} color={colors.mutedForeground} />
-        </Pressable>
-      ) : null}
     </View>
   );
 }
@@ -267,8 +258,6 @@ const aio = StyleSheet.create({
   sourceChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth },
   sourceNum: { fontSize: 10, fontFamily: 'Inter_700Bold' },
   sourceText: { fontSize: 11, fontFamily: 'Inter_400Regular', maxWidth: 100 },
-  cta: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth },
-  ctaText: { fontSize: 12, fontFamily: 'Inter_500Medium', flex: 1 },
 });
 
 // ── Web Result Card ───────────────────────────────────────────────────────────
@@ -595,12 +584,11 @@ const osc = StyleSheet.create({
 // ── All Feed ──────────────────────────────────────────────────────────────────
 
 function AllFeed({
-  results, officialSiteUrl, loading, query, aiMessages, aiStreaming, aiError, aiSources,
-  onPress, onGoToAiTab,
+  results, officialSiteUrl, loading, query, aiMessages, aiStreaming, aiError, aiSources, onPress,
 }: {
   results: SearchResults; officialSiteUrl: string | null; loading: LoadingState; query: string;
   aiMessages: AiMessage[]; aiStreaming: boolean; aiError: string; aiSources: AiSource[];
-  onPress: (url: string) => void; onGoToAiTab: () => void;
+  onPress: (url: string) => void;
 }) {
   const colors = useColors();
   const anyLoading = loading.web || loading.images;
@@ -638,7 +626,7 @@ function AllFeed({
       {/* AI Overview */}
       <AiOverviewCard
         messages={aiMessages} streaming={aiStreaming} error={aiError}
-        sources={aiSources} onOpenBrowser={onPress} onGoToAiTab={onGoToAiTab} />
+        sources={aiSources} onOpenBrowser={onPress} />
 
       {/* Official site */}
       {officialSiteUrl ? <OfficialSiteCard url={officialSiteUrl} onPress={onPress} /> : null}
@@ -703,181 +691,6 @@ const g = StyleSheet.create({
   emptyText: { fontSize: 14, fontFamily: 'Inter_400Regular' },
 });
 
-// ── AI Research Tab ───────────────────────────────────────────────────────────
-
-function AiResearchTab({
-  messages, streaming, error, sources, followInput, setFollowInput, onSend, onOpenBrowser,
-}: {
-  messages: AiMessage[]; streaming: boolean; error: string; sources: AiSource[];
-  followInput: string; setFollowInput: (v: string) => void;
-  onSend: () => void; onOpenBrowser: (url: string) => void;
-}) {
-  const colors = useColors();
-  const insets = useSafeAreaInsets();
-  const listRef = useRef<FlatList>(null);
-  const cursorAnim = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    if (!streaming) { cursorAnim.setValue(1); return; }
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(cursorAnim, { toValue: 0, duration: 500, useNativeDriver: true }),
-        Animated.timing(cursorAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [streaming, cursorAnim]);
-
-  if (error && messages.length === 0) return (
-    <View style={art.error}>
-      <Ionicons name="alert-circle-outline" size={30} color={colors.mutedForeground} />
-      <Text style={[art.errorText, { color: colors.mutedForeground }]}>{error}</Text>
-    </View>
-  );
-
-  const renderItem = ({ item: msg, index: i }: { item: AiMessage; index: number }) => {
-    if (msg.role === 'user') return (
-      <View style={art.userRow}>
-        <View style={[art.userBubble, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[art.userText, { color: colors.foreground }]}>{msg.content}</Text>
-        </View>
-      </View>
-    );
-
-    const isLast = i === messages.length - 1;
-    const showHeader = i === 1 || (i > 1 && messages[i - 1]?.role === 'user');
-    return (
-      <View style={art.assistantRow}>
-        {showHeader ? (
-          <View style={art.assistantHeader}>
-            <View style={[art.assistantIcon, { backgroundColor: 'rgba(255,255,255,0.1)' }]}>
-              <Ionicons name="sparkles" size={11} color={colors.foreground} />
-            </View>
-            <Text style={[art.assistantLabel, { color: colors.foreground }]}>Engagera AI</Text>
-            {streaming && isLast ? (
-              <ActivityIndicator size="small" color={colors.mutedForeground} style={{ transform: [{ scale: 0.7 }] }} />
-            ) : null}
-          </View>
-        ) : null}
-
-        {msg.content ? (
-          <Text style={[art.assistantText, { color: colors.foreground }]}>
-            {msg.content}
-            {streaming && isLast ? (
-              <Animated.Text style={{ opacity: cursorAnim, color: colors.foreground }}> ▋</Animated.Text>
-            ) : null}
-          </Text>
-        ) : streaming && isLast ? (
-          <View style={{ gap: 6 }}>
-            <SkeletonBox height={12} radius={4} />
-            <SkeletonBox width="80%" height={12} radius={4} />
-          </View>
-        ) : null}
-
-        {/* Numbered citations */}
-        {!streaming && isLast && sources.length > 0 ? (
-          <View style={art.citations}>
-            <Text style={[art.citationsLabel, { color: colors.mutedForeground }]}>Sources</Text>
-            {sources.map((src, si) => (
-              <Pressable key={si}
-                style={[art.citation, { backgroundColor: colors.card, borderColor: colors.border }]}
-                onPress={() => onOpenBrowser(src.url)}>
-                <View style={[art.citationNum, { backgroundColor: colors.background }]}>
-                  <Text style={[art.citationNumText, { color: colors.mutedForeground }]}>{si + 1}</Text>
-                </View>
-                <View style={art.citationInfo}>
-                  <Text style={[art.citationTitle, { color: colors.foreground }]} numberOfLines={1}>
-                    {src.title || src.host}
-                  </Text>
-                  <Text style={[art.citationHost, { color: colors.mutedForeground }]} numberOfLines={1}>{src.host}</Text>
-                </View>
-                <Ionicons name="open-outline" size={13} color={colors.mutedForeground} />
-              </Pressable>
-            ))}
-          </View>
-        ) : null}
-      </View>
-    );
-  };
-
-  return (
-    <View style={{ flex: 1 }}>
-      <FlatList
-        ref={listRef}
-        data={messages}
-        keyExtractor={(_, i) => `ai-msg-${i}`}
-        renderItem={renderItem}
-        style={{ flex: 1 }}
-        contentContainerStyle={art.content}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        onContentSizeChange={() => { if (streaming) listRef.current?.scrollToEnd({ animated: true }); }}
-        ListFooterComponent={<View style={{ height: 8 }} />}
-      />
-
-      {/* Follow-up input */}
-      <View style={[art.inputWrap, { paddingBottom: insets.bottom + 12, borderTopColor: colors.border }]}>
-        <View style={[art.inputBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Ionicons name="sparkles-outline" size={16} color={colors.mutedForeground} />
-          <TextInput
-            style={[art.input, { color: colors.foreground }]}
-            placeholder="Ask a follow-up…"
-            placeholderTextColor={colors.mutedForeground}
-            value={followInput}
-            onChangeText={setFollowInput}
-            onSubmitEditing={onSend}
-            returnKeyType="send"
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!streaming}
-          />
-          {followInput.length > 0 ? (
-            <Pressable onPress={() => setFollowInput('')} hitSlop={8}>
-              <Ionicons name="close-circle" size={16} color={colors.mutedForeground} />
-            </Pressable>
-          ) : null}
-        </View>
-        <Pressable
-          style={[art.sendBtn, { backgroundColor: streaming ? colors.card : colors.foreground }]}
-          onPress={onSend}
-          disabled={streaming || !followInput.trim()}>
-          {streaming ? (
-            <ActivityIndicator size="small" color={colors.mutedForeground} />
-          ) : (
-            <Ionicons name="arrow-up" size={18} color={colors.background} />
-          )}
-        </Pressable>
-      </View>
-    </View>
-  );
-}
-
-const art = StyleSheet.create({
-  content: { paddingTop: 16, paddingHorizontal: 16, paddingBottom: 12 },
-  userRow: { alignItems: 'flex-end', marginBottom: 20 },
-  userBubble: { maxWidth: '82%', borderRadius: 18, borderBottomRightRadius: 4, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 14, paddingVertical: 10 },
-  userText: { fontSize: 15, fontFamily: 'Inter_400Regular', lineHeight: 22 },
-  assistantRow: { marginBottom: 24 },
-  assistantHeader: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 10 },
-  assistantIcon: { width: 20, height: 20, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
-  assistantLabel: { fontSize: 13, fontFamily: 'Inter_600SemiBold', flex: 1 },
-  assistantText: { fontSize: 15, fontFamily: 'Inter_400Regular', lineHeight: 25 },
-  citations: { marginTop: 16, gap: 8 },
-  citationsLabel: { fontSize: 11, fontFamily: 'Inter_600SemiBold', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 4 },
-  citation: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, padding: 10 },
-  citationNum: { width: 22, height: 22, borderRadius: 7, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  citationNumText: { fontSize: 11, fontFamily: 'Inter_700Bold' },
-  citationInfo: { flex: 1 },
-  citationTitle: { fontSize: 13, fontFamily: 'Inter_600SemiBold' },
-  citationHost: { fontSize: 11, fontFamily: 'Inter_400Regular' },
-  error: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 40, paddingBottom: 80 },
-  errorText: { fontSize: 14, fontFamily: 'Inter_400Regular', textAlign: 'center', lineHeight: 20 },
-  inputWrap: { flexDirection: 'row', gap: 8, paddingHorizontal: 14, paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth },
-  inputBar: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, height: 46, borderRadius: 23, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 14 },
-  input: { flex: 1, fontSize: 15, fontFamily: 'Inter_400Regular', padding: 0 },
-  sendBtn: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-});
 
 // ── Landing ───────────────────────────────────────────────────────────────────
 
@@ -1021,12 +834,11 @@ export function SearchEngine({ topPad }: { topPad: number }) {
   const [history, setHistory]           = useState<SearchHistoryItem[]>([]);
   const searchIdRef = useRef(0);
 
-  // AI state — lives here so it persists across tab switches
+  // AI state — for the inline AI overview card in the All tab
   const [aiMessages, setAiMessages]   = useState<AiMessage[]>([]);
   const [aiSources, setAiSources]     = useState<AiSource[]>([]);
   const [aiStreaming, setAiStreaming]  = useState(false);
   const [aiError, setAiError]         = useState('');
-  const [aiInput, setAiInput]         = useState('');
   const aiAbortRef = useRef<AbortController | null>(null);
   const aiInitRef  = useRef('');
 
@@ -1089,16 +901,6 @@ export function SearchEngine({ topPad }: { topPad: number }) {
     startAiStream([{ role: 'user', content: submittedQuery }]);
   }, [submittedQuery, startAiStream]);
 
-  // Follow-up send
-  const handleAiSend = useCallback(() => {
-    const text = aiInput.trim();
-    if (!text || aiStreaming) return;
-    setAiInput('');
-    Keyboard.dismiss();
-    const userMsg: AiMessage = { role: 'user', content: text };
-    startAiStream([...aiMessages, userMsg]);
-  }, [aiInput, aiMessages, aiStreaming, startAiStream]);
-
   // Main search
   const doSearch = useCallback(async (q: string) => {
     const trimmed = q.trim();
@@ -1115,7 +917,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
 
     aiAbortRef.current?.abort();
     aiInitRef.current = '';
-    setAiMessages([]); setAiSources([]); setAiStreaming(false); setAiError(''); setAiInput('');
+    setAiMessages([]); setAiSources([]); setAiStreaming(false); setAiError('');
 
     setQuery(trimmed); setSubmitted(trimmed);
     setShowSug(false); setSuggestions([]);
@@ -1276,14 +1078,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
               loading={loading} query={submittedQuery}
               aiMessages={aiMessages} aiStreaming={aiStreaming}
               aiError={aiError} aiSources={aiSources}
-              onPress={openBrowser} onGoToAiTab={() => setActiveTab('ai')} />
-          ) : null}
-
-          {activeTab === 'ai' ? (
-            <AiResearchTab
-              messages={aiMessages} streaming={aiStreaming} error={aiError}
-              sources={aiSources} followInput={aiInput} setFollowInput={setAiInput}
-              onSend={handleAiSend} onOpenBrowser={openBrowser} />
+              onPress={openBrowser} />
           ) : null}
 
           {activeTab === 'images' ? (
