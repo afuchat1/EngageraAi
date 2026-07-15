@@ -1,6 +1,5 @@
 import React, { useCallback, useRef, useState } from 'react';
 import {
-  Linking,
   Modal,
   Platform,
   Pressable,
@@ -18,9 +17,16 @@ import { useColors } from '@/hooks/useColors';
 interface Props {
   url: string | null;
   onClose: () => void;
+  /** Called when the address bar is given plain search text (not a URL) — runs an AfuBot search instead of leaving the app. */
+  onSearchFallback?: (query: string) => void;
 }
 
-export function InAppBrowser({ url, onClose }: Props) {
+/**
+ * Engagera's own in-app browser. Every link tapped anywhere in the Lab
+ * search experience opens here, inside a WebView we control — never in
+ * an external browser app.
+ */
+export function InAppBrowser({ url, onClose, onSearchFallback }: Props) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const webViewRef = useRef<WebView>(null);
@@ -50,25 +56,24 @@ export function InAppBrowser({ url, onClose }: Props) {
   }, [editingUrl]);
 
   const handleUrlSubmit = () => {
-    let target = urlBarText.trim();
+    const target = urlBarText.trim();
     if (!target) return;
-    if (!/^https?:\/\//i.test(target)) {
-      target = target.includes('.') && !target.includes(' ')
-        ? `https://${target}`
-        : `https://www.google.com/search?q=${encodeURIComponent(target)}`;
-    }
     setEditingUrl(false);
-    webViewRef.current?.injectJavaScript(`window.location.href = ${JSON.stringify(target)};`);
+    const isUrlLike = /^https?:\/\//i.test(target) || (target.includes('.') && !target.includes(' '));
+    if (isUrlLike) {
+      const dest = /^https?:\/\//i.test(target) ? target : `https://${target}`;
+      webViewRef.current?.injectJavaScript(`window.location.href = ${JSON.stringify(dest)};`);
+      return;
+    }
+    // Plain text, not a URL — hand it back to AfuBot's own search instead of
+    // ever navigating to a third-party search engine.
+    onSearchFallback?.(target);
   };
 
   const handleShare = async () => {
     try {
       await Share.share({ url: currentUrl, message: currentUrl });
     } catch { /**/ }
-  };
-
-  const handleOpenExternal = () => {
-    Linking.openURL(currentUrl).catch(() => {});
   };
 
   if (!url) return null;
@@ -148,10 +153,6 @@ export function InAppBrowser({ url, onClose }: Props) {
 
           <Pressable onPress={handleShare} hitSlop={8} style={styles.navBtn}>
             <Ionicons name={Platform.OS === 'ios' ? 'share-outline' : 'share-social-outline'} size={20} color={colors.foreground} />
-          </Pressable>
-
-          <Pressable onPress={handleOpenExternal} hitSlop={8} style={styles.navBtn}>
-            <Ionicons name="open-outline" size={18} color={colors.foreground} />
           </Pressable>
 
           <Pressable onPress={onClose} hitSlop={8} style={styles.navBtn}>

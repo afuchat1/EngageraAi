@@ -12,6 +12,7 @@ import {
   Dimensions,
   FlatList,
   Image,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -19,6 +20,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
@@ -30,6 +32,7 @@ import {
   fetchVideoResults,
   fetchNewsResults,
   fetchFinanceResults,
+  resolveDomain,
   type WebResult,
   type ImageResult,
   type VideoResult,
@@ -233,13 +236,25 @@ export function SearchEngine({ topPad }: { topPad: number }) {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [query]);
 
-  // ── Search (two-phase) ────────────────────────────────────────────────────
-  // Phase 1: web + finance in parallel (finance is self-contained).
-  //          Web response includes a vqd session token from DuckDuckGo.
-  // Phase 2: images / videos / news in parallel using that vqd token.
+  // ── Search ─────────────────────────────────────────────────────────────────
+  // AfuBot crawls once per query (cached briefly server-side) and all five
+  // result types are read off that same crawl, so they can all run in parallel.
   const doSearch = useCallback(async (q: string) => {
     const trimmed = q.trim();
     if (!trimmed) return;
+
+    // A bare domain (e.g. "afuchat.com") is opened directly — no search step.
+    const domainUrl = await resolveDomain(trimmed);
+    if (domainUrl) {
+      setQuery('');
+      setSubmittedQuery('');
+      setShowSuggestions(false);
+      setSuggestions([]);
+      inputRef.current?.blur();
+      setBrowserUrl(domainUrl);
+      return;
+    }
+
     setQuery(trimmed);
     setSubmittedQuery(trimmed);
     setShowSuggestions(false);
@@ -249,33 +264,21 @@ export function SearchEngine({ topPad }: { topPad: number }) {
     setLoading(allLoading);
     inputRef.current?.blur();
 
-    // Phase 1 — web (needed for vqd) + finance
-    const [webRes, financeRes] = await Promise.allSettled([
+    const [web, images, videos, news, finance] = await Promise.allSettled([
       fetchWebResults(trimmed),
+      fetchImageResults(trimmed, ''),
+      fetchVideoResults(trimmed, ''),
+      fetchNewsResults(trimmed, ''),
       fetchFinanceResults(trimmed),
     ]);
 
-    const vqd = webRes.status === 'fulfilled' ? webRes.value.vqd : '';
-    setResults((prev) => ({
-      ...prev,
-      web: webRes.status === 'fulfilled' ? webRes.value.results : [],
-      finance: financeRes.status === 'fulfilled' ? financeRes.value : [],
-    }));
-    setLoading((prev) => ({ ...prev, web: false, finance: false }));
-
-    // Phase 2 — images / videos / news (all need the vqd token from web)
-    const [images, videos, news] = await Promise.allSettled([
-      fetchImageResults(trimmed, vqd),
-      fetchVideoResults(trimmed, vqd),
-      fetchNewsResults(trimmed, vqd),
-    ]);
-
-    setResults((prev) => ({
-      ...prev,
+    setResults({
+      web: web.status === 'fulfilled' ? web.value.results : [],
       images: images.status === 'fulfilled' ? images.value : [],
       videos: videos.status === 'fulfilled' ? videos.value : [],
       news: news.status === 'fulfilled' ? news.value : [],
-    }));
+      finance: finance.status === 'fulfilled' ? finance.value : [],
+    });
     setLoading(notLoading);
   }, []);
 
@@ -285,87 +288,12 @@ export function SearchEngine({ topPad }: { topPad: number }) {
   const hasSearch = submittedQuery.length > 0;
 
   return (
-    <View style={[styles.root, { paddingTop: topPad }]}>
-      {/* ── Search bar ──────────────────────────────────────────────────── */}
-      <View style={[styles.searchRow, { borderBottomColor: colors.border }]}>
-        <View style={[styles.searchBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Ionicons name="search-outline" size={18} color={colors.mutedForeground} style={styles.searchIcon} />
-          <TextInput
-            ref={inputRef}
-            style={[styles.searchInput, { color: colors.foreground }]}
-            placeholder="Search the web…"
-            placeholderTextColor={colors.mutedForeground}
-            value={query}
-            onChangeText={(t) => {
-              setQuery(t);
-              if (!t.trim()) {
-                setSubmittedQuery('');
-                setResults(empty);
-                setLoading(notLoading);
-              }
-            }}
-            onSubmitEditing={() => doSearch(query)}
-            returnKeyType="search"
-            autoCapitalize="none"
-            autoCorrect={false}
-            clearButtonMode="never"
-          />
-          {query.length > 0 ? (
-            <Pressable
-              onPress={() => {
-                setQuery('');
-                setSubmittedQuery('');
-                setSuggestions([]);
-                setShowSuggestions(false);
-                setResults(empty);
-                setLoading(notLoading);
-                inputRef.current?.focus();
-              }}
-              hitSlop={8}
-              style={styles.clearBtn}
-            >
-              <Ionicons name="close-circle" size={17} color={colors.mutedForeground} />
-            </Pressable>
-          ) : null}
-        </View>
-
-        {query.trim() ? (
-          <Pressable style={[styles.goBtn, { backgroundColor: colors.foreground }]} onPress={() => doSearch(query)}>
-            <Ionicons name="arrow-forward" size={18} color={colors.background} />
-          </Pressable>
-        ) : null}
-      </View>
-
-      {/* ── Suggestions ─────────────────────────────────────────────────── */}
-      {showSuggestions && !hasSearch ? (
-        <View style={[styles.suggestions, { backgroundColor: colors.background, borderColor: colors.border }]}>
-          {suggestions.map((s, i) => (
-            <Pressable
-              key={i}
-              style={({ pressed }) => [
-                styles.suggestionRow,
-                { borderBottomColor: colors.border },
-                pressed && { backgroundColor: colors.card },
-                i === suggestions.length - 1 && { borderBottomWidth: 0 },
-              ]}
-              onPress={() => doSearch(s)}
-            >
-              <Ionicons name="search-outline" size={14} color={colors.mutedForeground} style={styles.suggestionIcon} />
-              <Text style={[styles.suggestionText, { color: colors.foreground }]}>{s}</Text>
-              <Pressable
-                hitSlop={8}
-                onPress={() => { setQuery(s); inputRef.current?.focus(); }}
-                style={styles.fillBtn}
-              >
-                <Ionicons name="arrow-back-outline" size={14} color={colors.mutedForeground} />
-              </Pressable>
-            </Pressable>
-          ))}
-        </View>
-      ) : null}
-
+    <KeyboardAvoidingView
+      style={[styles.root, { paddingTop: topPad }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       {/* ── Empty landing ────────────────────────────────────────────────── */}
-      {!hasSearch && !showSuggestions ? (
+      {!hasSearch ? (
         <View style={styles.landing}>
           <View style={styles.landingIcon}>
             <Ionicons name="search" size={40} color={colors.mutedForeground} />
@@ -493,9 +421,92 @@ export function SearchEngine({ topPad }: { topPad: number }) {
         </View>
       ) : null}
 
-      {/* ── In-app browser ──────────────────────────────────────────────── */}
-      <InAppBrowser url={browserUrl} onClose={() => setBrowserUrl(null)} />
-    </View>
+      {/* ── Bottom search bar (matches Chat's input bar) ────────────────── */}
+      <View style={[styles.bottomWrap, { paddingBottom: insets.bottom + 10 }]}>
+        {showSuggestions && !hasSearch ? (
+          <View style={[styles.suggestionsFloating, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            {suggestions.map((s, i) => (
+              <Pressable
+                key={i}
+                style={({ pressed }) => [
+                  styles.suggestionRow,
+                  { borderBottomColor: colors.border },
+                  pressed && { backgroundColor: colors.background },
+                  i === suggestions.length - 1 && { borderBottomWidth: 0 },
+                ]}
+                onPress={() => doSearch(s)}
+              >
+                <Ionicons name="search-outline" size={14} color={colors.mutedForeground} style={styles.suggestionIcon} />
+                <Text style={[styles.suggestionText, { color: colors.foreground }]}>{s}</Text>
+                <Pressable
+                  hitSlop={8}
+                  onPress={() => { setQuery(s); inputRef.current?.focus(); }}
+                  style={styles.fillBtn}
+                >
+                  <Ionicons name="arrow-up-outline" size={14} color={colors.mutedForeground} />
+                </Pressable>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+
+        <View style={styles.searchRow}>
+          <View style={[styles.searchBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Ionicons name="search-outline" size={18} color={colors.mutedForeground} style={styles.searchIcon} />
+            <TextInput
+              ref={inputRef}
+              style={[styles.searchInput, { color: colors.foreground }]}
+              placeholder="Search the web or enter a site…"
+              placeholderTextColor={colors.mutedForeground}
+              value={query}
+              onChangeText={(t) => {
+                setQuery(t);
+                if (!t.trim()) {
+                  setSubmittedQuery('');
+                  setResults(empty);
+                  setLoading(notLoading);
+                }
+              }}
+              onSubmitEditing={() => doSearch(query)}
+              returnKeyType="search"
+              autoCapitalize="none"
+              autoCorrect={false}
+              clearButtonMode="never"
+            />
+            {query.length > 0 ? (
+              <Pressable
+                onPress={() => {
+                  setQuery('');
+                  setSubmittedQuery('');
+                  setSuggestions([]);
+                  setShowSuggestions(false);
+                  setResults(empty);
+                  setLoading(notLoading);
+                  inputRef.current?.focus();
+                }}
+                hitSlop={8}
+                style={styles.clearBtn}
+              >
+                <Ionicons name="close-circle" size={17} color={colors.mutedForeground} />
+              </Pressable>
+            ) : null}
+          </View>
+
+          {query.trim() ? (
+            <Pressable style={[styles.goBtn, { backgroundColor: colors.foreground }]} onPress={() => doSearch(query)}>
+              <Ionicons name="arrow-forward" size={18} color={colors.background} />
+            </Pressable>
+          ) : null}
+        </View>
+      </View>
+
+      {/* ── In-app browser (all links open here — never an external browser) ── */}
+      <InAppBrowser
+        url={browserUrl}
+        onClose={() => setBrowserUrl(null)}
+        onSearchFallback={(q) => { setBrowserUrl(null); doSearch(q); }}
+      />
+    </KeyboardAvoidingView>
   );
 }
 
@@ -504,23 +515,24 @@ export function SearchEngine({ topPad }: { topPad: number }) {
 const styles = StyleSheet.create({
   root: { flex: 1 },
 
-  // Search bar
+  // Bottom-anchored search bar (mirrors ChatInput's bottom pill treatment)
+  bottomWrap: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingBottom: 10,
     gap: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   searchBar: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    height: 42,
-    borderRadius: 12,
+    height: 46,
+    borderRadius: 23,
     borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     gap: 8,
   },
   searchIcon: { flexShrink: 0 },
@@ -535,18 +547,20 @@ const styles = StyleSheet.create({
     padding: 2,
   },
   goBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
 
-  // Suggestions
-  suggestions: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: 'transparent',
+  // Suggestions — float above the bottom search bar, like a dropdown.
+  suggestionsFloating: {
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: 8,
+    overflow: 'hidden',
   },
   suggestionRow: {
     flexDirection: 'row',
@@ -574,7 +588,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 12,
     paddingHorizontal: 40,
-    paddingBottom: 80,
   },
   landingIcon: {
     width: 72,

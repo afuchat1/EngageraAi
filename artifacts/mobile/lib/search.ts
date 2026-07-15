@@ -1,9 +1,9 @@
 /**
- * Search lib — proxied through the Engagera api-server.
+ * Search lib — talks to AfuBot, Engagera's own crawler, via the api-server.
  *
- * The api-server does all HTTP calls server-side (no bot-detection, no CORS),
- * sourcing results from Bing RSS, Google News RSS, and DuckDuckGo autocomplete.
- * No API keys required — this is own infrastructure.
+ * The api-server runs AfuBot server-side: it fetches real sites directly,
+ * follows links, and ranks results itself. No third-party search API
+ * (Bing, Google, Brave, DuckDuckGo) is used anywhere in this pipeline.
  */
 
 const BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api/search`;
@@ -15,6 +15,20 @@ async function req<T>(path: string, query: string): Promise<T> {
   });
   if (!res.ok) throw new Error(`Search ${path} failed (${res.status})`);
   return res.json();
+}
+
+// ── Domain detection ─────────────────────────────────────────────────────────────
+// If the input looks like a bare domain (e.g. "afuchat.com"), AfuBot should
+// open it directly in the in-app browser instead of running a search.
+
+export async function resolveDomain(query: string): Promise<string | null> {
+  if (!query.trim() || /\s/.test(query.trim())) return null;
+  try {
+    const data = await req<{ domainUrl: string | null }>('resolve', query);
+    return data.domainUrl ?? null;
+  } catch {
+    return null;
+  }
 }
 
 // ── Suggestions ────────────────────────────────────────────────────────────────
