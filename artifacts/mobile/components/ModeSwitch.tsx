@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
-import { Animated, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import * as Haptics from 'expo-haptics';
+import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import { hapticSelection } from '@/lib/haptics';
 import { useColors } from '@/hooks/useColors';
 
 export type ChatMode = 'chat' | 'lab';
@@ -26,7 +26,7 @@ export function ModeSwitch({ value, onChange }: { value: ChatMode; onChange: (mo
 
   const set = (mode: ChatMode) => {
     if (mode === value) return;
-    Haptics.selectionAsync();
+    hapticSelection();
     Animated.spring(anim, {
       toValue: mode === 'chat' ? 0 : 1,
       useNativeDriver: true,

@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { ActivityIndicator, Image, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
+import { hapticImpact } from '@/lib/haptics';
 
 export interface PendingImage {
   uri: string;
@@ -121,7 +121,7 @@ export function ChatInput({
         />
         <Pressable
           onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            hapticImpact();
             onSend();
           }}
           disabled={!canSend}

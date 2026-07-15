@@ -1,5 +1,5 @@
-import { useCallback, useRef, useState } from 'react';
-import * as Haptics from 'expo-haptics';
+import { useCallback, useState } from 'react';
+import { hapticError, hapticSuccess } from '@/lib/haptics';
 import { useAuth } from '@/hooks/useAuth';
 import {
   ChatMessage,
@@ -23,9 +23,25 @@ export function useChatSession(model: string, contextHint?: string) {
   const [busy, setBusy] = useState(false);
   const [guestCount, setGuestCount] = useState(0);
   const [guestBlocked, setGuestBlocked] = useState(false);
-  const conversationId = useRef<number | undefined>(undefined);
+  const [conversationId, setConversationId] = useState<number | undefined>(undefined);
 
   const remaining = Math.max(0, GUEST_MESSAGE_LIMIT - guestCount);
+
+  /** Resets to a fresh, empty conversation in this mode. */
+  const startNewConversation = useCallback(() => {
+    setMessages([]);
+    setConversationId(undefined);
+    setInputText('');
+    setPendingImage(null);
+  }, []);
+
+  /** Hydrates this session from a previously-saved conversation. */
+  const loadConversation = useCallback((id: number, history: DisplayMessage[]) => {
+    setConversationId(id);
+    setMessages(history);
+    setInputText('');
+    setPendingImage(null);
+  }, []);
 
   const send = useCallback(async () => {
     const text = inputText.trim();
@@ -68,7 +84,7 @@ export function useChatSession(model: string, contextHint?: string) {
         {
           messages: historyForRequest,
           model,
-          conversationId: conversationId.current,
+          conversationId,
           contextHint,
         },
         {
@@ -81,12 +97,12 @@ export function useChatSession(model: string, contextHint?: string) {
             setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, searchInfo } : m)));
           },
           onDone: (done) => {
-            if (done.conversationId) conversationId.current = done.conversationId;
+            if (done.conversationId) setConversationId(done.conversationId);
             if (typeof done.guestMessageCount === 'number') setGuestCount(done.guestMessageCount);
           },
         },
       );
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      hapticSuccess();
     } catch (err) {
       if (err instanceof ChatRequestError && err.status === 429) {
         setGuestBlocked(true);
@@ -102,11 +118,11 @@ export function useChatSession(model: string, contextHint?: string) {
       setMessages((prev) =>
         prev.map((m) => (m.id === assistantId ? { ...m, text: message, pending: false } : m)),
       );
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      hapticError();
     } finally {
       setBusy(false);
     }
-  }, [inputText, pendingImage, messages, model, contextHint, user, guestBlocked]);
+  }, [inputText, pendingImage, messages, model, contextHint, user, guestBlocked, conversationId]);
 
   return {
     messages,
@@ -119,5 +135,8 @@ export function useChatSession(model: string, contextHint?: string) {
     isGuest: !user,
     remaining,
     guestBlocked,
+    conversationId,
+    startNewConversation,
+    loadConversation,
   };
 }

@@ -1,19 +1,20 @@
-import React, { useRef, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useRef, useState } from 'react';
+import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
-import { useAuth } from '@/hooks/useAuth';
 import { useChatSession } from '@/hooks/useChatSession';
-import { ChatBubble } from '@/components/ChatBubble';
+import { ChatBubble, type DisplayMessage } from '@/components/ChatBubble';
 import { ChatInput } from '@/components/ChatInput';
 import { TypingDots } from '@/components/TypingDots';
 import { GuestBanner } from '@/components/GuestBanner';
-import { BrandMark, Wordmark } from '@/components/BrandMark';
+import { BrandMark } from '@/components/BrandMark';
 import { ModeSwitch, type ChatMode } from '@/components/ModeSwitch';
+import { Sidebar } from '@/components/Sidebar';
 import { CHAT_MODEL, LAB_MODEL } from '@/lib/chat';
+import { hapticImpact } from '@/lib/haptics';
+import { fetchConversationMessages, type ConversationSummary } from '@/lib/conversations';
 
 const COPY: Record<ChatMode, { placeholder: string; emptyTitle: string; emptyBody: string }> = {
   chat: {
@@ -31,9 +32,10 @@ const COPY: Record<ChatMode, { placeholder: string; emptyTitle: string; emptyBod
 export default function ChatScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { user, displayName } = useAuth();
   const listRef = useRef<FlatList>(null);
   const [mode, setMode] = useState<ChatMode>('chat');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [refreshToken, setRefreshToken] = useState(0);
 
   // Both sessions stay mounted at all times so switching modes with the
   // pill switch never loses either conversation's history.
@@ -42,29 +44,74 @@ export default function ChatScreen() {
   const session = mode === 'chat' ? chatSession : labSession;
   const copy = COPY[mode];
 
-  const { messages, inputText, setInputText, pendingImage, setPendingImage, busy, send, isGuest, remaining } =
-    session;
+  const {
+    messages,
+    inputText,
+    setInputText,
+    pendingImage,
+    setPendingImage,
+    busy,
+    send,
+    isGuest,
+    remaining,
+    conversationId,
+    startNewConversation,
+    loadConversation,
+  } = session;
   const lastIsPending = messages.length > 0 && messages[messages.length - 1].pending;
+
+  const handleNewChat = useCallback(() => {
+    hapticImpact();
+    chatSession.startNewConversation();
+    labSession.startNewConversation();
+    setSidebarOpen(false);
+  }, [chatSession, labSession]);
+
+  const handleSelectConversation = useCallback(
+    async (conv: ConversationSummary) => {
+      const targetMode: ChatMode = conv.model === LAB_MODEL ? 'lab' : 'chat';
+      const target = targetMode === 'lab' ? labSession : chatSession;
+      try {
+        const history = await fetchConversationMessages(conv.id);
+        const displayMessages: DisplayMessage[] = history
+          .filter((m) => m.role === 'user' || m.role === 'assistant')
+          .map((m) => ({
+            id: String(m.id),
+            role: m.role as 'user' | 'assistant',
+            text: m.content,
+            searchInfo: m.sources && m.sources.length > 0 ? { query: '', sources: m.sources } : undefined,
+          }));
+        target.loadConversation(conv.id, displayMessages);
+        setMode(targetMode);
+        setSidebarOpen(false);
+      } catch {
+        Alert.alert('Could not open chat', 'Please check your connection and try again.');
+      }
+    },
+    [chatSession, labSession],
+  );
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
-        <View style={styles.brandRow}>
-          <BrandMark size={20} />
-          <Wordmark size={16} />
-        </View>
+        <Pressable
+          onPress={() => {
+            hapticImpact();
+            setSidebarOpen(true);
+            setRefreshToken((t) => t + 1);
+          }}
+          hitSlop={10}
+          style={styles.headerBtn}
+        >
+          <Ionicons name="menu-outline" size={24} color={colors.foreground} />
+        </Pressable>
+
         <ModeSwitch value={mode} onChange={setMode} />
-        <Pressable onPress={() => router.push('/account')} hitSlop={10} style={styles.avatarBtn}>
-          <Ionicons
-            name={user ? 'person-circle' : 'person-circle-outline'}
-            size={26}
-            color={colors.foreground}
-          />
+
+        <Pressable onPress={handleNewChat} hitSlop={10} style={styles.headerBtn}>
+          <Ionicons name="create-outline" size={22} color={colors.foreground} />
         </Pressable>
       </View>
-      {user ? (
-        <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>{displayName}</Text>
-      ) : null}
 
       {isGuest ? <GuestBanner remaining={remaining} /> : null}
 
@@ -104,6 +151,15 @@ export default function ChatScreen() {
           />
         </View>
       </KeyboardAvoidingView>
+
+      <Sidebar
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        onNewChat={handleNewChat}
+        onSelectConversation={handleSelectConversation}
+        activeConversationId={conversationId}
+        refreshToken={refreshToken}
+      />
     </View>
   );
 }
@@ -115,25 +171,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingBottom: 12,
   },
-  brandRow: {
-    flexDirection: 'row',
+  headerBtn: {
+    width: 38,
+    height: 38,
     alignItems: 'center',
-    gap: 8,
-    flex: 1,
-  },
-  avatarBtn: {
-    flex: 1,
-    alignItems: 'flex-end',
-  },
-  subtitle: {
-    fontSize: 12,
-    fontFamily: 'Inter_500Medium',
-    marginTop: -8,
-    marginBottom: 8,
-    paddingHorizontal: 16,
+    justifyContent: 'center',
   },
   listContent: { padding: 16, paddingBottom: 4 },
   empty: {

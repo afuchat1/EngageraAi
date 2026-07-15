@@ -21,6 +21,7 @@ import {
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import colors from '@/constants/colors';
+import { loadHapticsPreference } from '@/lib/haptics';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -36,6 +37,16 @@ function RootLayoutNav() {
         options={{
           presentation: 'formSheet',
           sheetAllowedDetents: [0.6],
+          sheetGrabberVisible: true,
+          headerShown: false,
+          contentStyle: { backgroundColor: colors.light.background },
+        }}
+      />
+      <Stack.Screen
+        name="settings"
+        options={{
+          presentation: 'formSheet',
+          sheetAllowedDetents: [0.85],
           sheetGrabberVisible: true,
           headerShown: false,
           contentStyle: { backgroundColor: colors.light.background },
@@ -60,6 +71,10 @@ export default function RootLayout() {
 
   const fontsLoaded = interLoaded && displayLoaded;
   const fontError = interError || displayError;
+
+  useEffect(() => {
+    loadHapticsPreference();
+  }, []);
 
   useEffect(() => {
     if (fontsLoaded || fontError) {
