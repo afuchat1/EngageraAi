@@ -640,9 +640,10 @@ export function SearchEngine({ topPad }: { topPad: number }) {
             })}
           </ScrollView>
 
-          {/* ── AI chat (always rendered when hasSearch so state is kept) ── */}
-          {/* Using visibility trick instead of conditional unmount */}
-          <View style={[s.flex, activeTab !== 'ai' && s.hidden]}>
+          {/* ── AI chat ──────────────────────────────────────────────────── */}
+          {/* State is lifted to SearchEngine so this can be conditionally */}
+          {/* rendered like the other tabs — no visibility trick needed.   */}
+          {activeTab === 'ai' ? (<View style={s.flex}>
             {aiError && aiMessages.length === 0 ? (
               <View style={s.aiErrorWrap}>
                 <Ionicons name="alert-circle-outline" size={28} color={colors.mutedForeground} />
@@ -721,7 +722,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
                 <View style={{ height: 16 }} />
               </ScrollView>
             )}
-          </View>
+          </View>) : null}
 
           {/* ── All tab ──────────────────────────────────────────────────── */}
           {activeTab === 'all' ? (
