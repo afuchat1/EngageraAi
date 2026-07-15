@@ -4,18 +4,20 @@
  * Full search engine powered by Engagera's AfuBot search backend, which
  * aggregates DuckDuckGo, Bing News RSS, Google News RSS, curated outlet
  * RSS feeds, Bing image search, and YouTube search.
- * Real-time suggestions while typing, tabbed results
- * (AI · Web · Images · Videos · News · Finance), and a built-in
- * WebView browser that opens when the user taps any result.
  *
- * The "AI" tab is Engagera AI's advanced overview for the query — it is
- * fetched lazily (only when the user opens that tab), since it goes through
- * the same `chat` edge function as the Chat tab and counts against the same
- * guest-message quota.
+ * Features:
+ *  - Real-time suggestions while typing (DuckDuckGo autocomplete)
+ *  - Omnibox-style domain detection: single-word inputs surface a "Visit X.com"
+ *    chip so users can navigate directly to websites just by typing a name
+ *  - Full bare-domain resolution (e.g. "afuchat.com" → opens directly)
+ *  - Tabbed results: AI · Web · Images · Videos · News · Finance
+ *  - Persistent search history (AsyncStorage) with clear-all and per-item delete
+ *  - Built-in WebView browser for all result links
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   FlatList,
   Image,
@@ -40,12 +42,18 @@ import {
   fetchFinanceResults,
   fetchAiOverview,
   resolveDomain,
+  getPotentialDomain,
+  loadSearchHistory,
+  saveToHistory,
+  clearSearchHistory,
+  removeFromHistory,
   type WebResult,
   type ImageResult,
   type VideoResult,
   type NewsResult,
   type FinanceResult,
   type AiOverviewResult,
+  type SearchHistoryItem,
 } from '@/lib/search';
 
 // Silence unused-import lint — FinanceResult is used in FinanceCard props
@@ -76,13 +84,11 @@ const TABS: { key: SearchTab; label: string; icon: string }[] = [
 ];
 
 const empty: SearchResults = { ai: null, web: [], images: [], videos: [], news: [], finance: [] };
-// The AI tab is fetched lazily (see the effect in the component), so it never
-// starts in a "loading" state alongside the other four when a search fires.
 const notLoading: LoadingState = { ai: false, web: false, images: false, videos: false, news: false, finance: false };
 const allLoading: LoadingState = { ai: false, web: true, images: true, videos: true, news: true, finance: true };
 
 const { width: SCREEN_W } = Dimensions.get('window');
-const IMG_SIZE = (SCREEN_W - 3) / 2; // 2-col image grid with 3px gap
+const IMG_SIZE = (SCREEN_W - 3) / 2;
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -254,6 +260,57 @@ function EmptyTab({ loading, query }: { loading: boolean; query: string }) {
   );
 }
 
+// ── History section on the landing screen ─────────────────────────────────────
+
+function HistorySection({
+  history,
+  onSelect,
+  onRemove,
+  onClearAll,
+}: {
+  history: SearchHistoryItem[];
+  onSelect: (q: string) => void;
+  onRemove: (q: string) => void;
+  onClearAll: () => void;
+}) {
+  const colors = useColors();
+  if (history.length === 0) return null;
+
+  return (
+    <View style={styles.historySection}>
+      <View style={styles.historyHeader}>
+        <Text style={[styles.historyHeading, { color: colors.mutedForeground }]}>Recent</Text>
+        <Pressable onPress={onClearAll} hitSlop={10}>
+          <Text style={[styles.historyClearAll, { color: colors.mutedForeground }]}>Clear all</Text>
+        </Pressable>
+      </View>
+      {history.map((item) => (
+        <Pressable
+          key={item.query}
+          style={({ pressed }) => [
+            styles.historyRow,
+            { borderBottomColor: colors.border },
+            pressed && { opacity: 0.6 },
+          ]}
+          onPress={() => onSelect(item.query)}
+        >
+          <Ionicons name="time-outline" size={15} color={colors.mutedForeground} style={styles.historyRowIcon} />
+          <Text style={[styles.historyRowText, { color: colors.foreground }]} numberOfLines={1}>
+            {item.query}
+          </Text>
+          <Pressable
+            hitSlop={10}
+            onPress={() => onRemove(item.query)}
+            style={styles.historyRowDelete}
+          >
+            <Ionicons name="close" size={15} color={colors.mutedForeground} />
+          </Pressable>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function SearchEngine({ topPad }: { topPad: number }) {
@@ -266,13 +323,20 @@ export function SearchEngine({ topPad }: { topPad: number }) {
   const [submittedQuery, setSubmittedQuery] = useState('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [inputFocused, setInputFocused] = useState(false);
   const [activeTab, setActiveTab] = useState<SearchTab>('web');
   const [results, setResults] = useState<SearchResults>(empty);
   const [loading, setLoading] = useState<LoadingState>(notLoading);
   const [browserUrl, setBrowserUrl] = useState<string | null>(null);
+  const [history, setHistory] = useState<SearchHistoryItem[]>([]);
   const searchIdRef = useRef(0);
 
-  // ── Real-time suggestions ──────────────────────────────────────────────────
+  // ── Load history on mount ─────────────────────────────────────────────────
+  useEffect(() => {
+    loadSearchHistory().then(setHistory);
+  }, []);
+
+  // ── Real-time suggestions ─────────────────────────────────────────────────
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (!query.trim() || query.length < 2) {
@@ -283,21 +347,16 @@ export function SearchEngine({ topPad }: { topPad: number }) {
     debounceRef.current = setTimeout(async () => {
       const s = await fetchSuggestions(query);
       setSuggestions(s);
-      setShowSuggestions(s.length > 0);
+      setShowSuggestions(s.length > 0 || !!getPotentialDomain(query));
     }, 150);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [query]);
 
-  // ── Search ─────────────────────────────────────────────────────────────────
-  // AfuBot fetches once per query and all five
-  // result types are read off that same crawl, so they can all run in parallel.
+  // ── Search ────────────────────────────────────────────────────────────────
   const doSearch = useCallback(async (q: string) => {
     const trimmed = q.trim();
     if (!trimmed) return;
 
-    // Guard against out-of-order responses: if the user fires off another
-    // search before this one resolves, this call's results must not clobber
-    // the newer one's state.
     const myId = ++searchIdRef.current;
     const isStale = () => searchIdRef.current !== myId;
 
@@ -323,6 +382,11 @@ export function SearchEngine({ topPad }: { topPad: number }) {
     setLoading(allLoading);
     inputRef.current?.blur();
 
+    // Persist to history
+    saveToHistory(trimmed).then(() =>
+      loadSearchHistory().then(setHistory)
+    );
+
     const [web, images, videos, news, finance] = await Promise.allSettled([
       fetchWebResults(trimmed),
       fetchImageResults(trimmed, ''),
@@ -344,10 +408,17 @@ export function SearchEngine({ topPad }: { topPad: number }) {
     setLoading(notLoading);
   }, []);
 
-  // ── Engagera AI overview (lazy) ──────────────────────────────────────────────
-  // Only fetched once the user actually opens the AI tab for the current
-  // query, since it goes through the chat model and counts against the same
-  // guest-message quota as the Chat tab.
+  // ── Navigate directly to a potential domain ───────────────────────────────
+  const openPotentialDomain = useCallback((domain: string) => {
+    setShowSuggestions(false);
+    setSuggestions([]);
+    setQuery('');
+    setSubmittedQuery('');
+    inputRef.current?.blur();
+    setBrowserUrl(`https://${domain}`);
+  }, []);
+
+  // ── Engagera AI overview (lazy) ───────────────────────────────────────────
   useEffect(() => {
     if (activeTab !== 'ai' || !submittedQuery || results.ai || loading.ai) return;
     let cancelled = false;
@@ -361,25 +432,69 @@ export function SearchEngine({ topPad }: { topPad: number }) {
 
   const openBrowser = useCallback((url: string) => setBrowserUrl(url), []);
 
-  // ── Render ─────────────────────────────────────────────────────────────────
-  const hasSearch = submittedQuery.length > 0;
+  // ── History actions ───────────────────────────────────────────────────────
+  const handleHistorySelect = useCallback((q: string) => {
+    setQuery(q);
+    doSearch(q);
+  }, [doSearch]);
 
+  const handleHistoryRemove = useCallback((q: string) => {
+    removeFromHistory(q).then(() => loadSearchHistory().then(setHistory));
+  }, []);
+
+  const handleHistoryClearAll = useCallback(() => {
+    Alert.alert(
+      'Clear search history',
+      'Remove all recent searches?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear all',
+          style: 'destructive',
+          onPress: () => clearSearchHistory().then(() => setHistory([])),
+        },
+      ]
+    );
+  }, []);
+
+  // ── Derived ───────────────────────────────────────────────────────────────
+  const hasSearch = submittedQuery.length > 0;
+  const potentialDomain = getPotentialDomain(query);
+  // Show the suggestion panel whenever the input is focused and there's a query
+  const shouldShowSuggestions = inputFocused && query.trim().length >= 1 && (showSuggestions || !!potentialDomain);
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <KeyboardAvoidingView style={[styles.root, { paddingTop: topPad }]} behavior="padding">
-      {/* ── Empty landing ────────────────────────────────────────────────── */}
+
+      {/* ── Empty landing ──────────────────────────────────────────────── */}
       {!hasSearch ? (
-        <View style={styles.landing}>
-          <View style={styles.landingIcon}>
-            <Ionicons name="search" size={40} color={colors.mutedForeground} />
+        <ScrollView
+          style={styles.landingScroll}
+          contentContainerStyle={styles.landingContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.landingHero}>
+            <View style={styles.landingIcon}>
+              <Ionicons name="search" size={40} color={colors.mutedForeground} />
+            </View>
+            <Text style={[styles.landingTitle, { color: colors.foreground }]}>Engagera Search</Text>
+            <Text style={[styles.landingBody, { color: colors.mutedForeground }]}>
+              AI · Web · Images · Videos · News · Finance{'\n'}powered by Engagera's AfuBot search
+            </Text>
           </View>
-          <Text style={[styles.landingTitle, { color: colors.foreground }]}>Engagera Search</Text>
-          <Text style={[styles.landingBody, { color: colors.mutedForeground }]}>
-            AI · Web · Images · Videos · News · Finance{'\n'}powered by Engagera's AfuBot search
-          </Text>
-        </View>
+
+          <HistorySection
+            history={history}
+            onSelect={handleHistorySelect}
+            onRemove={handleHistoryRemove}
+            onClearAll={handleHistoryClearAll}
+          />
+        </ScrollView>
       ) : null}
 
-      {/* ── Results ─────────────────────────────────────────────────────── */}
+      {/* ── Results ──────────────────────────────────────────────────────── */}
       {hasSearch ? (
         <View style={styles.results}>
           {/* Tab bar */}
@@ -510,10 +625,37 @@ export function SearchEngine({ topPad }: { topPad: number }) {
         </View>
       ) : null}
 
-      {/* ── Bottom search bar (matches Chat's input bar) ────────────────── */}
+      {/* ── Bottom search bar ──────────────────────────────────────────────── */}
       <View style={[styles.bottomWrap, { paddingBottom: insets.bottom + 10 }]}>
-        {showSuggestions && !hasSearch ? (
+
+        {/* Suggestions + domain chip — float above the search bar */}
+        {shouldShowSuggestions ? (
           <View style={[styles.suggestionsFloating, { backgroundColor: colors.card, borderColor: colors.border }]}>
+
+            {/* Domain chip — always first when present */}
+            {potentialDomain ? (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.suggestionRow,
+                  styles.domainRow,
+                  { borderBottomColor: colors.border },
+                  pressed && { opacity: 0.7 },
+                  suggestions.length === 0 && { borderBottomWidth: 0 },
+                ]}
+                onPress={() => openPotentialDomain(potentialDomain)}
+              >
+                <View style={[styles.domainIconWrap, { backgroundColor: colors.background }]}>
+                  <Ionicons name="globe" size={13} color={colors.foreground} />
+                </View>
+                <View style={styles.domainTextCol}>
+                  <Text style={[styles.domainVisitLabel, { color: colors.mutedForeground }]}>Visit website</Text>
+                  <Text style={[styles.domainText, { color: colors.foreground }]}>{potentialDomain}</Text>
+                </View>
+                <Ionicons name="arrow-forward" size={15} color={colors.mutedForeground} />
+              </Pressable>
+            ) : null}
+
+            {/* DuckDuckGo autocomplete suggestions */}
             {suggestions.map((s, i) => (
               <Pressable
                 key={i}
@@ -545,7 +687,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
             <TextInput
               ref={inputRef}
               style={[styles.searchInput, { color: colors.foreground }]}
-              placeholder="Search the web or enter a site…"
+              placeholder="Search or enter a site…"
               placeholderTextColor={colors.mutedForeground}
               value={query}
               onChangeText={(t) => {
@@ -555,6 +697,11 @@ export function SearchEngine({ topPad }: { topPad: number }) {
                   setResults(empty);
                   setLoading(notLoading);
                 }
+              }}
+              onFocus={() => setInputFocused(true)}
+              onBlur={() => {
+                // Delay so tapping a suggestion fires before blur hides it
+                setTimeout(() => setInputFocused(false), 150);
               }}
               onSubmitEditing={() => doSearch(query)}
               returnKeyType="search"
@@ -589,7 +736,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
         </View>
       </View>
 
-      {/* ── In-app browser (all links open here — never an external browser) ── */}
+      {/* ── In-app browser ──────────────────────────────────────────────────── */}
       <InAppBrowser
         url={browserUrl}
         onClose={() => setBrowserUrl(null)}
@@ -604,7 +751,78 @@ export function SearchEngine({ topPad }: { topPad: number }) {
 const styles = StyleSheet.create({
   root: { flex: 1 },
 
-  // Bottom-anchored search bar (mirrors ChatInput's bottom pill treatment)
+  // Landing
+  landingScroll: { flex: 1 },
+  landingContent: { flexGrow: 1 },
+  landingHero: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    paddingHorizontal: 40,
+    paddingTop: 60,
+    paddingBottom: 32,
+  },
+  landingIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    marginBottom: 4,
+  },
+  landingTitle: {
+    fontSize: 22,
+    fontFamily: 'SpaceGrotesk_600SemiBold',
+    letterSpacing: -0.3,
+  },
+  landingBody: {
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+
+  // History
+  historySection: {
+    paddingHorizontal: 16,
+    paddingBottom: 24,
+  },
+  historyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  historyHeading: {
+    fontSize: 11,
+    fontFamily: 'Inter_600SemiBold',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  historyClearAll: {
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+  },
+  historyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 10,
+  },
+  historyRowIcon: { flexShrink: 0 },
+  historyRowText: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: 'Inter_400Regular',
+  },
+  historyRowDelete: {
+    flexShrink: 0,
+    padding: 4,
+  },
+
+  // Bottom-anchored search bar
   bottomWrap: {
     paddingHorizontal: 16,
     paddingTop: 8,
@@ -644,7 +862,7 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
 
-  // Suggestions — float above the bottom search bar, like a dropdown.
+  // Suggestions panel
   suggestionsFloating: {
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
@@ -670,33 +888,32 @@ const styles = StyleSheet.create({
     padding: 4,
   },
 
-  // Landing
-  landing: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+  // Domain chip (inside suggestions panel)
+  domainRow: {
+    paddingVertical: 11,
     gap: 12,
-    paddingHorizontal: 40,
   },
-  landingIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 20,
+  domainIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    marginBottom: 4,
+    flexShrink: 0,
   },
-  landingTitle: {
-    fontSize: 22,
-    fontFamily: 'SpaceGrotesk_600SemiBold',
-    letterSpacing: -0.3,
+  domainTextCol: {
+    flex: 1,
+    gap: 1,
   },
-  landingBody: {
-    fontSize: 13,
-    fontFamily: 'Inter_400Regular',
-    textAlign: 'center',
-    lineHeight: 20,
+  domainVisitLabel: {
+    fontSize: 10,
+    fontFamily: 'Inter_500Medium',
+    letterSpacing: 0.2,
+    textTransform: 'uppercase',
+  },
+  domainText: {
+    fontSize: 14,
+    fontFamily: 'Inter_600SemiBold',
   },
 
   // Results container

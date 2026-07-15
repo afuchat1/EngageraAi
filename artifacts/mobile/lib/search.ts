@@ -6,6 +6,7 @@
  * Bing image search, YouTube search) server-side, so no API key or
  * dedicated backend is needed here — same pattern as `chat.ts`.
  */
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from '@/lib/supabase';
 import { getOrCreateGuestSessionId, LAB_MODEL } from '@/lib/chat';
 
@@ -29,6 +30,66 @@ async function req<T>(type: string, query: string): Promise<T> {
   const res = await fetch(url, { headers });
   if (!res.ok) throw new Error(`Search ${type} failed (${res.status})`);
   return res.json();
+}
+
+// ── Search history ────────────────────────────────────────────────────────────
+// Persists the last MAX_HISTORY searches in AsyncStorage, newest first.
+
+const HISTORY_KEY = 'AFUBOT_SEARCH_HISTORY_V1';
+const MAX_HISTORY = 50;
+
+export interface SearchHistoryItem {
+  query: string;
+  timestamp: number;
+}
+
+export async function loadSearchHistory(): Promise<SearchHistoryItem[]> {
+  try {
+    const raw = await AsyncStorage.getItem(HISTORY_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as SearchHistoryItem[];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveToHistory(query: string): Promise<void> {
+  const q = query.trim();
+  if (!q) return;
+  try {
+    const existing = await loadSearchHistory();
+    // Dedupe: remove older entry for the same query (case-insensitive)
+    const deduped = existing.filter((h) => h.query.toLowerCase() !== q.toLowerCase());
+    const updated = [{ query: q, timestamp: Date.now() }, ...deduped].slice(0, MAX_HISTORY);
+    await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
+  } catch { /* non-fatal */ }
+}
+
+export async function clearSearchHistory(): Promise<void> {
+  try { await AsyncStorage.removeItem(HISTORY_KEY); } catch { /* non-fatal */ }
+}
+
+export async function removeFromHistory(query: string): Promise<void> {
+  try {
+    const existing = await loadSearchHistory();
+    const updated = existing.filter((h) => h.query.toLowerCase() !== query.toLowerCase());
+    await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
+  } catch { /* non-fatal */ }
+}
+
+// ── Smart domain suggestion (omnibox-style) ───────────────────────────────────
+// When the user types a single word with no spaces or dots, suggest visiting
+// <word>.com — same pattern as Chrome/Safari's address bar. No network call
+// needed here; we just surface the chip and let the in-app browser handle it.
+
+export function getPotentialDomain(input: string): string | null {
+  const t = input.trim().toLowerCase();
+  // Must be a single token: no spaces, no dots, no slashes, no @ signs
+  if (!t || t.length < 2 || t.length > 63) return null;
+  if (/[\s./\\@?#%]/.test(t)) return null;
+  // Only allow label-valid characters (letters, digits, hyphens)
+  if (!/^[a-z0-9-]+$/.test(t)) return null;
+  return `${t}.com`;
 }
 
 // ── Domain detection ─────────────────────────────────────────────────────────
