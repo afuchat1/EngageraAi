@@ -6,8 +6,9 @@ import { SourceStrip } from '@/components/SourceStrip';
 import { Markdown } from '@/components/Markdown';
 import { MessageActions } from '@/components/MessageActions';
 import { ClockWidget } from '@/components/ClockWidget';
+import { WeatherWidget } from '@/components/WeatherWidget';
 import { toPlainText } from '@/lib/plainText';
-import type { SearchInfo, TimeInfo } from '@/lib/chat';
+import type { SearchInfo, TimeInfo, WeatherInfo } from '@/lib/chat';
 
 export interface DisplayMessage {
   id: string;
@@ -16,6 +17,7 @@ export interface DisplayMessage {
   imageUri?: string;
   searchInfo?: SearchInfo;
   timeInfo?: TimeInfo;
+  weatherInfo?: WeatherInfo;
   pending?: boolean;
   /** True while this assistant message is still actively receiving tokens. */
   streaming?: boolean;
@@ -69,6 +71,9 @@ export const ChatBubble = memo(function ChatBubble({
   return (
     <View style={[styles.row, { alignItems: isUser ? 'flex-end' : 'flex-start' }]}>
       <View style={[styles.body, isUser ? [styles.bubble, { backgroundColor: colors.primary }] : styles.assistantBody]}>
+        {!isUser && message.timeInfo ? <ClockWidget timeInfo={message.timeInfo} /> : null}
+        {!isUser && message.weatherInfo ? <WeatherWidget weatherInfo={message.weatherInfo} /> : null}
+
         {message.imageUri ? (
           <Image source={{ uri: message.imageUri }} style={styles.image} />
         ) : null}
@@ -89,8 +94,6 @@ export const ChatBubble = memo(function ChatBubble({
           <Markdown text={message.text} color={colors.foreground} />
         )}
       </View>
-
-      {!isUser && message.timeInfo ? <ClockWidget timeInfo={message.timeInfo} /> : null}
 
       {!isUser && message.searchInfo && message.searchInfo.sources.length > 0 ? (
         <SourceStrip searchInfo={message.searchInfo} />

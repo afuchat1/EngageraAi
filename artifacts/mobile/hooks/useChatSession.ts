@@ -223,8 +223,14 @@ export function useChatSession(model: string, contextHint?: string) {
           onDone: (done) => {
             if (done.conversationId) setConversationId(done.conversationId);
             if (typeof done.guestMessageCount === 'number') setGuestCount(done.guestMessageCount);
-            if (done.timeInfo) {
-              setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, timeInfo: done.timeInfo } : m)));
+            if (done.timeInfo || done.weatherInfo) {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId
+                    ? { ...m, ...(done.timeInfo ? { timeInfo: done.timeInfo } : {}), ...(done.weatherInfo ? { weatherInfo: done.weatherInfo } : {}) }
+                    : m,
+                ),
+              );
             }
           },
         },

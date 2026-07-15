@@ -107,6 +107,7 @@ export default function ChatScreen() {
             text: m.content,
             searchInfo: m.sources && m.sources.length > 0 ? { query: '', sources: m.sources } : undefined,
             timeInfo: m.timeInfo,
+            weatherInfo: m.weatherInfo,
           }));
         target.loadConversation(conv.id, displayMessages);
         setMode(targetMode);

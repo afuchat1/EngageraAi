@@ -36,11 +36,23 @@ export interface TimeInfo {
   label: string;
 }
 
+export interface WeatherInfo {
+  label: string;
+  tempC: number;
+  feelsLikeC: number;
+  condition: string;
+  icon: string;
+  windKph: number;
+  humidity: number;
+  isDay: boolean;
+}
+
 export interface StreamDoneEvent {
   model: string;
   conversationId?: number;
   searchInfo?: SearchInfo;
   timeInfo?: TimeInfo;
+  weatherInfo?: WeatherInfo;
   guestMessageCount?: number;
   guestMessageLimit?: number;
 }

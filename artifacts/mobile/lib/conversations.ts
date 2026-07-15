@@ -1,6 +1,6 @@
 import { buildAuthHeaders } from '@/lib/chat';
 import { SUPABASE_URL } from '@/lib/supabase';
-import type { SearchSource, TimeInfo } from '@/lib/chat';
+import type { SearchSource, TimeInfo, WeatherInfo } from '@/lib/chat';
 
 const BASE_URL = `${SUPABASE_URL}/functions/v1/conversations`;
 
@@ -20,6 +20,7 @@ export interface ConversationMessage {
   createdAt: string;
   sources?: SearchSource[];
   timeInfo?: TimeInfo;
+  weatherInfo?: WeatherInfo;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
