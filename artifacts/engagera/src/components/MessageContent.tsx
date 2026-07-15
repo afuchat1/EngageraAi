@@ -9,6 +9,7 @@ import {
   Copy, Check, ImageOff, Film,
   ThumbsUp, ThumbsDown, Volume2, VolumeX,
   Share2, Globe, FileDown, ChevronLeft, ChevronRight, X,
+  Download,
 } from "lucide-react";
 import type { TimeInfo } from "@/hooks/useEdgeChatCompletion";
 
@@ -443,24 +444,50 @@ function ClockWidget({ timeInfo }: { timeInfo: TimeInfo }) {
 }
 
 // ── SVG renderer ──────────────────────────────────────────────────────────────
+// SVG markup is never injected into the live DOM (that would let it run
+// scripts/animations or reach out to external refs). Instead it is rendered
+// through a plain <img> pointed at a data: URI — the browser treats that as
+// a static raster-like image, never as executable markup — so the "SVG
+// format" itself is never exposed/interactive in the chat, only a picture of
+// it. Users can still download the original .svg file via the button below.
+function svgToDataUri(code: string): string {
+  const safe = code
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/on\w+="[^"]*"/gi, "")
+    .replace(/on\w+='[^']*'/gi, "");
+  const base64 = btoa(unescape(encodeURIComponent(safe)));
+  return `data:image/svg+xml;base64,${base64}`;
+}
+
 function SvgBlock({ code }: { code: string }) {
   const [expanded, setExpanded] = useState(false);
-  const ref = (node: HTMLDivElement | null) => {
-    if (!node) return;
-    const safe = code
-      .replace(/<script[\s\S]*?<\/script>/gi, "")
-      .replace(/on\w+="[^"]*"/gi, "")
-      .replace(/on\w+='[^']*'/gi, "");
-    node.innerHTML = safe;
-    const svg = node.querySelector("svg");
-    if (svg) {
-      svg.setAttribute("width", "100%"); svg.setAttribute("height", "100%");
-      svg.style.maxWidth = expanded ? "100%" : "400px"; svg.style.height = "auto";
-    }
+  const dataUri = svgToDataUri(code);
+
+  const handleDownload = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const blob = new Blob([code], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `image-${Date.now()}.svg`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   };
+
   return (
     <div className="my-3">
-      <div ref={ref} className={`rounded-xl overflow-hidden border border-white/10 bg-[#111] cursor-pointer ${expanded ? "max-w-full" : "max-w-sm"}`} onClick={() => setExpanded(v => !v)} />
+      <div className={`relative rounded-xl overflow-hidden border border-white/10 bg-[#111] cursor-pointer ${expanded ? "max-w-full" : "max-w-sm"}`} onClick={() => setExpanded(v => !v)}>
+        <img src={dataUri} alt="Generated image" className="w-full h-auto" style={{ maxWidth: expanded ? "100%" : "400px" }} />
+        <button
+          onClick={handleDownload}
+          title="Download SVG"
+          className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/60 text-white/70 hover:text-white hover:bg-black/80 transition-colors backdrop-blur-sm"
+        >
+          <Download className="w-3.5 h-3.5" />
+        </button>
+      </div>
       <p className="text-[11px] text-white/25 mt-1.5">Click to {expanded ? "shrink" : "expand"}</p>
     </div>
   );
@@ -494,6 +521,31 @@ function ImageBlock({ src, alt }: { src: string; alt?: string }) {
   const [expanded, setExpanded] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleDownload = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      let blobUrl: string;
+      let revoke = false;
+      if (/^data:/i.test(src)) {
+        blobUrl = src;
+      } else {
+        const res = await fetch(src);
+        const blob = await res.blob();
+        blobUrl = URL.createObjectURL(blob);
+        revoke = true;
+      }
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `image-${Date.now()}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      if (revoke) URL.revokeObjectURL(blobUrl);
+    } catch {
+      // best-effort download; ignore failures silently (image stays viewable)
+    }
+  };
 
   // data: URIs are embedded bytes with no network round-trip — never worth
   // retrying and never expected to fail. Only http(s) URLs (e.g. a poster
@@ -536,12 +588,22 @@ function ImageBlock({ src, alt }: { src: string; alt?: string }) {
         </div>
       )}
       {(status === "loading" || status === "loaded") && (
-        <img key={attempt} src={attemptSrc} alt={alt || "Image"} onLoad={() => setStatus("loaded")} onError={handleError}
-          style={{ display: status === "loaded" ? undefined : "none" }}
-          className={`rounded-xl object-cover cursor-pointer ${expanded ? "max-w-full w-full" : "max-w-sm"}`}
-          onClick={() => setExpanded(v => !v)} />
+        <div className={`relative ${expanded ? "max-w-full w-full" : "max-w-sm"}`}>
+          <img key={attempt} src={attemptSrc} alt={alt || "Image"} onLoad={() => setStatus("loaded")} onError={handleError}
+            style={{ display: status === "loaded" ? undefined : "none" }}
+            className="rounded-xl object-cover cursor-pointer w-full"
+            onClick={() => setExpanded(v => !v)} />
+          {status === "loaded" && (
+            <button
+              onClick={handleDownload}
+              title="Download image"
+              className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/60 text-white/70 hover:text-white hover:bg-black/80 transition-colors backdrop-blur-sm"
+            >
+              <Download className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
       )}
-      {status === "loaded" && alt && alt !== "Image" && <p className="text-[11px] text-white/35 mt-1.5 italic">{alt}</p>}
     </div>
   );
 }
