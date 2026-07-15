@@ -24,13 +24,18 @@ export type MarkdownBlock =
   | { type: 'bullet-list'; items: InlineSegment[][] }
   | { type: 'numbered-list'; items: { marker: string; inline: InlineSegment[] }[] }
   | { type: 'blockquote'; inline: InlineSegment[] }
-  | { type: 'code'; code: string; lang?: string };
+  | { type: 'code'; code: string; lang?: string }
+  | { type: 'image'; alt: string; url: string };
 
 const HEADING_RE = /^ {0,3}(#{1,3})\s+(.*)$/;
 const BULLET_RE = /^ {0,3}[-*+]\s+(.*)$/;
 const NUMBERED_RE = /^ {0,3}(\d{1,3}[.)])\s+(.*)$/;
 const BLOCKQUOTE_RE = /^ {0,3}>\s?(.*)$/;
 const FENCE_RE = /^ {0,3}```\s*([a-zA-Z0-9_-]*)\s*$/;
+// A line that is *only* a markdown image — `![alt](url)` — with nothing
+// else around it. This is how generated images/SVG-art arrive from the
+// chat backend, always on their own line.
+const STANDALONE_IMAGE_RE = /^!\[([^\]]*)\]\((\S+)\)$/;
 
 /** Splits inline text into bold/italic/code segments, in source order. */
 export function parseInline(text: string): InlineSegment[] {
@@ -141,6 +146,14 @@ export function parseMarkdown(markdown: string): MarkdownBlock[] {
 
     if (line.trim() === '') {
       flushParagraph();
+      i += 1;
+      continue;
+    }
+
+    const imageMatch = line.trim().match(STANDALONE_IMAGE_RE);
+    if (imageMatch) {
+      flushParagraph();
+      blocks.push({ type: 'image', alt: imageMatch[1], url: imageMatch[2] });
       i += 1;
       continue;
     }

@@ -60,6 +60,8 @@
   "dependencies": {
     "@expo-google-fonts/space-grotesk": "^0.4.1",
     "expo-clipboard": "^55.0.14",
+    "expo-file-system": "~55.0.23",
+    "expo-sharing": "~55.0.21",
     "expo-speech": "^55.0.15"
   }
 }

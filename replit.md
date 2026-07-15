@@ -40,6 +40,7 @@ Engagera is a black-and-white AI chat product: a web app (`artifacts/engagera`),
 ## User preferences
 
 - Mobile app must stay Android-first/minimal: no API servers, no extra API keys, no background execution, no permissions beyond what's used (photo library only — no camera).
+- Any chat-UI/feature change made to the web app (`artifacts/engagera`) must also be ported to the mobile app (`artifacts/mobile`) in the same pass — the user expects both clients to stay in parity, not just web.
 
 ## Gotchas
 

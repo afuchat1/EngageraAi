@@ -1,9 +1,89 @@
-import React, { memo } from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import React, { memo, useState } from 'react';
+import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { SvgXml } from 'react-native-svg';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
+import { Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { parseMarkdown, type InlineSegment, type MarkdownBlock } from '@/lib/markdown';
 
 const MONOSPACE = Platform.select({ ios: 'Courier', android: 'monospace', default: 'monospace' });
+
+/**
+ * Saves a data: URI (base64) or remote URL to a temp file, then opens the
+ * native share sheet so the user can save it to Photos, Files, or share it
+ * — this is "download" on mobile without requesting any new device
+ * permission (no direct Photos-library write access is needed).
+ */
+async function downloadToShareSheet(source: string, filename: string) {
+  try {
+    let fileUri = `${FileSystem.cacheDirectory}${filename}`;
+    const dataMatch = source.match(/^data:([^;]+);base64,(.+)$/);
+    if (dataMatch) {
+      await FileSystem.writeAsStringAsync(fileUri, dataMatch[2], { encoding: 'base64' as FileSystem.EncodingType });
+    } else if (/^https?:\/\//i.test(source)) {
+      const result = await FileSystem.downloadAsync(source, fileUri);
+      fileUri = result.uri;
+    } else {
+      // Raw text content (e.g. SVG markup) — write directly.
+      await FileSystem.writeAsStringAsync(fileUri, source);
+    }
+    if (await Sharing.isAvailableAsync()) {
+      await Sharing.shareAsync(fileUri);
+    }
+  } catch {
+    // Best-effort download; the image/SVG stays viewable either way.
+  }
+}
+
+function DownloadButton({ onPress, color, bg }: { onPress: () => void; color: string; bg: string }) {
+  return (
+    <Pressable onPress={onPress} hitSlop={8} style={[styles.downloadBtn, { backgroundColor: bg }]}>
+      <Ionicons name="download-outline" size={15} color={color} />
+    </Pressable>
+  );
+}
+
+/**
+ * Renders a generated raster image (data: URI or remote URL) as a real
+ * <Image>, never as raw markdown/base64 text, with a download action.
+ */
+function ImageBlockView({ url }: { url: string }) {
+  const [error, setError] = useState(false);
+  if (error) {
+    return (
+      <View style={styles.imageError}>
+        <Ionicons name="image-outline" size={20} color="#666" />
+        <Text style={styles.imageErrorText}>Image unavailable</Text>
+      </View>
+    );
+  }
+  return (
+    <View style={styles.imageWrap}>
+      <Image source={{ uri: url }} style={styles.generatedImage} onError={() => setError(true)} resizeMode="cover" />
+      <DownloadButton onPress={() => downloadToShareSheet(url, `image-${Date.now()}.jpg`)} color="#fff" bg="rgba(0,0,0,0.55)" />
+    </View>
+  );
+}
+
+/**
+ * Renders AI-generated SVG art as a real rasterized-in-place image via
+ * react-native-svg's <SvgXml> — the SVG markup is parsed into native
+ * drawing commands, never shown as raw code/text — plus a download action
+ * that shares the original .svg file.
+ */
+function SvgBlockView({ code }: { code: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return null;
+  return (
+    <View style={styles.imageWrap}>
+      <View style={styles.svgBox} onLayout={() => {}}>
+        <SvgXml xml={code} width="100%" height={220} onError={() => setFailed(true)} />
+      </View>
+      <DownloadButton onPress={() => downloadToShareSheet(code, `image-${Date.now()}.svg`)} color="#fff" bg="rgba(0,0,0,0.55)" />
+    </View>
+  );
+}
 
 function InlineText({
   segments,
@@ -109,6 +189,12 @@ function MarkdownBlockView({
         </View>
       );
     case 'code':
+      // SVG "code" is never shown as raw markup/text — it's rendered as a
+      // real image (see SvgBlockView), with a download action for the
+      // original file, matching the web app's behavior.
+      if (block.lang === 'svg') {
+        return <SvgBlockView code={block.code} />;
+      }
       return (
         <View style={[styles.codeBlock, { backgroundColor: codeBg }]}>
           <Text selectable style={[styles.codeText, { color: codeColor }]}>
@@ -116,6 +202,8 @@ function MarkdownBlockView({
           </Text>
         </View>
       );
+    case 'image':
+      return <ImageBlockView url={block.url} />;
     default:
       return null;
   }
@@ -146,4 +234,19 @@ const styles = StyleSheet.create({
   quoteText: { fontSize: 15.5, lineHeight: 22, fontFamily: 'Inter_400Regular', fontStyle: 'italic' },
   codeBlock: { borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
   codeText: { fontFamily: MONOSPACE, fontSize: 14, lineHeight: 20 },
+  imageWrap: { position: 'relative', alignSelf: 'flex-start', maxWidth: 280 },
+  generatedImage: { width: 280, height: 210, borderRadius: 14, backgroundColor: '#111' },
+  svgBox: { width: 280, height: 220, borderRadius: 14, backgroundColor: '#111', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  imageError: { width: 280, height: 160, borderRadius: 14, backgroundColor: '#111', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  imageErrorText: { fontSize: 12, color: '#666', fontFamily: 'Inter_400Regular' },
+  downloadBtn: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });
