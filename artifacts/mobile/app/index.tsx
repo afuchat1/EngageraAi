@@ -8,6 +8,7 @@ import { useChatSession } from '@/hooks/useChatSession';
 import { ChatBubble, type DisplayMessage } from '@/components/ChatBubble';
 import { ChatInput } from '@/components/ChatInput';
 import { TypingDots } from '@/components/TypingDots';
+import { ImageGenIndicator } from '@/components/ImageGenIndicator';
 import { GuestBanner } from '@/components/GuestBanner';
 import { BrandMark } from '@/components/BrandMark';
 import { ModeSwitch, type ChatMode } from '@/components/ModeSwitch';
@@ -132,7 +133,11 @@ export default function ChatScreen() {
             keyboardDismissMode="interactive"
             keyboardShouldPersistTaps="handled"
             renderItem={({ item }) =>
-              item.pending && item.text.length === 0 ? <TypingDots /> : <ChatBubble message={item} />
+              item.pending && item.text.length === 0 ? (
+                item.imageGenerating ? <ImageGenIndicator /> : <TypingDots />
+              ) : (
+                <ChatBubble message={item} />
+              )
             }
             // While tokens are streaming in, snap to bottom without animating —
             // re-triggering a spring/ease animation on every frame is what

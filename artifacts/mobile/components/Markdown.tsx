@@ -1,5 +1,6 @@
 import React, { memo, useState } from 'react';
-import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image';
 import { SvgXml } from 'react-native-svg';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -60,7 +61,17 @@ function ImageBlockView({ url }: { url: string }) {
   }
   return (
     <View style={styles.imageWrap}>
-      <Image source={{ uri: url }} style={styles.generatedImage} onError={() => setError(true)} resizeMode="cover" />
+      <Image
+        source={{ uri: url }}
+        style={styles.generatedImage}
+        onError={() => setError(true)}
+        contentFit="cover"
+        // expo-image decodes large data: URIs (100KB+ base64, common for
+        // AI-generated images) reliably on Android, where RN's core
+        // <Image> component is known to silently fail on big inline
+        // base64 sources.
+        cachePolicy="memory-disk"
+      />
       <DownloadButton onPress={() => downloadToShareSheet(url, `image-${Date.now()}.jpg`)} color="#fff" bg="rgba(0,0,0,0.55)" />
     </View>
   );

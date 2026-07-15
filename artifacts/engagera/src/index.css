@@ -197,4 +197,15 @@
   .thinking-orb-ring {
     animation: orb-ring 1.4s ease-out infinite;
   }
+
+  /* Image-generation placeholder frame: soft breathing opacity so it reads
+     as "actively working" rather than a static/broken box. */
+  @keyframes image-gen-pulse {
+    0%, 100% { opacity: 0.55; }
+    50%      { opacity: 1; }
+  }
+
+  .image-gen-pulse {
+    animation: image-gen-pulse 1.6s ease-in-out infinite;
+  }
 }

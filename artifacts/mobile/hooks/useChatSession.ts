@@ -5,6 +5,7 @@ import {
   ChatRequestError,
   GUEST_MESSAGE_LIMIT,
   SearchInfo,
+  looksLikeImageRequest,
   streamChat,
 } from '@/lib/chat';
 import type { DisplayMessage } from '@/components/ChatBubble';
@@ -105,6 +106,10 @@ export function useChatSession(model: string, contextHint?: string) {
       imageUri: pendingImage?.uri,
     };
     const assistantId = randomId();
+    // Best-effort guess so the placeholder can show a "creating your
+    // image" frame instead of the generic thinking dots. The backend
+    // decides for real; this only affects which loading state is shown.
+    const isImageReq = looksLikeImageRequest(text);
 
     const historyForRequest: ChatMessage[] = [...messages, userMessage]
       .filter((m) => m.text.length > 0 || m.imageUri)
@@ -127,7 +132,14 @@ export function useChatSession(model: string, contextHint?: string) {
     setMessages((prev) => [
       ...prev,
       userMessage,
-      { id: assistantId, role: 'assistant', text: '', pending: true, streaming: true },
+      {
+        id: assistantId,
+        role: 'assistant',
+        text: '',
+        pending: true,
+        streaming: !isImageReq,
+        imageGenerating: isImageReq,
+      },
     ]);
     setInputText('');
     setPendingImage(null);
@@ -149,7 +161,23 @@ export function useChatSession(model: string, contextHint?: string) {
           // state — startReveal's clock drains the queue a few characters
           // at a time so the message always types in, even if the network
           // delivers several tokens (or a whole sentence) in one frame.
+          //
+          // Image replies arrive as one giant already-finished chunk (a
+          // full data: URI, sometimes 100KB+) rather than a token stream —
+          // typing that in char-by-char would be slow and pointless, so it
+          // is applied straight to state instead of going through the
+          // reveal queue.
           onToken: (chunk) => {
+            if (isImageReq) {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId
+                    ? { ...m, text: m.text + chunk, pending: false, imageGenerating: false }
+                    : m,
+                ),
+              );
+              return;
+            }
             revealQueueRef.current += chunk;
             startReveal(assistantId);
           },

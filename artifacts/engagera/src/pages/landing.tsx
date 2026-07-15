@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
-import { Menu, Plus, MessageSquare, Send, Trash2, Cpu } from "lucide-react";
+import { Menu, Plus, MessageSquare, Send, Trash2, Cpu, Image as ImageIcon } from "lucide-react";
 import {
   useListConversations,
   useGetConversationMessages,
@@ -20,6 +20,7 @@ interface DisplayMessage {
   sources?: Source[];
   timeInfo?: TimeInfo;
   streaming?: boolean; // true while the SSE stream is open
+  imageGenerating?: boolean; // true while an image-generation reply is in flight
 }
 
 export default function Landing() {
@@ -124,6 +125,12 @@ export default function Landing() {
     if (!input.trim() || isLoading || guestLimitReached) return;
 
     const msgModel = detectModel(input.trim());
+    // detectModel already routes unambiguous image requests to
+    // "engagera-image" — reuse that instead of a second heuristic. Image
+    // replies never stream token-by-token (the backend waits for the whole
+    // image before responding), so the placeholder shows a distinct
+    // "creating your image" frame instead of the generic thinking dots.
+    const isImageReq = msgModel === "engagera-image";
     const userMsg: DisplayMessage = { role: "user", content: input.trim() };
     const newMessages = [...messages, userMsg];
     setMessages(newMessages);
@@ -144,8 +151,11 @@ export default function Landing() {
     streamClosedRef.current = false;
 
     // Insert the empty placeholder now so the index is valid from the first token.
-    setMessages([...newMessages, { role: "assistant", content: "", streaming: true }]);
-    startRevealLoop(assistantIndex);
+    setMessages([
+      ...newMessages,
+      { role: "assistant", content: "", streaming: !isImageReq, imageGenerating: isImageReq },
+    ]);
+    if (!isImageReq) startRevealLoop(assistantIndex);
 
     try {
       await streamEdgeChat(
@@ -153,6 +163,24 @@ export default function Landing() {
         {
           onToken: (chunk) => {
             streamedAny = true;
+            // Image replies arrive as one already-finished chunk (a full
+            // data: URI, often 100KB+) rather than a token stream — apply
+            // it straight to state instead of the char-by-char reveal
+            // queue, which would be slow and pointless for a value that
+            // was never actually streamed.
+            if (isImageReq) {
+              setMessages((prev) => {
+                if (!prev[assistantIndex]) return prev;
+                const next = [...prev];
+                next[assistantIndex] = {
+                  ...next[assistantIndex],
+                  content: next[assistantIndex].content + chunk,
+                  imageGenerating: false,
+                };
+                return next;
+              });
+              return;
+            }
             pendingCharsRef.current += chunk;
           },
           onMeta: (searchInfo) => {
@@ -363,7 +391,19 @@ export default function Landing() {
                       }`}
                     >
                       {msg.role === "assistant" ? (
-                        msg.streaming && !msg.content ? (
+                        msg.imageGenerating && !msg.content ? (
+                          /* Image requests never stream tokens — show a distinct
+                             "creating your image" frame so it's clear the model
+                             is actively drawing something, not just thinking. */
+                          <div className="flex items-center gap-3 py-2">
+                            <div className="w-[72px] h-[54px] rounded-xl border border-dashed border-white/25 flex items-center justify-center image-gen-pulse">
+                              <ImageIcon className="w-5 h-5 text-white/70" />
+                            </div>
+                            <span className="thinking-shimmer text-[13px] font-medium tracking-wide">
+                              Creating your image…
+                            </span>
+                          </div>
+                        ) : msg.streaming && !msg.content ? (
                           /* Waiting for first token — show thinking animation */
                           <div className="flex items-center gap-2.5 py-2">
                             <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">

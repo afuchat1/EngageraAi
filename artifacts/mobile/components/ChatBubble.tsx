@@ -17,6 +17,8 @@ export interface DisplayMessage {
   pending?: boolean;
   /** True while this assistant message is still actively receiving tokens. */
   streaming?: boolean;
+  /** True while an image-generation reply for this message is in flight. */
+  imageGenerating?: boolean;
 }
 
 /**

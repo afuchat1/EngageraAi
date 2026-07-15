@@ -45,6 +45,53 @@ export interface StreamHandlers {
   onDone?: (done: StreamDoneEvent) => void;
 }
 
+// Mirrors the backend's isImageGenRequest() heuristic in
+// supabase/functions/chat/index.ts — used client-side ONLY to decide how to
+// render the "in progress" placeholder (a picture-frame loader instead of
+// the normal typing dots). The backend remains the single source of truth
+// for whether a request is actually routed to image generation.
+const IMAGE_GEN_KEYWORDS = [
+  'generate an image', 'generate a image', 'generate a picture', 'generate the picture',
+  'generate a photo', 'generate the photo', 'generate artwork', 'generate an artwork',
+  'generate some art', 'generate an illustration', 'generate a illustration',
+  'generate a logo', 'generate the logo', 'generate a wallpaper', 'generate wallpaper',
+  'generate a poster', 'generate poster', 'generate a banner', 'generate banner',
+  'generate a thumbnail', 'generate thumbnail', 'generate a drawing',
+  'create an image', 'create a image', 'create a picture', 'create the picture',
+  'create a photo', 'create the photo', 'create artwork', 'create an artwork',
+  'create an illustration', 'create a illustration', 'create a logo', 'create the logo',
+  'create a wallpaper', 'create wallpaper', 'create a poster', 'create poster',
+  'create a banner', 'create banner', 'create a thumbnail', 'create thumbnail',
+  'create a drawing',
+  'make an image', 'make a image', 'make me an image', 'make me a image',
+  'make a picture', 'make me a picture', 'make a photo', 'make me a photo',
+  'make artwork', 'make me artwork', 'make me art',
+  'make an illustration', 'make a illustration', 'make a logo', 'make me a logo',
+  'make a drawing', 'make me a drawing',
+  'draw me', 'draw a ', 'draw an ', 'paint a ', 'paint an ', 'paint me',
+  'sketch a ', 'sketch an ', 'sketch me',
+  'illustrate this', 'illustrate a', 'illustrate me', 'please illustrate',
+  'render a ', 'render an ', 'render me',
+  'design a logo', 'design the logo', 'design an image', 'design a poster',
+  'design the poster', 'design a banner', 'design the banner',
+  'design a thumbnail', 'design a wallpaper',
+  'show me a picture', 'show me an image', 'show me a photo',
+  'show me a drawing', 'show me a painting', 'show me an illustration', 'show me a logo',
+];
+
+const IMAGE_GEN_PATTERNS: RegExp[] = [
+  /\b(draw|paint|sketch|illustrate|render)\s+(me\s+)?(a\s+|an\s+|the\s+|some\s+|my\s+)?\w/i,
+  /\b(generate|create|make|produce)\b.{0,50}\b(image|picture|photo|drawing|painting|illustration|artwork|logo|poster|wallpaper|banner|thumbnail|graphic)\b/i,
+  /\b(can|could|please|would you|will you)\s+you\s+(draw|paint|sketch|illustrate|render)\b/i,
+  /\b(i want|i need|i'd like|give me)\s+(a\s+|an\s+)(image|picture|photo|drawing|illustration|painting|artwork)\b/i,
+];
+
+/** Best-effort client-side guess of whether a message will trigger image generation. */
+export function looksLikeImageRequest(text: string): boolean {
+  const t = text.toLowerCase();
+  return IMAGE_GEN_KEYWORDS.some((k) => t.includes(k)) || IMAGE_GEN_PATTERNS.some((p) => p.test(t));
+}
+
 const EDGE_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/chat`;
 const REQUEST_TIMEOUT_MS = 60_000;
 const GUEST_SESSION_KEY = 'engagera_guest_session_id';
@@ -117,6 +164,28 @@ export async function streamChat(
     if (!res.ok || !res.body) {
       const err = await res.json().catch(() => ({ error: res.statusText }));
       throw new ChatRequestError(err.error ?? 'Chat request failed', res.status, err);
+    }
+
+    // Image generation always answers with a single application/json body
+    // (never text/event-stream) even when the request asked for stream:
+    // true, because the backend has to wait for the whole image before it
+    // can reply. Detect that here and synthesize the same token/done
+    // events the SSE path would have produced, instead of trying to parse
+    // JSON as SSE frames (which previously threw "Stream ended
+    // unexpectedly" and surfaced as "Something went wrong").
+    const contentType = res.headers.get('content-type') ?? '';
+    if (contentType.includes('application/json')) {
+      const data = await res.json();
+      const content: string = typeof data?.message?.content === 'string' ? data.message.content : '';
+      if (content) handlers.onToken?.(content);
+      handlers.onDone?.({
+        model: data?.model,
+        conversationId: data?.conversationId,
+        searchInfo: data?.searchInfo,
+        guestMessageCount: data?.guestMessageCount,
+        guestMessageLimit: data?.guestMessageLimit,
+      });
+      return;
     }
 
     const reader = res.body.getReader();

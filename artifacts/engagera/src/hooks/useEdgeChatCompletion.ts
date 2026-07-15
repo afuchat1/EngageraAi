@@ -169,6 +169,30 @@ export async function streamEdgeChat(
       });
     }
 
+    // Image generation always answers with a single application/json body
+    // (never text/event-stream) even when the request asked for stream:
+    // true, because the backend has to wait for the whole image before it
+    // can reply. Detect that here and synthesize the same token/done events
+    // the SSE path would have produced, instead of trying to parse JSON as
+    // SSE frames (which previously threw "Stream ended unexpectedly").
+    const contentType = res.headers.get("content-type") ?? "";
+    if (contentType.includes("application/json")) {
+      const data = await res.json();
+      const content: string = typeof data?.message?.content === "string" ? data.message.content : "";
+      if (content) handlers.onToken?.(content);
+      handlers.onDone?.({
+        model: data?.model,
+        conversationId: data?.conversationId,
+        searchInfo: data?.searchInfo,
+        crawledUrls: data?.crawledUrls,
+        crawledSources: data?.crawledSources,
+        timeInfo: data?.timeInfo,
+        guestMessageCount: data?.guestMessageCount,
+        guestMessageLimit: data?.guestMessageLimit,
+      });
+      return;
+    }
+
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
