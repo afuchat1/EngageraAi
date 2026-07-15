@@ -602,7 +602,8 @@ const styles = StyleSheet.create({
 
   // Tab bar
   tabBar: {
-    flexGrow: 0,
+    height: 44,
+    flexShrink: 0,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   tabBarContent: {
