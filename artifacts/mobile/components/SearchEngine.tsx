@@ -920,7 +920,7 @@ const s = StyleSheet.create({
   tabUnderline: { height: 2, width: '100%', borderRadius: 1, marginTop: -1 },
 
   // AI chat
-  aiChatPad: { paddingTop: 6, paddingHorizontal: 14, paddingBottom: 8 },
+  aiChatPad: { flexGrow: 1, paddingTop: 6, paddingHorizontal: 14, paddingBottom: 8 },
 
   // User bubble (right-aligned)
   aiUserRow: { alignItems: 'flex-end', marginBottom: 16 },
