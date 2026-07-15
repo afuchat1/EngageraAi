@@ -1,25 +1,38 @@
 /**
- * Search lib — talks to AfuBot, Engagera's own crawler, via the api-server.
+ * Search lib — talks to Engagera's `search` Supabase edge function.
  *
- * The api-server runs AfuBot server-side: it fetches real sites directly,
- * follows links, and ranks results itself. No third-party search API
- * (Bing, Google, Brave, DuckDuckGo) is used anywhere in this pipeline.
+ * The edge function aggregates results from free, keyless sources
+ * (DuckDuckGo, Bing News RSS, Google News RSS, curated outlet RSS feeds,
+ * Bing image search, YouTube search) server-side, so no API key or
+ * dedicated backend is needed here — same pattern as `chat.ts`.
  */
+import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from '@/lib/supabase';
+import { getOrCreateGuestSessionId } from '@/lib/chat';
 
-const BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api/search`;
+const BASE = `${SUPABASE_URL}/functions/v1/search`;
 
-async function req<T>(path: string, query: string): Promise<T> {
-  const url = `${BASE}/${path}?q=${encodeURIComponent(query)}`;
-  const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json' },
-  });
-  if (!res.ok) throw new Error(`Search ${path} failed (${res.status})`);
+async function buildHeaders(): Promise<Record<string, string>> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData.session?.access_token;
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${token ?? SUPABASE_ANON_KEY}`,
+  };
+  if (!token) headers['x-guest-session-id'] = await getOrCreateGuestSessionId();
+  return headers;
+}
+
+async function req<T>(type: string, query: string): Promise<T> {
+  const headers = await buildHeaders();
+  const url = `${BASE}?type=${type}&q=${encodeURIComponent(query)}`;
+  const res = await fetch(url, { headers });
+  if (!res.ok) throw new Error(`Search ${type} failed (${res.status})`);
   return res.json();
 }
 
-// ── Domain detection ─────────────────────────────────────────────────────────────
-// If the input looks like a bare domain (e.g. "afuchat.com"), AfuBot should
-// open it directly in the in-app browser instead of running a search.
+// ── Domain detection ─────────────────────────────────────────────────────────
+// If the input looks like a bare domain (e.g. "afuchat.com"), open it
+// directly in the in-app browser instead of running a search.
 
 export async function resolveDomain(query: string): Promise<string | null> {
   if (!query.trim() || /\s/.test(query.trim())) return null;
@@ -36,7 +49,7 @@ export async function resolveDomain(query: string): Promise<string | null> {
 export async function fetchSuggestions(query: string): Promise<string[]> {
   if (!query.trim() || query.length < 2) return [];
   try {
-    const data = await req<{ suggestions: string[] }>('suggestions', query);
+    const data = await req<{ suggestions: string[] }>('suggest', query);
     return data.suggestions ?? [];
   } catch {
     return [];

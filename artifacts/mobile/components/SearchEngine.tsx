@@ -1,7 +1,9 @@
 /**
  * Lab Search Engine
  *
- * Full search engine powered by Engagera's AfuBot crawler.
+ * Full search engine powered by Engagera's AfuBot search backend, which
+ * aggregates DuckDuckGo, Bing News RSS, Google News RSS, curated outlet
+ * RSS feeds, Bing image search, and YouTube search.
  * Real-time suggestions while typing, tabbed results
  * (Web · Images · Videos · News · Finance), and a built-in
  * WebView browser that opens when the user taps any result.
@@ -237,7 +239,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
   }, [query]);
 
   // ── Search ─────────────────────────────────────────────────────────────────
-  // AfuBot crawls once per query (cached briefly server-side) and all five
+  // AfuBot fetches once per query and all five
   // result types are read off that same crawl, so they can all run in parallel.
   const doSearch = useCallback(async (q: string) => {
     const trimmed = q.trim();
@@ -306,7 +308,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
           </View>
           <Text style={[styles.landingTitle, { color: colors.foreground }]}>Engagera Search</Text>
           <Text style={[styles.landingBody, { color: colors.mutedForeground }]}>
-            Web · Images · Videos · News · Finance{'\n'}powered by Engagera's AfuBot crawler
+            Web · Images · Videos · News · Finance{'\n'}powered by Engagera's AfuBot search
           </Text>
         </View>
       ) : null}

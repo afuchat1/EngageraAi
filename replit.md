@@ -1,12 +1,11 @@
 # Engagera
 
-Engagera is a black-and-white AI chat product: a web app (`artifacts/engagera`), a pitch deck (`artifacts/engagera-pitch-deck`), and a native Android-first mobile app (`artifacts/mobile`). Both the web and mobile clients talk directly to the same deployed Supabase project (auth + edge functions) — there is no dependency on `artifacts/api-server` for the chat feature today.
+Engagera is a black-and-white AI chat product: a web app (`artifacts/engagera`), a pitch deck (`artifacts/engagera-pitch-deck`), and a native Android-first mobile app (`artifacts/mobile`). Both the web and mobile clients talk directly to the same deployed Supabase project (auth + edge functions) — there is no local API server anywhere in this workspace; all backend logic (chat, search, etc.) lives in Supabase Edge Functions.
 
 ## Run & Operate
 
 - `pnpm --filter @workspace/engagera run dev` — run the web app
 - `pnpm --filter @workspace/mobile run dev` — run the Expo mobile app
-- `pnpm --filter @workspace/api-server run dev` — run the API server (not used by chat; web/mobile talk to Supabase directly)
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 
@@ -24,13 +23,14 @@ Engagera is a black-and-white AI chat product: a web app (`artifacts/engagera`),
 - `artifacts/engagera-pitch-deck` — slides artifact
 - `artifacts/mobile` — Expo app: Chat tab + Lab (research) tab, guest mode (5 free messages) mirroring the web app's guest limit, sign-in/sign-up as a bottom sheet
 - `supabase/functions/chat` — shared chat edge function (streaming, vision via `image_url` parts, guest sessions via `x-guest-session-id` header, optional web-search/citations surfaced as `searchInfo`)
-- `supabase/functions/models` — exposes `engagera-2.0` (default) and `engagera-2.1` (used by mobile's Lab tab for research)
+- `supabase/functions/models` — exposes `engagera-2.0` (default) and `engagera-2.1`
+- `supabase/functions/search` — mobile Lab tab's search backend (web/images/videos/news/finance via DuckDuckGo, Bing News RSS, Google News RSS, curated outlet RSS feeds, Bing image search, YouTube search)
 
 ## Architecture decisions
 
 - Mobile app is a fully independent codebase from the web app (no shared imports) but mirrors its black/white visual identity and guest-session/auth patterns natively.
-- Mobile talks straight to the public Supabase URL/anon key (same as web) instead of `api-server`, per explicit product decision to avoid running/maintaining a separate backend for this app.
-- Mobile's "Lab" tab is the `engagera-2.1` model with `contextHint: "research"`, reusing the chat function's existing web-search/citation support rather than a new backend feature.
+- Mobile talks straight to the public Supabase URL/anon key (same as web), per explicit product decision to avoid running/maintaining a separate backend for this app.
+- Mobile's "Lab" tab is a standalone search engine (`SearchEngine.tsx`), not the chat model — it calls the `search` Supabase edge function, which aggregates DuckDuckGo, Bing News RSS, Google News RSS, curated outlet RSS feeds, Bing image search, and YouTube search. No API key required, no local backend.
 
 ## Product
 
@@ -47,8 +47,8 @@ Engagera is a black-and-white AI chat product: a web app (`artifacts/engagera`),
 
 ## Gotchas
 
-- `artifacts/api-server` runs but is not used by the chat feature — do not migrate any data flow onto it; web and mobile must keep talking directly to the Supabase edge functions.
 - Replit's built-in Expo publish flow (EAS via Expo Launch) only supports iOS App Store submission, not Google Play — keep this in mind since the mobile app's target platform is Android.
+- The `search` edge function scrapes DuckDuckGo/Bing/YouTube HTML pages directly (no API key, no official API) — these are unofficial endpoints that can change layout without notice; each fetch has a timeout and fails soft to an empty array rather than throwing.
 
 ## Pointers
 

@@ -17,7 +17,7 @@ import { useColors } from '@/hooks/useColors';
 interface Props {
   url: string | null;
   onClose: () => void;
-  /** Called when the address bar is given plain search text (not a URL) — runs an AfuBot search instead of leaving the app. */
+  /** Called when the address bar is given plain search text (not a URL) — runs an in-app search instead of leaving the app. */
   onSearchFallback?: (query: string) => void;
 }
 
@@ -65,8 +65,8 @@ export function InAppBrowser({ url, onClose, onSearchFallback }: Props) {
       webViewRef.current?.injectJavaScript(`window.location.href = ${JSON.stringify(dest)};`);
       return;
     }
-    // Plain text, not a URL — hand it back to AfuBot's own search instead of
-    // ever navigating to a third-party search engine.
+    // Plain text, not a URL — hand it back to the in-app search instead of
+    // ever navigating to an external browser/search engine.
     onSearchFallback?.(target);
   };
 
