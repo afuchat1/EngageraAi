@@ -811,7 +811,7 @@ function AiResearchTab({
         contentContainerStyle={art.content}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
+        onContentSizeChange={() => { if (streaming) listRef.current?.scrollToEnd({ animated: true }); }}
         ListFooterComponent={<View style={{ height: 8 }} />}
       />
 
