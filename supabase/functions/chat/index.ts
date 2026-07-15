@@ -393,6 +393,25 @@ function getTextPreview(content: MessageContent): string {
   return tp?.text ?? "";
 }
 
+// Generated images are stored (and shown to the user) as markdown with a
+// full base64 data URI inline — sometimes 100KB+ of text. If that's resent
+// verbatim as conversation history on every later turn, it blows the
+// provider's context/token limits and every *subsequent* chat message in
+// that conversation fails, even though the current message has nothing to
+// do with images. Replace prior generated-image markup with a short marker
+// before any message list is handed to an LLM provider — this must be
+// called on every historical message's text right before it's placed into
+// a provider-bound ChatMessage[].
+const GENERATED_IMAGE_MARKDOWN_RE = /!\[[^\]]*\]\(data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+\)/g;
+const RAW_DATA_URI_RE = /data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]{200,}/g;
+
+function sanitizeContentForModel(content: string): string {
+  if (!content.includes("data:image")) return content;
+  return content
+    .replace(GENERATED_IMAGE_MARKDOWN_RE, "[An image was generated here earlier in this conversation]")
+    .replace(RAW_DATA_URI_RE, "[image data omitted]");
+}
+
 interface ChatMessage {
   role: string;
   content: string | MessageContent | null;
@@ -2831,7 +2850,9 @@ Deno.serve(async (req: Request) => {
         { role: "system", content: sysContent2 },
         ...validMessages.filter((m) => m.role !== "system").map((m) => ({
           role: m.role,
-          content: typeof m.content === "string" ? m.content : getTextPreview(m.content as MessageContent),
+          content: sanitizeContentForModel(
+            typeof m.content === "string" ? m.content : getTextPreview(m.content as MessageContent),
+          ),
         })),
       ];
 
@@ -3107,7 +3128,9 @@ Deno.serve(async (req: Request) => {
           .filter((m) => m.role !== "system")
           .map((m) => ({
             role:    m.role,
-            content: typeof m.content === "string" ? m.content : getTextPreview(m.content),
+            content: sanitizeContentForModel(
+              typeof m.content === "string" ? m.content : getTextPreview(m.content),
+            ),
           })),
       ];
 

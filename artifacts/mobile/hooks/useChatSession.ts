@@ -262,7 +262,9 @@ export function useChatSession(model: string, contextHint?: string) {
           ? err.status === 429
             ? "You've used all your free guest messages. Sign in to keep chatting."
             : err.message
-          : 'Something went wrong. Please try again.';
+          : err instanceof Error && err.message
+            ? `Something went wrong: ${err.message}`
+            : 'Something went wrong. Please try again.';
       setMessages((prev) =>
         prev.map((m) => (m.id === assistantId ? { ...m, text: message, pending: false, streaming: false } : m)),
       );

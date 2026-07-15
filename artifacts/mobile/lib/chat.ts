@@ -154,16 +154,26 @@ export async function streamChat(
   }
 
   try {
-    const res = await expoFetch(EDGE_FUNCTION_URL, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ ...request, stream: true }),
-      signal: controller.signal,
-    });
+    let res: Awaited<ReturnType<typeof expoFetch>>;
+    try {
+      res = await expoFetch(EDGE_FUNCTION_URL, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ ...request, stream: true }),
+        signal: controller.signal,
+      });
+    } catch (networkErr) {
+      if (networkErr instanceof Error && networkErr.name === 'AbortError') throw networkErr;
+      const detail = networkErr instanceof Error ? networkErr.message : String(networkErr);
+      throw new ChatRequestError(`Could not reach the server (${detail}). Check your connection and try again.`, 0, {
+        error: 'network',
+        detail,
+      });
+    }
 
     if (!res.ok || !res.body) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      throw new ChatRequestError(err.error ?? 'Chat request failed', res.status, err);
+      const err = await res.json().catch(() => ({ error: res.statusText || `HTTP ${res.status}` }));
+      throw new ChatRequestError(err.error ?? `Chat request failed (HTTP ${res.status}).`, res.status, err);
     }
 
     // Image generation always answers with a single application/json body
@@ -175,15 +185,28 @@ export async function streamChat(
     // unexpectedly" and surfaced as "Something went wrong").
     const contentType = res.headers.get('content-type') ?? '';
     if (contentType.includes('application/json')) {
-      const data = await res.json();
-      const content: string = typeof data?.message?.content === 'string' ? data.message.content : '';
+      let data: Record<string, unknown>;
+      try {
+        data = await res.json();
+      } catch {
+        // The response was cut off or corrupted in transit (common on a
+        // slow/flaky connection downloading a large image reply) — the
+        // backend has typically already generated and saved the message by
+        // this point, so the caller may still be able to recover it.
+        throw new ChatRequestError(
+          'The server sent back an incomplete response. Please try again.',
+          502,
+          { error: 'invalid_json' },
+        );
+      }
+      const content: string = typeof (data as any)?.message?.content === 'string' ? (data as any).message.content : '';
       if (content) handlers.onToken?.(content);
       handlers.onDone?.({
-        model: data?.model,
-        conversationId: data?.conversationId,
-        searchInfo: data?.searchInfo,
-        guestMessageCount: data?.guestMessageCount,
-        guestMessageLimit: data?.guestMessageLimit,
+        model: (data as any)?.model,
+        conversationId: (data as any)?.conversationId,
+        searchInfo: (data as any)?.searchInfo,
+        guestMessageCount: (data as any)?.guestMessageCount,
+        guestMessageLimit: (data as any)?.guestMessageLimit,
       });
       return;
     }
@@ -220,19 +243,31 @@ export async function streamChat(
 
         if (evt.type === 'token' && evt.content) handlers.onToken?.(evt.content);
         else if (evt.type === 'meta' && evt.searchInfo) handlers.onMeta?.(evt.searchInfo);
-        else if (evt.type === 'error') throw new Error(evt.error ?? 'Stream error');
-        else if (evt.type === 'done') handlers.onDone?.(evt as StreamDoneEvent);
+        else if (evt.type === 'error') {
+          throw new ChatRequestError(evt.error ?? 'The AI could not process that message. Please try again.', 502, {
+            error: evt.error ?? 'stream_error',
+          });
+        } else if (evt.type === 'done') handlers.onDone?.(evt as StreamDoneEvent);
       }
     }
 
     if (!sawDone) {
-      throw new Error('Stream ended unexpectedly before completion.');
+      throw new ChatRequestError(
+        'The connection to the server dropped before the reply finished. Please try again.',
+        502,
+        { error: 'stream_incomplete' },
+      );
     }
   } catch (err: unknown) {
+    if (err instanceof ChatRequestError) throw err;
     if (err instanceof Error && err.name === 'AbortError') {
       throw new ChatRequestError('Request timed out. Please try again.', 408, { error: 'timeout' });
     }
-    throw err;
+    // Anything else (e.g. a reader/network failure mid-stream) is still an
+    // unknown failure mode, but we surface its actual message instead of a
+    // blanket "something went wrong" so the user has something actionable.
+    const detail = err instanceof Error && err.message ? err.message : 'unknown error';
+    throw new ChatRequestError(`Connection problem (${detail}). Please try again.`, 0, { error: detail });
   } finally {
     clearTimeout(timeoutId);
   }
