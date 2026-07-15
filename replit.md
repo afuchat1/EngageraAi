@@ -1,44 +1,50 @@
-# [Project name]
+# Engagera
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Engagera is a black-and-white AI chat product: a web app (`artifacts/engagera`), a pitch deck (`artifacts/engagera-pitch-deck`), and a native Android-first mobile app (`artifacts/mobile`). Both the web and mobile clients talk directly to the same deployed Supabase project (auth + edge functions) — there is no dependency on `artifacts/api-server` for the chat feature today.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/engagera run dev` — run the web app
+- `pnpm --filter @workspace/mobile run dev` — run the Expo mobile app
+- `pnpm --filter @workspace/api-server run dev` — run the API server (currently broken — missing esbuild; not used by chat)
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
 
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Web: React + Vite, black/white theme (`artifacts/engagera/src/index.css`)
+- Mobile: Expo SDK 55, expo-router, React Native 0.83 (Android-first; also runs on iOS/web)
+- Backend: Supabase (Postgres + Auth + Edge Functions in `supabase/functions/*`) — deployed independently, not part of this pnpm workspace's dev servers
+- API codegen (`lib/api-spec`, `@workspace/api-client-react`) exists but is not used by the chat feature; both clients call the Supabase `chat`/`models` edge functions directly
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/engagera` — web app (marketing + chat UI)
+- `artifacts/engagera-pitch-deck` — slides artifact
+- `artifacts/mobile` — Expo app: Chat tab + Lab (research) tab, guest mode (5 free messages) mirroring the web app's guest limit, sign-in/sign-up as a bottom sheet
+- `supabase/functions/chat` — shared chat edge function (streaming, vision via `image_url` parts, guest sessions via `x-guest-session-id` header, optional web-search/citations surfaced as `searchInfo`)
+- `supabase/functions/models` — exposes `engagera-2.0` (default) and `engagera-2.1` (used by mobile's Lab tab for research)
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Mobile app is a fully independent codebase from the web app (no shared imports) but mirrors its black/white visual identity and guest-session/auth patterns natively.
+- Mobile talks straight to the public Supabase URL/anon key (same as web) instead of `api-server`, per explicit product decision to avoid running/maintaining a separate backend for this app.
+- Mobile's "Lab" tab is the `engagera-2.1` model with `contextHint: "research"`, reusing the chat function's existing web-search/citation support rather than a new backend feature.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- Web: full Engagera product (chat, docs, admin, etc. — see `artifacts/engagera`).
+- Mobile: minimal, Android-first native companion — one Chat tab (text + image chat, streaming, guest quota) and one Lab tab (deeper research mode with cited sources). No dev tools or admin screens by design.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Mobile app must stay Android-first/minimal: no API servers, no extra API keys, no background execution, no permissions beyond what's used (photo library only — no camera).
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- `artifacts/api-server` currently fails to start (missing esbuild) — this is a known, currently-unaddressed issue and is not required for the chat feature to work.
+- Replit's built-in Expo publish flow (EAS via Expo Launch) only supports iOS App Store submission, not Google Play — keep this in mind since the mobile app's target platform is Android.
 
 ## Pointers
 
