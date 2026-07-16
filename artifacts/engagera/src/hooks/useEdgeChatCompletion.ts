@@ -76,16 +76,15 @@ async function buildHeaders(): Promise<Record<string, string>> {
       return id;
     })();
 
-  const headers: Record<string, string> = {
+  // Always include x-guest-session-id alongside the bearer token.
+  // The server prefers a valid JWT but falls back to the guest session
+  // if the token is expired/invalid — this prevents a 401 when the browser
+  // has a stale session that hasn't been cleared yet.
+  return {
     "Content-Type": "application/json",
     "Authorization": `Bearer ${token ?? SUPABASE_ANON_KEY}`,
+    "x-guest-session-id": guestId,
   };
-
-  if (!token) {
-    headers["x-guest-session-id"] = guestId;
-  }
-
-  return headers;
 }
 
 export async function callEdgeChat(request: ChatRequest): Promise<ChatResponse> {
