@@ -1,7 +1,9 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { applyWatermark } from "../_shared/watermark.ts";
-import { DOMParser } from "https://deno.land/x/deno_dom@v0.1.45/deno-dom-wasm.ts";
-import { Readability } from "https://esm.sh/@mozilla/readability@0.5.0?no-dts";
+// NOTE: DOMParser (deno_dom WASM), Readability, and applyWatermark (imagescript WASM)
+// are dynamically imported at their usage sites rather than here at the module level.
+// Static WASM imports are instantiated synchronously during cold start and can push the
+// function over Supabase's boot-time memory/CPU limit, causing BOOT_ERROR 503s.
+// Dynamic imports defer WASM loading until the first request that actually needs them.
 
 /**
  * Engagera Chat Edge Function v41
@@ -1059,6 +1061,10 @@ async function afuBotFetch(url: string): Promise<{ text: string; image: string |
 
     // ── 1. Structured extraction: real DOM + Readability scoring ──────────────
     try {
+      const [{ DOMParser }, { Readability }] = await Promise.all([
+        import("https://deno.land/x/deno_dom@v0.1.45/deno-dom-wasm.ts"),
+        import("https://esm.sh/@mozilla/readability@0.5.0?no-dts"),
+      ]);
       const document = new DOMParser().parseFromString(html, "text/html");
       if (!document) throw new Error("DOM parse failed");
       // deno-lint-ignore no-explicit-any
@@ -3287,6 +3293,7 @@ Deno.serve(async (req: Request) => {
         // syntax ( [ ] ( ) or newlines ) — otherwise the image renders as
         // broken text instead of an <img> in the chat UI.
         const safeAlt = imagePrompt.slice(0, 100).replace(/[\[\]()\r\n]/g, " ").trim() || "Generated image";
+        const { applyWatermark } = await import("../_shared/watermark.ts");
         const watermarked = await applyWatermark(cfImage.base64, requestId);
         reply = `![${safeAlt}](data:image/jpeg;base64,${watermarked})`;
       } else {
