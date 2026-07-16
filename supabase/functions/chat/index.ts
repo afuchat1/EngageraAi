@@ -249,11 +249,12 @@ async function resolveAuth(
       new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(apiKeyHeader))),
     ).map((b) => b.toString(16).padStart(2, "0")).join("");
 
-    const { data: keyRow } = await db
+    const { data: keyRow, error: keyErr } = await db
       .from("engagera_api_keys")
-      .select("id, user_id, is_active, daily_limit, usage_count")
+      .select("id, user_id, is_active")
       .eq("key_hash", keyHash)
       .single();
+    if (keyErr) log("warn", "auth.api_key_lookup_error", { requestId, err: keyErr.message });
 
     if (keyRow?.is_active) {
       log("info", "auth.api_key", { requestId, keyId: keyRow.id });
