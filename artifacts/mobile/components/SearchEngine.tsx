@@ -997,7 +997,19 @@ export function SearchEngine({ topPad }: { topPad: number }) {
     setAiError('');
   }, []);
 
-  const openBrowser = useCallback((url: string) => setBrowserUrl(url), []);
+  // Resolve Google News redirect URLs before opening so the browser bar never
+  // exposes news.google.com — React Native fetch follows redirects and exposes
+  // the final URL via response.url, which works fine without CORS restrictions.
+  const openBrowser = useCallback(async (url: string) => {
+    let target = url;
+    if (url.includes('news.google.com')) {
+      try {
+        const r = await fetch(url, { method: 'HEAD' });
+        if (r.url && !r.url.includes('news.google.com')) target = r.url;
+      } catch { /* keep original url on network error */ }
+    }
+    setBrowserUrl(target);
+  }, []);
 
   return (
     <View style={[root.wrap, { paddingTop: topPad }]}>
