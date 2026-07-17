@@ -2,7 +2,7 @@
   "expo": {
     "name": "Engagera",
     "slug": "engagera",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/images/icon-black.png",
     "scheme": "mobile",
@@ -22,7 +22,7 @@
     },
     "android": {
       "package": "com.engagera.mobile",
-      "versionCode": 2,
+      "versionCode": 3,
       "backgroundColor": "#000000",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/logo.png",

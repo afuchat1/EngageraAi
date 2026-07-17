@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, FlatList, KeyboardAvoidingView, Keyboard, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Keyboard, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -158,12 +159,12 @@ export default function ChatScreen() {
 
       {/* ── Chat — always mounted for same reason ────────────────────────── */}
       <View style={[styles.flex, mode !== 'chat' && styles.hidden]}>
-        {/* KeyboardAvoidingView: padding on iOS (KAV shifts content up by kb
-            height), height on Android (KAV shrinks the view height instead).
-            keyboardVerticalOffset=0 because the header is OUTSIDE this KAV. */}
+        {/* react-native-keyboard-controller's KAV uses Reanimated worklets
+            and correctly measures the keyboard frame on both iOS and Android,
+            including inside Expo Go. 'padding' mode works cross-platform. */}
         <KeyboardAvoidingView
           style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
           keyboardVerticalOffset={0}
         >
           {messages.length === 0 ? (

@@ -159,162 +159,211 @@ export class ChatRequestError extends Error {
   }
 }
 
-export async function streamChat(
+/**
+ * Stream a chat request using XMLHttpRequest.
+ *
+ * XHR's onreadystatechange fires at readyState=3 (LOADING) as data arrives,
+ * giving us incremental SSE frames on Android and iOS alike — including inside
+ * Expo Go. The standard fetch API's response.body.getReader() is unreliable
+ * on Android (the body is often null or the stream stalls), so XHR is the
+ * correct primitive for SSE in React Native.
+ *
+ * Flow:
+ *   stream:true  → server returns text/event-stream  → live status + tokens
+ *   image gen    → server returns application/json   → handled at DONE
+ */
+export function streamChat(
   request: ChatRequest,
   handlers: StreamHandlers,
   signal?: AbortSignal,
 ): Promise<void> {
-  const headers = await buildHeaders();
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  if (signal) {
-    if (signal.aborted) controller.abort();
-    else signal.addEventListener('abort', () => controller.abort(), { once: true });
-  }
+  return buildHeaders().then(
+    (headers) =>
+      new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', EDGE_FUNCTION_URL);
+        for (const [k, v] of Object.entries(headers)) {
+          xhr.setRequestHeader(k, v);
+        }
+        xhr.timeout = REQUEST_TIMEOUT_MS;
 
-  try {
-    let res: Response;
-    try {
-      res = await fetch(EDGE_FUNCTION_URL, {
-        method: 'POST',
-        headers,
-        // stream: false → server returns a single application/json body.
-        // The edge function doesn't do real token streaming (it buffers the
-        // full LLM response then sends one SSE event anyway), so there is no
-        // UX difference. JSON is far more reliable in React Native because
-        // response.body.getReader() is unreliable on Android/Expo Go.
-        body: JSON.stringify({ ...request, stream: false, userLocation: request.userLocation ?? DEVICE_LOCATION }),
-        signal: controller.signal,
-      });
-    } catch (networkErr) {
-      if (networkErr instanceof Error && networkErr.name === 'AbortError') throw networkErr;
-      const detail = networkErr instanceof Error ? networkErr.message : String(networkErr);
-      throw new ChatRequestError(`Could not reach the server (${detail}). Check your connection and try again.`, 0, {
-        error: 'network',
-        detail,
-      });
-    }
+        let offset = 0;      // bytes of responseText already consumed
+        let buffer = '';     // incomplete SSE frame accumulator
+        let settled = false; // guard against double-resolve/reject
 
-    // Only treat non-2xx as an error. Do NOT gate on res.body — in some
-    // React Native / Expo Go fetch implementations body is null even for
-    // perfectly valid JSON responses, which previously caused every
-    // successful 200 to be misread as a failure.
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText || `HTTP ${res.status}` }));
-      throw new ChatRequestError(err.error ?? `Chat request failed (HTTP ${res.status}).`, res.status, err);
-    }
+        const settle = (fn: () => void) => {
+          if (settled) return;
+          settled = true;
+          fn();
+        };
 
-    // With stream: false the server always returns application/json.
-    // We also handle the case where res.body is null (some RN builds) by
-    // routing through res.json() regardless of content-type in that case.
-    const contentType = res.headers.get('content-type') ?? '';
-    if (contentType.includes('application/json') || !res.body) {
-      let data: Record<string, unknown>;
-      try {
-        data = await res.json();
-      } catch {
-        throw new ChatRequestError(
-          'The server sent back an incomplete response. Please try again.',
-          502,
-          { error: 'invalid_json' },
-        );
-      }
+        /** Parse all complete \n\n-delimited SSE frames in `buffer`. */
+        const flush = () => {
+          const parts = buffer.split('\n\n');
+          buffer = parts.pop() ?? ''; // trailing incomplete chunk
+          for (const part of parts) {
+            const line = part.split('\n').find((l) => l.startsWith('data:'));
+            if (!line) continue;
+            const raw = line.slice(5).trim();
+            if (raw === '[DONE]') continue;
+            try {
+              const evt = JSON.parse(raw) as Record<string, unknown>;
+              if (evt.type === 'token' && evt.content)
+                handlers.onToken?.(evt.content as string);
+              else if (evt.type === 'searchStatus' && evt.message)
+                handlers.onSearchStatus?.(evt.message as string);
+              else if (evt.type === 'meta' && evt.searchInfo)
+                handlers.onMeta?.(evt.searchInfo as SearchInfo);
+              else if (evt.type === 'done')
+                handlers.onDone?.(evt as unknown as StreamDoneEvent);
+              else if (evt.type === 'error')
+                settle(() =>
+                  reject(
+                    new ChatRequestError(
+                      (evt.error as string) ?? 'The AI could not process that message. Please try again.',
+                      502,
+                      evt,
+                    ),
+                  ),
+                );
+            } catch {
+              /* malformed frame — skip */
+            }
+          }
+        };
 
-      const content: string =
-        typeof (data as any)?.message?.content === 'string' ? (data as any).message.content : '';
+        /** Handle JSON body (image gen always returns JSON even with stream:true). */
+        const handleJsonBody = (text: string) => {
+          try {
+            const data = JSON.parse(text) as Record<string, unknown>;
+            const msg = data?.message as Record<string, unknown> | undefined;
+            const content = typeof msg?.content === 'string' ? msg.content : '';
+            if (!content) {
+              settle(() =>
+                reject(
+                  new ChatRequestError('The AI returned an empty response. Please try again.', 502, {
+                    error: 'empty_response',
+                  }),
+                ),
+              );
+              return;
+            }
+            handlers.onToken?.(content);
+            const si = data?.searchInfo as SearchInfo | undefined;
+            if (si && Array.isArray(si.sources) && si.sources.length > 0) handlers.onMeta?.(si);
+            handlers.onDone?.({
+              model: data?.model as string,
+              conversationId: data?.conversationId as number | undefined,
+              searchInfo: si,
+              timeInfo: data?.timeInfo as TimeInfo | undefined,
+              weatherInfo: data?.weatherInfo as WeatherInfo | undefined,
+              guestMessageCount: data?.guestMessageCount as number | undefined,
+              guestMessageLimit: data?.guestMessageLimit as number | undefined,
+            });
+            settle(() => resolve());
+          } catch {
+            settle(() =>
+              reject(
+                new ChatRequestError('The server sent back an incomplete response. Please try again.', 502, {
+                  error: 'invalid_json',
+                }),
+              ),
+            );
+          }
+        };
 
-      // Guard: empty content means the AI returned nothing — surface it as
-      // an error so the user sees actionable text instead of a blank bubble.
-      if (!content) {
-        throw new ChatRequestError(
-          'The AI returned an empty response. Please try again.',
-          502,
-          { error: 'empty_response' },
-        );
-      }
+        xhr.onreadystatechange = () => {
+          // readyState 3 = LOADING (partial body), 4 = DONE (full body)
+          if (xhr.readyState < 3) return;
 
-      handlers.onToken?.(content);
+          // Consume any new bytes since last event
+          const chunk = xhr.responseText.slice(offset);
+          offset = xhr.responseText.length;
+          if (chunk) {
+            buffer += chunk;
+            // During LOADING we only flush SSE frames; JSON bodies are
+            // handled in full at DONE to avoid partial-parse failures.
+            const ct = (xhr.getResponseHeader?.('content-type') ?? '').toLowerCase();
+            if (!ct.includes('application/json')) flush();
+          }
 
-      // Fire onMeta for search results so callers don't need separate
-      // handling for streaming vs JSON response paths.
-      const si = (data as any)?.searchInfo as SearchInfo | undefined;
-      if (si && Array.isArray(si.sources) && si.sources.length > 0) handlers.onMeta?.(si);
+          if (xhr.readyState === 4) {
+            if (xhr.status === 0) return; // xhr.abort() — onabort handles it
 
-      handlers.onDone?.({
-        model: (data as any)?.model,
-        conversationId: (data as any)?.conversationId,
-        searchInfo: si,
-        // timeInfo and weatherInfo were missing from the JSON handler —
-        // the server includes them but they were never forwarded to the UI.
-        timeInfo: (data as any)?.timeInfo as TimeInfo | undefined,
-        weatherInfo: (data as any)?.weatherInfo as WeatherInfo | undefined,
-        guestMessageCount: (data as any)?.guestMessageCount,
-        guestMessageLimit: (data as any)?.guestMessageLimit,
-      });
-      return;
-    }
+            if (xhr.status < 200 || xhr.status >= 300) {
+              try {
+                const err = JSON.parse(xhr.responseText) as Record<string, unknown>;
+                settle(() =>
+                  reject(
+                    new ChatRequestError(
+                      (err.error as string) ?? `Chat request failed (HTTP ${xhr.status}).`,
+                      xhr.status,
+                      err,
+                    ),
+                  ),
+                );
+              } catch {
+                settle(() => reject(new ChatRequestError(`HTTP ${xhr.status}`, xhr.status, {})));
+              }
+              return;
+            }
 
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let sawDone = false;
+            const ct = (xhr.getResponseHeader?.('content-type') ?? '').toLowerCase();
+            if (ct.includes('application/json')) {
+              handleJsonBody(xhr.responseText);
+              return;
+            }
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+            // SSE path complete — flush any remaining frames
+            flush();
+            settle(() => resolve());
+          }
+        };
 
-      let sepIdx: number;
-      while ((sepIdx = buffer.indexOf('\n\n')) !== -1) {
-        const rawEvent = buffer.slice(0, sepIdx);
-        buffer = buffer.slice(sepIdx + 2);
+        xhr.ontimeout = () =>
+          settle(() =>
+            reject(
+              new ChatRequestError(
+                'Request timed out. The AI is taking too long — please try again.',
+                408,
+                { error: 'timeout' },
+              ),
+            ),
+          );
 
-        const dataLine = rawEvent.split('\n').find((line) => line.startsWith('data:'));
-        if (!dataLine) continue;
-        const payload = dataLine.slice(5).trim();
-        if (payload === '[DONE]') {
-          sawDone = true;
-          continue;
+        xhr.onerror = () =>
+          settle(() =>
+            reject(
+              new ChatRequestError(
+                'Could not reach the server. Check your connection and try again.',
+                0,
+                { error: 'network' },
+              ),
+            ),
+          );
+
+        xhr.onabort = () =>
+          settle(() =>
+            reject(Object.assign(new Error('The request was cancelled.'), { name: 'AbortError' })),
+          );
+
+        if (signal) {
+          if (signal.aborted) {
+            xhr.abort();
+            return;
+          }
+          signal.addEventListener('abort', () => xhr.abort(), { once: true });
         }
 
-        let evt: { type: string; content?: string; searchInfo?: SearchInfo; error?: string } & Partial<StreamDoneEvent>;
-        try {
-          evt = JSON.parse(payload);
-        } catch {
-          continue;
-        }
-
-        if (evt.type === 'token' && evt.content) handlers.onToken?.(evt.content);
-        else if (evt.type === 'meta' && evt.searchInfo) handlers.onMeta?.(evt.searchInfo);
-        else if (evt.type === 'searchStatus' && (evt as any).message) handlers.onSearchStatus?.((evt as any).message);
-        else if (evt.type === 'error') {
-          throw new ChatRequestError(evt.error ?? 'The AI could not process that message. Please try again.', 502, {
-            error: evt.error ?? 'stream_error',
-          });
-        } else if (evt.type === 'done') handlers.onDone?.(evt as StreamDoneEvent);
-      }
-    }
-
-    if (!sawDone) {
-      throw new ChatRequestError(
-        'The connection to the server dropped before the reply finished. Please try again.',
-        502,
-        { error: 'stream_incomplete' },
-      );
-    }
-  } catch (err: unknown) {
-    if (err instanceof ChatRequestError) throw err;
-    if (err instanceof Error && err.name === 'AbortError') {
-      throw new ChatRequestError('Request timed out. Please try again.', 408, { error: 'timeout' });
-    }
-    // Anything else (e.g. a reader/network failure mid-stream) is still an
-    // unknown failure mode, but we surface its actual message instead of a
-    // blanket "something went wrong" so the user has something actionable.
-    const detail = err instanceof Error && err.message ? err.message : 'unknown error';
-    throw new ChatRequestError(`Connection problem (${detail}). Please try again.`, 0, { error: detail });
-  } finally {
-    clearTimeout(timeoutId);
-  }
+        xhr.send(
+          JSON.stringify({
+            ...request,
+            stream: true,
+            userLocation: request.userLocation ?? DEVICE_LOCATION,
+          }),
+        );
+      }),
+  );
 }
 
 export const CHAT_MODEL = 'engagera-2.0';
