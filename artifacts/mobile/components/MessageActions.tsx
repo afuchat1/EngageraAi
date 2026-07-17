@@ -3,7 +3,6 @@ import { Alert, Pressable, Share, StyleSheet, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as Speech from 'expo-speech';
 import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 
 /**
@@ -26,7 +25,6 @@ export function MessageActions({
 
   const handleCopy = async () => {
     await Clipboard.setStringAsync(text);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };

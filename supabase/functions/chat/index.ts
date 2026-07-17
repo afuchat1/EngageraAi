@@ -1,14 +1,17 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 /**
- * Engagera Chat Edge Function — v11 (2026-07-17)
+ * Engagera Chat Edge Function — v12 (2026-07-17)
  *
- * Improvements over v10:
- *  - SSE streaming: emits searchStatus → meta (sources) → token → done
- *  - Real web search: extracts actual URLs, titles, snippets from DuckDuckGo
- *  - Parallel OG-image enrichment runs alongside the AI call (no added latency)
- *  - Broader search triggers
- *  - System prompt forbids raw URLs in responses
+ * New in v12:
+ *  - Image generation via Cloudflare Flux (complete prompts only)
+ *  - Incomplete image prompts → AI asks for a description (plain text)
+ *  - URL content fetching: visits any URL the user shares and reads the page
+ *  - Weather widget: Open-Meteo (free, no API key) + geocoding
+ *  - Time widget: timezone from Open-Meteo geocoding
+ *  - Honesty rules: AI admits "no data" instead of guessing
+ *  - Concise, purposeful response guidance in system prompt
+ *  - Better Google/DuckDuckGo scraping with business profile support
  */
 
 // ── Provider URLs ─────────────────────────────────────────────────────────────
@@ -73,6 +76,20 @@ interface SearchSource {
   snippet: string;
   image?: string;
 }
+interface WeatherInfo {
+  label: string;
+  tempC: number;
+  feelsLikeC: number;
+  condition: string;
+  icon: string;
+  windKph: number;
+  humidity: number;
+  isDay: boolean;
+}
+interface TimeInfo {
+  ianaZone: string;
+  label: string;
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function getTextContent(content: MessageContent): string {
@@ -90,6 +107,280 @@ function toChat(msgs: IncomingMessage[]): ChatMessage[] {
 
 function sseFrame(data: Record<string, unknown>): string {
   return `data: ${JSON.stringify(data)}\n\n`;
+}
+
+// ── Image generation ──────────────────────────────────────────────────────────
+
+// An image request is "complete" when there's a meaningful subject after the verb.
+// "generate an image of a sunset" = complete ✓
+// "generate an image of" = incomplete ✗
+// "create a photo" = incomplete ✗
+function isCompleteImageRequest(text: string): boolean {
+  const t = text.trim();
+
+  // Must be over 10 chars just to have enough words
+  if (t.length < 10) return false;
+
+  // Patterns that require a real subject (≥2 meaningful words after the trigger)
+  const complete = [
+    // "generate/create/make/produce + ... + image-noun" with content in between
+    /\b(generate|create|make|produce|build)\b.{5,}\b(image|picture|photo|drawing|painting|illustration|artwork|logo|poster|wallpaper|banner|thumbnail|graphic|portrait|scene|render|design)\b/i,
+    // "draw/paint/sketch/illustrate/render me/a/an + ≥1 real word"
+    /\b(draw|paint|sketch|illustrate|render)\s+(me\s+)?(a\s+|an\s+|the\s+|my\s+)?\w{3,}/i,
+    // "show me a picture/image/photo of ..."
+    /\bshow\s+me\s+(a|an|the)\s+(picture|image|photo|drawing|illustration)\s+of\s+\w{3,}/i,
+    // "i want/need/would like a/an image/picture of ..."
+    /\b(i\s+)?(want|need|would\s+like|give\s+me)\s+(a|an)\s+(image|picture|photo|drawing|illustration)\s+of\s+\w{3,}/i,
+    // "generate a logo for X" / "design a poster about X"
+    /\b(design|create|make|generate)\s+(a|an|the)\s+(logo|poster|banner|thumbnail|wallpaper)\s+(for|of|about|showing|with)\s+\w{3,}/i,
+  ];
+
+  return complete.some((p) => p.test(t));
+}
+
+// An image request is "incomplete" when the user typed just the trigger but no subject
+function isIncompleteImagePrompt(text: string): boolean {
+  const t = text.trim().toLowerCase();
+
+  // Exact or near-exact incomplete phrases
+  const incomplete = [
+    /^(generate|create|make|produce)\s+(a|an|the)?\s*(image|picture|photo|drawing|painting|illustration|artwork)\s*(of\s*)?[.!?]*$/,
+    /^(draw|paint|sketch|illustrate|render)\s+(me\s+)?(a|an|the|something)?\s*[.!?]*$/,
+    /^(show\s+me\s+)?(a|an)\s*(image|picture|photo)\s*(of\s*)?[.!?]*$/,
+    /^(generate|create|make)\s+an?\s*(image|picture|photo|illustration|artwork)\s*[.!?]*$/,
+  ];
+
+  return incomplete.some((p) => p.test(t));
+}
+
+// Also matches the broader "this looks like image gen" heuristic (for routing)
+function looksLikeImageIntent(text: string): boolean {
+  const t = text.toLowerCase();
+  const keywords = [
+    "generate an image", "generate a image", "generate a picture", "generate a photo",
+    "create an image", "create a image", "create a picture", "create a photo",
+    "make an image", "make a image", "make me an image", "make me a picture",
+    "draw me", "draw a ", "draw an ", "paint a ", "paint an ", "paint me",
+    "sketch a ", "sketch an ", "sketch me", "illustrate this", "illustrate a",
+    "render a ", "render an ", "render me", "design a logo", "design an image",
+    "show me a picture", "show me an image", "show me a photo",
+    "generate artwork", "create artwork", "make artwork",
+  ];
+  const patterns = [
+    /\b(draw|paint|sketch|illustrate|render)\s+(me\s+)?(a\s+|an\s+|the\s+|some\s+|my\s+)?\w/i,
+    /\b(generate|create|make|produce)\b.{0,50}\b(image|picture|photo|drawing|painting|illustration|artwork|logo|poster|wallpaper|banner|thumbnail|graphic)\b/i,
+  ];
+  return keywords.some((k) => t.includes(k)) || patterns.some((p) => p.test(t));
+}
+
+// Cloudflare Flux image generation — returns a markdown image string or null
+async function generateImageCF(
+  prompt: string,
+  token: string,
+  accountId: string,
+  requestId: string,
+): Promise<string | null> {
+  const url = `${CF_BASE}/${accountId}/ai/run/@cf/black-forest-labs/flux-1-schnell`;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt, num_steps: 4 }),
+      signal: AbortSignal.timeout(50_000),
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      log("warn", "image_gen.http_error", { requestId, status: res.status, err: errText.slice(0, 200) });
+      return null;
+    }
+
+    const contentType = res.headers.get("content-type") ?? "";
+
+    // Flux returns raw PNG bytes; some CF endpoints return JSON
+    if (contentType.includes("application/json")) {
+      const data = (await res.json()) as { result?: { image?: string } };
+      const b64 = data?.result?.image;
+      if (!b64) return null;
+      return `![Generated Image](data:image/png;base64,${b64})`;
+    }
+
+    // Raw bytes — read and convert to base64 in chunks to avoid stack overflow
+    const buf = await res.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let binary = "";
+    const chunkSize = 8192;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+    }
+    const b64 = btoa(binary);
+    log("info", "image_gen.success", { requestId, bytes: bytes.length });
+    return `![Generated Image](data:image/png;base64,${b64})`;
+  } catch (err) {
+    log("warn", "image_gen.error", { requestId, error: String(err) });
+    return null;
+  }
+}
+
+// ── URL content fetching ──────────────────────────────────────────────────────
+
+function extractUrls(text: string): string[] {
+  const urlRe = /https?:\/\/[^\s<>"{}|\\^[\]`\u0000-\u001F]+/gi;
+  const matches = [...text.matchAll(urlRe)].map((m) => m[0].replace(/[.,;:!?)]+$/, ""));
+  // Deduplicate, max 3
+  return [...new Set(matches)].slice(0, 3);
+}
+
+async function fetchPageContent(url: string, requestId: string): Promise<string | null> {
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return null;
+
+    const html = await res.text();
+
+    // Extract title
+    const titleMatch = html.match(/<title[^>]*>([^<]{1,200})<\/title>/i);
+    const pageTitle = titleMatch ? titleMatch[1].replace(/\s+/g, " ").trim() : "";
+
+    // Strip scripts, styles, nav, footer, header noise
+    const cleaned = html
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
+      .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, " ")
+      .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, " ")
+      .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+
+    const body = cleaned.slice(0, 6000);
+    const result = pageTitle ? `Page: ${pageTitle}\n\n${body}` : body;
+    log("info", "url_fetch.success", { requestId, url: url.slice(0, 80), chars: result.length });
+    return result;
+  } catch (err) {
+    log("warn", "url_fetch.error", { requestId, url: url.slice(0, 80), error: String(err) });
+    return null;
+  }
+}
+
+// ── Weather widget ────────────────────────────────────────────────────────────
+
+function extractWeatherLocation(text: string): string | null {
+  const t = text.toLowerCase().trim();
+  if (!/\b(weather|temperature|forecast|rain|snow|sunny|cloudy|humid|hot|cold|wind|storm)\b/i.test(t)) return null;
+
+  // "weather in X" / "weather at X" / "weather for X"
+  const locMatch =
+    text.match(/\b(?:weather|temperature|forecast)\b\s+(?:in|at|for|of)\s+([A-Za-z\s,]+?)(?:\?|$|,|\.|!)/i) ||
+    text.match(/\b(?:in|at)\s+([A-Za-z\s,]{3,40}?)(?:'s)?\s+weather/i) ||
+    text.match(/(?:weather|forecast|temperature)\s+([A-Za-z]{3,}(?:\s+[A-Za-z]{3,})?)/i);
+
+  return locMatch ? locMatch[1].trim() : null;
+}
+
+async function geocode(location: string): Promise<{ lat: number; lon: number; ianaZone: string; name: string } | null> {
+  try {
+    const res = await fetch(
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1&language=en&format=json`,
+      { signal: AbortSignal.timeout(5_000) },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as { results?: { latitude: number; longitude: number; timezone: string; name: string; country?: string }[] };
+    const r = data.results?.[0];
+    if (!r) return null;
+    return { lat: r.latitude, lon: r.longitude, ianaZone: r.timezone, name: r.country ? `${r.name}, ${r.country}` : r.name };
+  } catch {
+    return null;
+  }
+}
+
+// WMO weather interpretation codes → human-readable condition + icon
+function interpretWmo(code: number, isDay: boolean): { condition: string; icon: string } {
+  if (code === 0) return { condition: isDay ? "Clear sky" : "Clear night", icon: "sun" };
+  if (code <= 2) return { condition: "Partly cloudy", icon: "cloud-sun" };
+  if (code === 3) return { condition: "Overcast", icon: "cloud" };
+  if (code <= 49) return { condition: "Foggy", icon: "fog" };
+  if (code <= 55) return { condition: "Drizzle", icon: "drizzle" };
+  if (code <= 65) return { condition: "Rain", icon: "rain" };
+  if (code <= 77) return { condition: "Snow", icon: "snow" };
+  if (code <= 82) return { condition: "Rain showers", icon: "rain" };
+  if (code <= 86) return { condition: "Snow showers", icon: "snow" };
+  if (code >= 95) return { condition: "Thunderstorm", icon: "storm" };
+  return { condition: "Cloudy", icon: "cloud" };
+}
+
+async function fetchWeather(location: string, requestId: string): Promise<WeatherInfo | null> {
+  try {
+    const geo = await geocode(location);
+    if (!geo) return null;
+
+    const res = await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${geo.lat}&longitude=${geo.lon}` +
+        `&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code,is_day` +
+        `&timezone=auto&forecast_days=1`,
+      { signal: AbortSignal.timeout(6_000) },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      current?: {
+        temperature_2m?: number;
+        apparent_temperature?: number;
+        relative_humidity_2m?: number;
+        wind_speed_10m?: number;
+        weather_code?: number;
+        is_day?: number;
+      };
+    };
+    const c = data.current;
+    if (!c) return null;
+
+    const isDay = (c.is_day ?? 1) === 1;
+    const { condition, icon } = interpretWmo(c.weather_code ?? 0, isDay);
+
+    log("info", "weather.success", { requestId, location, condition });
+    return {
+      label: geo.name,
+      tempC: Math.round(c.temperature_2m ?? 0),
+      feelsLikeC: Math.round(c.apparent_temperature ?? 0),
+      condition,
+      icon,
+      windKph: Math.round(c.wind_speed_10m ?? 0),
+      humidity: Math.round(c.relative_humidity_2m ?? 0),
+      isDay,
+    };
+  } catch (err) {
+    log("warn", "weather.error", { requestId, location, error: String(err) });
+    return null;
+  }
+}
+
+// ── Time widget ───────────────────────────────────────────────────────────────
+
+function extractTimeLocation(text: string): string | null {
+  if (!/\b(time|what time|current time|clock|timezone)\b/i.test(text)) return null;
+  const loc =
+    text.match(/\b(?:time\s+in|time\s+at|time\s+for|clock\s+in|what\s+time\s+is\s+it\s+in)\s+([A-Za-z\s,]+?)(?:\?|$|,|\.|!)/i) ||
+    text.match(/\bin\s+([A-Za-z\s,]{3,30}?)(?:'s)?\s+(?:time|timezone)/i);
+  return loc ? loc[1].trim() : null;
+}
+
+async function fetchTimeInfo(location: string, requestId: string): Promise<TimeInfo | null> {
+  try {
+    const geo = await geocode(location);
+    if (!geo) return null;
+    log("info", "time.success", { requestId, location, zone: geo.ianaZone });
+    return { ianaZone: geo.ianaZone, label: geo.name };
+  } catch (err) {
+    log("warn", "time.error", { requestId, location, error: String(err) });
+    return null;
+  }
 }
 
 // ── OpenAI-compatible call ────────────────────────────────────────────────────
@@ -116,11 +407,7 @@ async function callOAI(
     });
     if (!res.ok) {
       const err = await res.text().catch(() => "");
-      log("warn", `${providerName}.http_error`, {
-        requestId,
-        status: res.status,
-        err: err.slice(0, 200),
-      });
+      log("warn", `${providerName}.http_error`, { requestId, status: res.status, err: err.slice(0, 200) });
       return { ok: false, content: "", inputTokens: 0, outputTokens: 0, error: `HTTP ${res.status}` };
     }
     const data = (await res.json()) as {
@@ -138,7 +425,7 @@ async function callOAI(
   }
 }
 
-// ── Cloudflare Workers AI ─────────────────────────────────────────────────────
+// ── Cloudflare Workers AI (text) ──────────────────────────────────────────────
 async function callCloudflare(
   token: string,
   accountId: string,
@@ -191,38 +478,28 @@ async function callWithFallback(
   requestId: string,
 ): Promise<AIResult> {
   if (keys.groq) {
-    const r = await callOAI(
-      GROQ_URL, keys.groq, "llama-3.3-70b-versatile",
-      messages, maxTokens, requestId, "groq",
-    );
+    const r = await callOAI(GROQ_URL, keys.groq, "llama-3.3-70b-versatile", messages, maxTokens, requestId, "groq");
     if (r.ok) return r;
   }
   if (keys.groq) {
-    const r = await callOAI(
-      GROQ_URL, keys.groq, "llama-3.1-8b-instant",
-      messages, maxTokens, requestId, "groq-lite",
-    );
+    const r = await callOAI(GROQ_URL, keys.groq, "llama-3.1-8b-instant", messages, maxTokens, requestId, "groq-lite");
     if (r.ok) return r;
   }
   if (keys.cerebras) {
-    const r = await callOAI(
-      CEREBRAS_URL, keys.cerebras, "gpt-oss-120b",
-      messages, maxTokens, requestId, "cerebras",
-    );
+    const r = await callOAI(CEREBRAS_URL, keys.cerebras, "gpt-oss-120b", messages, maxTokens, requestId, "cerebras");
     if (r.ok) return r;
   }
   if (keys.cloudflare && keys.cloudflareAccountId) {
     const r = await callCloudflare(
       keys.cloudflare, keys.cloudflareAccountId,
-      "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-      messages, maxTokens, requestId,
+      "@cf/meta/llama-3.3-70b-instruct-fp8-fast", messages, maxTokens, requestId,
     );
     if (r.ok) return r;
   }
   return { ok: false, content: "", inputTokens: 0, outputTokens: 0, error: "all providers failed" };
 }
 
-// ── Web search — real URLs + titles + snippets ────────────────────────────────
+// ── Web search — DuckDuckGo with real URLs, titles, snippets ─────────────────
 async function webSearch(query: string, requestId: string): Promise<SearchSource[]> {
   try {
     const res = await fetch(
@@ -240,9 +517,7 @@ async function webSearch(query: string, requestId: string): Promise<SearchSource
     if (!res.ok) return [];
     const html = await res.text();
 
-    // Extract title + redirect-URL pairs (.result__a)
     const linkRe = /<a\s[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
-    // Extract snippets (.result__snippet)
     const snippetRe = /<a\s[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi;
 
     const links: { url: string; title: string }[] = [];
@@ -251,7 +526,6 @@ async function webSearch(query: string, requestId: string): Promise<SearchSource
 
     while ((m = linkRe.exec(html)) !== null && links.length < 10) {
       let url = m[1];
-      // DuckDuckGo wraps destinations in /l/?uddg=ENCODED_URL&rut=...
       const uddg = url.match(/[?&]uddg=([^&]+)/);
       if (uddg) {
         try { url = decodeURIComponent(uddg[1]); } catch { continue; }
@@ -283,14 +557,10 @@ async function webSearch(query: string, requestId: string): Promise<SearchSource
 async function fetchOgImage(url: string): Promise<string | undefined> {
   try {
     const res = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; Engagera/1.0; +https://engagera.ai)",
-        Accept: "text/html",
-      },
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; Engagera/1.0)", Accept: "text/html" },
       signal: AbortSignal.timeout(4_000),
     });
     if (!res.ok) return undefined;
-    // Read only the first 8 KB — the OG tag is always in <head>
     const reader = res.body?.getReader();
     if (!reader) return undefined;
     let chunk = "";
@@ -312,11 +582,7 @@ async function fetchOgImage(url: string): Promise<string | undefined> {
   }
 }
 
-// ── Enrich top sources with OG images (parallel, non-blocking) ───────────────
-async function enrichWithImages(
-  sources: SearchSource[],
-  maxEnrich = 4,
-): Promise<SearchSource[]> {
+async function enrichWithImages(sources: SearchSource[], maxEnrich = 4): Promise<SearchSource[]> {
   if (sources.length === 0) return sources;
   const toEnrich = sources.slice(0, maxEnrich);
   const rest = sources.slice(maxEnrich);
@@ -329,74 +595,84 @@ async function enrichWithImages(
 function needsWebSearch(text: string): boolean {
   const lower = text.toLowerCase().trim();
 
-  // Skip purely creative writing requests
-  if (/^(write (me |a |an |the )?|compose |draft |create a (story|poem|essay|letter|email))/i.test(text.trim())) {
-    return false;
-  }
-  // Skip pure math
-  if (/^(calculate|compute|solve for|what is \d[\d\s+\-*/^()]*[=?]|simplify|integrate|differentiate)/i.test(text.trim())) {
-    return false;
-  }
+  // Don't search for image generation — the backend handles that separately
+  if (looksLikeImageIntent(text)) return false;
+
+  // Skip purely creative writing / math
+  if (/^(write (me |a |an |the )?|compose |draft |create a (story|poem|essay|letter|email))/i.test(text.trim())) return false;
+  if (/^(calculate|compute|solve for|what is \d[\d\s+\-*/^()]*[=?]|simplify|integrate|differentiate)/i.test(text.trim())) return false;
 
   const triggers = [
-    // Time-sensitive
     "latest", "recent", "today", "tonight", "yesterday", "this week", "this year",
     "news", "current", "now", "live", "update", "breaking",
     "2023", "2024", "2025", "2026", "2027",
-    // Prices / markets
     "price", "cost", "how much", "worth", "value", "rate", "fee",
     "stock", "crypto", "bitcoin", "ethereum",
-    // Sports / events
     "score", "result", "standings", "winner", "who won", "match", "game",
     "tournament", "championship", "election",
-    // Weather / location
     "weather", "temperature", "forecast", "humidity",
     "where is", "where are", "location of",
-    // People / companies
     "who is", "who are", "ceo of", "founder of", "owner of",
     "what company", "which company",
-    // Products / releases
     "release", "launch", "announce", "new model", "new version", "update",
     "specs", "review", "vs ", " vs", "versus", "compare", "comparison",
     "best ", "top ", "ranking", "trending", "popular",
     "buy", "purchase", "available", "in stock",
-    // Research / facts
     "what is the ", "what are the ", "how many ", "how does ",
     "statistics", "data on", "report", "study", "research",
     "definition", "meaning of", "explain the",
-    // How-to
     "how to ", "steps to ", "tutorial", "guide",
+    // Business / local search
+    "near me", "open now", "hours", "address", "phone number", "contact",
+    "restaurant", "hotel", "store", "shop", "business", "company profile",
+    "google business", "maps", "directions",
   ];
 
   return triggers.some((t) => lower.includes(t));
 }
 
 // ── System prompt ─────────────────────────────────────────────────────────────
-function buildSystemPrompt(mode: "dev" | "default", searchContext: string): string {
+function buildSystemPrompt(
+  mode: "dev" | "default",
+  searchContext: string,
+  urlContext: string,
+  weatherContext: string,
+): string {
   const dateStr = new Date().toISOString().slice(0, 10);
 
   const sharedRules = `
-Important rules:
-- Today's date is ${dateStr}. You have real-time web access — NEVER say you cannot check current events or recent information.
-- Write clean, well-formatted responses using markdown: headers, bold, bullet lists, numbered lists, code blocks where appropriate.
-- NEVER include raw URLs (https://...) anywhere in your response text. Refer to sources by name only (e.g. "According to Reuters", "Microsoft's official page states...", "GitHub shows...").
-- NEVER show internal markers such as [source], [1], [SEARCH], {{citation}}, or any implementation detail.
-- Format all code with proper fenced code blocks and the correct language label.
-- Be direct, accurate, and helpful. Avoid unnecessary padding or filler phrases.
+Today's date is ${dateStr}.
+
+Core rules — follow every one of these without exception:
+- REAL-TIME ACCESS: You have live web search. Never claim you cannot check current events, prices, news, or recent data — you can and do. Never say "as of my last update" or "I don't have real-time data".
+- HONESTY: If you genuinely have no data on something (e.g. no search results were found, the page couldn't be loaded), say so explicitly: "I don't have data on that right now" or "I couldn't find that." Never guess or hallucinate facts to fill a gap.
+- CONCISE: Give the user exactly what they asked for — nothing more. Answer questions in 1–4 sentences for simple queries, with structure (bullets/headers) only when the answer genuinely benefits from it. Don't add filler, disclaimers, or suggestions the user didn't ask for.
+- INTENT: Understand why the user is asking before answering. If they share a URL, they want to know about that page's content. If they ask a yes/no, give yes/no first then any needed context. If they ask for a list, give a list.
+- URLS: NEVER include raw https:// URLs in your response text. Refer to sources by their domain/name only (e.g. "According to Reuters", "GitHub shows...", "The official Apple page states...").
+- NO MARKERS: Never show [source], [1], [SEARCH], {{citation}}, or any implementation detail.
+- CODE: Always use fenced code blocks with the correct language label.
+- IMAGE PROMPTS: If asked to generate an image but the description is incomplete or vague, ask the user "What would you like me to generate? Please describe the image in detail." Do NOT attempt generation with an incomplete prompt.
 `.trim();
 
+  let context = "";
+  if (urlContext) context += `\n\nPage content retrieved from user's URL:\n${urlContext}`;
+  if (searchContext) context += `\n\nLive web search results (use to inform your answer):\n${searchContext}`;
+  if (weatherContext) context += `\n\nCurrent weather data (already shown in the UI widget — briefly confirm the conditions in your reply):\n${weatherContext}`;
+
   if (mode === "dev") {
-    return `You are Engagera Dev — an expert software engineering assistant built by AfuAI, the AI division of AfuChat Technologies Limited. You help developers build production-quality software.\n${sharedRules}${searchContext ? `\n\nLive web search results (use these to inform your answer):\n${searchContext}` : ""}`;
+    return `You are Engagera Dev — an expert software engineering assistant built by AfuAI (AfuChat Technologies Limited). You help developers build production-quality software.\n${sharedRules}${context}`;
   }
 
-  return `You are Engagera — an advanced AI assistant built by AfuAI (AfuChat Technologies Limited). You are knowledgeable, fluent, and capable across all subjects.\n${sharedRules}${searchContext ? `\n\nLive web search results (use these to inform your answer):\n${searchContext}` : ""}`;
+  return `You are Engagera — an advanced AI assistant built by AfuAI (AfuChat Technologies Limited). You are accurate, direct, and knowledgeable across all subjects.\n${sharedRules}${context}`;
 }
 
-// ── Format search context for the system prompt ───────────────────────────────
 function formatSearchContext(sources: SearchSource[]): string {
   return sources
     .slice(0, 5)
-    .map((s, i) => `[${i + 1}] ${s.title}\n    Source: ${new URL(s.url).hostname.replace(/^www\./, "")}\n    ${s.snippet}`)
+    .map((s, i) => {
+      const host = (() => { try { return new URL(s.url).hostname.replace(/^www\./, ""); } catch { return s.url; } })();
+      return `[${i + 1}] ${s.title}\n    Source: ${host}\n    ${s.snippet}`;
+    })
     .join("\n\n");
 }
 
@@ -415,9 +691,7 @@ async function resolveAuth(
   const apiKeyHeader = req.headers.get("x-engagera-api-key");
   if (apiKeyHeader?.startsWith("eng_")) {
     const keyHash = Array.from(
-      new Uint8Array(
-        await crypto.subtle.digest("SHA-256", new TextEncoder().encode(apiKeyHeader)),
-      ),
+      new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(apiKeyHeader))),
     ).map((b) => b.toString(16).padStart(2, "0")).join("");
     const { data: keyRow, error: keyErr } = await db
       .from("engagera_api_keys")
@@ -562,6 +836,7 @@ Deno.serve(async (req: Request) => {
       model?: string;
       conversationId?: string;
       stream?: boolean;
+      contextHint?: string;
     };
     try {
       body = await req.json();
@@ -574,6 +849,7 @@ Deno.serve(async (req: Request) => {
       model = "engagera-2.0",
       conversationId,
       stream: wantsStream = true,
+      contextHint,
     } = body;
 
     if (!Array.isArray(rawMessages) || rawMessages.length === 0) {
@@ -589,44 +865,52 @@ Deno.serve(async (req: Request) => {
       );
     });
 
-    if (incomingMessages.length === 0) {
-      return json({ error: "No valid messages" }, 400);
-    }
+    if (incomingMessages.length === 0) return json({ error: "No valid messages" }, 400);
 
     const authResult = await resolveAuth(req, db, requestId);
 
     if (authResult.type === "guest") {
       const { allowed, count } = await checkGuestLimit(db, authResult.guestSessionId);
       if (!allowed) {
-        return json(
-          {
-            error: "Guest message limit reached. Sign in for unlimited access.",
-            guestMessageCount: count,
-            guestMessageLimit: GUEST_LIMIT,
-          },
-          429,
-        );
+        return json({
+          error: "Guest message limit reached. Sign in for unlimited access.",
+          guestMessageCount: count,
+          guestMessageLimit: GUEST_LIMIT,
+        }, 429);
       }
     }
 
-    if (authResult.type === "none") {
-      return json({ error: "Authentication required" }, 401);
-    }
+    if (authResult.type === "none") return json({ error: "Authentication required" }, 401);
 
     const lastUserMsg = incomingMessages.filter((m) => m.role === "user").at(-1);
     const userText    = lastUserMsg ? getTextContent(lastUserMsg.content) : "";
 
     const isDevMode =
       model === "engagera-code" ||
+      contextHint?.toLowerCase().includes("dev") ||
       (incomingMessages[0]?.role === "system" &&
         getTextContent(incomingMessages[0].content).toLowerCase().includes("dev"));
 
-    const shouldSearch = userText.length > 3 && needsWebSearch(userText);
+    // ── Classify the request ──────────────────────────────────────────────────
+    const isCompleteImage   = isCompleteImageRequest(userText);
+    const isIncompleteImage = !isCompleteImage && isIncompleteImagePrompt(userText);
+    const isAnyImageIntent  = isCompleteImage || isIncompleteImage || looksLikeImageIntent(userText);
+    const shouldSearch      = !isAnyImageIntent && userText.length > 3 && needsWebSearch(userText);
 
-    // ── Shared builder ────────────────────────────────────────────────────────
-    function buildMessages(searchContext: string): ChatMessage[] {
+    // Detect URLs in the user message that should be read
+    const userUrls = extractUrls(userText);
+
+    // Detect weather / time requests
+    const weatherLocation = extractWeatherLocation(userText);
+    const timeLocation    = extractTimeLocation(userText);
+
+    // ── Builder helper ────────────────────────────────────────────────────────
+    function buildMessages(searchCtx: string, urlCtx: string, weatherCtx: string): ChatMessage[] {
+      const hint = typeof contextHint === "string" ? contextHint : "";
+      let systemPrompt = buildSystemPrompt(isDevMode ? "dev" : "default", searchCtx, urlCtx, weatherCtx);
+      if (hint) systemPrompt += `\n\nContext: ${hint}`;
       return [
-        { role: "system", content: buildSystemPrompt(isDevMode ? "dev" : "default", searchContext) },
+        { role: "system", content: systemPrompt },
         ...toChat(incomingMessages.filter((m) => m.role !== "system")),
       ];
     }
@@ -637,80 +921,177 @@ Deno.serve(async (req: Request) => {
     if (wantsStream) {
       const enc = new TextEncoder();
 
+      // ── Image generation path ────────────────────────────────────────────
+      if (isCompleteImage) {
+        if (!keys.cloudflare || !keys.cloudflareAccountId) {
+          // No image gen credentials — fall through to text response
+          log("warn", "image_gen.no_keys", { requestId });
+        } else {
+          log("info", "image_gen.start", { requestId, prompt: userText.slice(0, 80) });
+
+          const imageMarkdown = await generateImageCF(userText, keys.cloudflare, keys.cloudflareAccountId, requestId);
+
+          if (imageMarkdown) {
+            const fakeResult: AIResult = {
+              ok: true,
+              content: imageMarkdown,
+              inputTokens: 0,
+              outputTokens: 0,
+              provider: "cloudflare-flux",
+              model: "flux-1-schnell",
+            };
+
+            const convId = await persistConversation(db, authResult, userText, fakeResult, model, conversationId, false, requestId);
+            let newGuestCount: number | undefined;
+            if (authResult.type === "guest") newGuestCount = await incrementGuestCount(db, authResult.guestSessionId);
+
+            // Image gen always returns JSON (not SSE) so the client can
+            // handle the large base64 body as a single payload
+            return json({
+              id: requestId,
+              model: "flux-1-schnell",
+              message: { role: "assistant", content: imageMarkdown },
+              conversationId: convId,
+              ...(newGuestCount !== undefined && {
+                guestMessageCount: newGuestCount,
+                guestMessageLimit: GUEST_LIMIT,
+              }),
+            });
+          }
+
+          // Image gen failed — tell the user gracefully
+          const errResult: AIResult = { ok: true, content: "I wasn't able to generate that image right now. Please try again in a moment.", inputTokens: 0, outputTokens: 0 };
+          await persistConversation(db, authResult, userText, errResult, model, conversationId, false, requestId);
+          return json({
+            id: requestId,
+            model,
+            message: { role: "assistant", content: errResult.content },
+            conversationId: conversationId ? Number(conversationId) : null,
+          });
+        }
+      }
+
+      // ── Incomplete image prompt — ask for description ─────────────────────
+      if (isIncompleteImage) {
+        const clarification = "What would you like me to generate? Please describe the image in detail — for example: \"a sunset over a mountain lake with reflections\" or \"a logo for a tech startup with a bold, minimal design\".";
+        const fakeResult: AIResult = { ok: true, content: clarification, inputTokens: 0, outputTokens: 0 };
+        const convId = await persistConversation(db, authResult, userText, fakeResult, model, conversationId, false, requestId);
+        let newGuestCount: number | undefined;
+        if (authResult.type === "guest") newGuestCount = await incrementGuestCount(db, authResult.guestSessionId);
+
+        const sseStream = new ReadableStream({
+          start(ctrl) {
+            const enq = (frame: string) => ctrl.enqueue(enc.encode(frame));
+            enq(sseFrame({ type: "token", content: clarification }));
+            enq(sseFrame({
+              type: "done",
+              model,
+              conversationId: convId,
+              ...(newGuestCount !== undefined && { guestMessageCount: newGuestCount, guestMessageLimit: GUEST_LIMIT }),
+            }));
+            enq("data: [DONE]\n\n");
+            ctrl.close();
+          },
+        });
+
+        return new Response(sseStream, {
+          status: 200,
+          headers: { ...CORS, "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "X-Accel-Buffering": "no" },
+        });
+      }
+
+      // ── Standard text path (with optional search + URL fetch + weather/time) ─
       const sseStream = new ReadableStream({
         async start(ctrl) {
           const enq = (frame: string) => ctrl.enqueue(enc.encode(frame));
 
           try {
             let searchSources: SearchSource[] = [];
-            let aiResult: AIResult;
+            let urlCtx = "";
+            let weatherInfo: WeatherInfo | undefined;
+            let timeInfo: TimeInfo | undefined;
+            let weatherCtx = "";
 
-            if (shouldSearch) {
-              // ── Phase 1: search ──────────────────────────────────────────
-              enq(sseFrame({ type: "searchStatus", message: "Searching the web…" }));
+            // ── Parallel: URL fetch + weather/time lookup ─────────────────
+            const parallelTasks: Promise<void>[] = [];
 
-              const rawSources = await webSearch(userText, requestId);
-
-              if (rawSources.length > 0) {
-                enq(sseFrame({ type: "searchStatus", message: "Reading sources…" }));
-
-                // ── Phase 2: OG images + AI call in parallel ─────────────
-                const searchCtx = formatSearchContext(rawSources);
-                const [enriched, result] = await Promise.all([
-                  enrichWithImages(rawSources, 4),
-                  callWithFallback(buildMessages(searchCtx), keys, 2048, requestId),
-                ]);
-                searchSources = enriched;
-                aiResult = result;
-
-                // Emit sources so the UI can show source cards
-                enq(sseFrame({
-                  type: "meta",
-                  searchInfo: { query: userText, sources: searchSources },
-                }));
-              } else {
-                // Search returned nothing — fall through to direct AI
-                aiResult = await callWithFallback(buildMessages(""), keys, 2048, requestId);
-              }
-            } else {
-              // ── No search — direct AI ────────────────────────────────────
-              aiResult = await callWithFallback(buildMessages(""), keys, 2048, requestId);
+            if (userUrls.length > 0) {
+              enq(sseFrame({ type: "searchStatus", message: "Reading page content…" }));
+              parallelTasks.push(
+                (async () => {
+                  const contents = await Promise.all(userUrls.map((u) => fetchPageContent(u, requestId)));
+                  const valid = contents.filter(Boolean) as string[];
+                  if (valid.length > 0) urlCtx = valid.join("\n\n---\n\n").slice(0, 8000);
+                })(),
+              );
             }
 
-            if (!aiResult!.ok) {
+            if (weatherLocation) {
+              parallelTasks.push(
+                (async () => {
+                  weatherInfo = await fetchWeather(weatherLocation, requestId) ?? undefined;
+                  if (weatherInfo) {
+                    weatherCtx = `Location: ${weatherInfo.label}, Temp: ${weatherInfo.tempC}°C (feels like ${weatherInfo.feelsLikeC}°C), Condition: ${weatherInfo.condition}, Humidity: ${weatherInfo.humidity}%, Wind: ${weatherInfo.windKph} km/h`;
+                  }
+                })(),
+              );
+            }
+
+            if (timeLocation) {
+              parallelTasks.push(
+                (async () => {
+                  timeInfo = await fetchTimeInfo(timeLocation, requestId) ?? undefined;
+                })(),
+              );
+            }
+
+            if (shouldSearch) {
+              enq(sseFrame({ type: "searchStatus", message: "Searching the web…" }));
+              parallelTasks.push(
+                (async () => {
+                  const rawSources = await webSearch(userText, requestId);
+                  if (rawSources.length > 0) {
+                    enq(sseFrame({ type: "searchStatus", message: "Reading sources…" }));
+                    searchSources = await enrichWithImages(rawSources, 4);
+                    enq(sseFrame({ type: "meta", searchInfo: { query: userText, sources: searchSources } }));
+                  }
+                })(),
+              );
+            }
+
+            // Run all parallel tasks (URL fetch, weather, time, search)
+            await Promise.all(parallelTasks);
+
+            // Build messages with all gathered context
+            const searchCtx = formatSearchContext(searchSources);
+            const aiResult = await callWithFallback(buildMessages(searchCtx, urlCtx, weatherCtx), keys, 2048, requestId);
+
+            if (!aiResult.ok) {
               enq(sseFrame({ type: "error", error: "AI service temporarily unavailable. Please try again." }));
               enq("data: [DONE]\n\n");
               ctrl.close();
               return;
             }
 
-            // ── Emit the full AI response as a single token event ─────────
-            enq(sseFrame({ type: "token", content: aiResult!.content }));
+            enq(sseFrame({ type: "token", content: aiResult.content }));
 
-            // ── Persist + guest counter ───────────────────────────────────
             const convId = await persistConversation(
-              db, authResult, userText, aiResult!, model,
+              db, authResult, userText, aiResult, model,
               conversationId, searchSources.length > 0, requestId,
             );
             let newGuestCount: number | undefined;
-            if (authResult.type === "guest") {
-              newGuestCount = await incrementGuestCount(db, authResult.guestSessionId);
-            }
+            if (authResult.type === "guest") newGuestCount = await incrementGuestCount(db, authResult.guestSessionId);
 
-            // ── Done event ───────────────────────────────────────────────
             const latencyMs = Date.now() - startTime;
-            log("info", "handler.success", {
-              requestId,
-              provider: aiResult!.provider,
-              model: aiResult!.model,
-              latencyMs,
-            });
+            log("info", "handler.success", { requestId, provider: aiResult.provider, model: aiResult.model, latencyMs });
 
             enq(sseFrame({
               type: "done",
-              model: aiResult!.model ?? model,
+              model: aiResult.model ?? model,
               conversationId: convId,
               ...(searchSources.length > 0 && { crawledSources: searchSources }),
+              ...(weatherInfo && { weatherInfo }),
+              ...(timeInfo && { timeInfo }),
               ...(newGuestCount !== undefined && {
                 guestMessageCount: newGuestCount,
                 guestMessageLimit: GUEST_LIMIT,
@@ -744,58 +1125,77 @@ Deno.serve(async (req: Request) => {
     // ═══════════════════════════════════════════════════════════════════════
     // JSON fallback path (stream: false)
     // ═══════════════════════════════════════════════════════════════════════
-    let searchSources: SearchSource[] = [];
-    let searchContext = "";
 
-    if (shouldSearch) {
-      const rawSources = await webSearch(userText, requestId);
-      if (rawSources.length > 0) {
-        searchContext = formatSearchContext(rawSources);
-        const [enriched, result] = await Promise.all([
-          enrichWithImages(rawSources, 3),
-          callWithFallback(buildMessages(searchContext), keys, 2048, requestId),
-        ]);
-        searchSources = enriched;
-        if (!result.ok) return json({ error: "AI service temporarily unavailable." }, 503);
-
-        const convId = await persistConversation(
-          db, authResult, userText, result, model, conversationId, true, requestId,
-        );
-        let newGuestCount: number | undefined;
-        if (authResult.type === "guest") {
-          newGuestCount = await incrementGuestCount(db, authResult.guestSessionId);
-        }
-
-        return json({
-          id: requestId,
-          model: result.model ?? model,
-          message: { role: "assistant", content: result.content },
-          usage: {
-            inputTokens: result.inputTokens,
-            outputTokens: result.outputTokens,
-            totalTokens: result.inputTokens + result.outputTokens,
-          },
-          conversationId: convId,
-          crawledSources: searchSources,
-          ...(newGuestCount !== undefined && {
-            guestMessageCount: newGuestCount,
-            guestMessageLimit: GUEST_LIMIT,
-          }),
-        });
-      }
+    // Image gen in non-streaming mode
+    if (isCompleteImage && keys.cloudflare && keys.cloudflareAccountId) {
+      const imageMarkdown = await generateImageCF(userText, keys.cloudflare, keys.cloudflareAccountId, requestId);
+      const content = imageMarkdown ?? "I wasn't able to generate that image right now. Please try again.";
+      const fakeResult: AIResult = { ok: true, content, inputTokens: 0, outputTokens: 0 };
+      const convId = await persistConversation(db, authResult, userText, fakeResult, model, conversationId, false, requestId);
+      let newGuestCount: number | undefined;
+      if (authResult.type === "guest") newGuestCount = await incrementGuestCount(db, authResult.guestSessionId);
+      return json({
+        id: requestId, model: "flux-1-schnell",
+        message: { role: "assistant", content },
+        conversationId: convId,
+        ...(newGuestCount !== undefined && { guestMessageCount: newGuestCount, guestMessageLimit: GUEST_LIMIT }),
+      });
     }
 
-    // No search or search returned nothing
-    const result = await callWithFallback(buildMessages(""), keys, 2048, requestId);
+    // Incomplete image in non-streaming mode
+    if (isIncompleteImage) {
+      const content = "What would you like me to generate? Please describe the image in detail.";
+      const fakeResult: AIResult = { ok: true, content, inputTokens: 0, outputTokens: 0 };
+      const convId = await persistConversation(db, authResult, userText, fakeResult, model, conversationId, false, requestId);
+      return json({ id: requestId, model, message: { role: "assistant", content }, conversationId: convId });
+    }
+
+    // Standard text path
+    let searchSources: SearchSource[] = [];
+    let urlCtx = "";
+    let weatherInfo: WeatherInfo | undefined;
+    let timeInfo: TimeInfo | undefined;
+    let weatherCtx = "";
+
+    const tasks: Promise<void>[] = [];
+
+    if (userUrls.length > 0) {
+      tasks.push((async () => {
+        const contents = await Promise.all(userUrls.map((u) => fetchPageContent(u, requestId)));
+        urlCtx = (contents.filter(Boolean) as string[]).join("\n\n---\n\n").slice(0, 8000);
+      })());
+    }
+    if (weatherLocation) {
+      tasks.push((async () => {
+        weatherInfo = await fetchWeather(weatherLocation, requestId) ?? undefined;
+        if (weatherInfo) weatherCtx = `Location: ${weatherInfo.label}, Temp: ${weatherInfo.tempC}°C, Condition: ${weatherInfo.condition}`;
+      })());
+    }
+    if (timeLocation) {
+      tasks.push((async () => { timeInfo = await fetchTimeInfo(timeLocation, requestId) ?? undefined; })());
+    }
+    if (shouldSearch) {
+      tasks.push((async () => {
+        const raw = await webSearch(userText, requestId);
+        if (raw.length > 0) {
+          const [enriched] = await Promise.all([enrichWithImages(raw, 3)]);
+          searchSources = enriched;
+        }
+      })());
+    }
+
+    await Promise.all(tasks);
+
+    const searchCtx = formatSearchContext(searchSources);
+    const result = await callWithFallback(buildMessages(searchCtx, urlCtx, weatherCtx), keys, 2048, requestId);
     if (!result.ok) return json({ error: "AI service temporarily unavailable. Please try again." }, 503);
 
     const convId = await persistConversation(
-      db, authResult, userText, result, model, conversationId, false, requestId,
+      db, authResult, userText, result, model, conversationId,
+      searchSources.length > 0, requestId,
     );
     let newGuestCount: number | undefined;
-    if (authResult.type === "guest") {
-      newGuestCount = await incrementGuestCount(db, authResult.guestSessionId);
-    }
+    if (authResult.type === "guest") newGuestCount = await incrementGuestCount(db, authResult.guestSessionId);
 
     const latencyMs = Date.now() - startTime;
     log("info", "handler.success", { requestId, provider: result.provider, model: result.model, latencyMs });
@@ -810,6 +1210,9 @@ Deno.serve(async (req: Request) => {
         totalTokens: result.inputTokens + result.outputTokens,
       },
       conversationId: convId,
+      ...(searchSources.length > 0 && { searchInfo: { query: userText, sources: searchSources } }),
+      ...(weatherInfo && { weatherInfo }),
+      ...(timeInfo && { timeInfo }),
       ...(newGuestCount !== undefined && {
         guestMessageCount: newGuestCount,
         guestMessageLimit: GUEST_LIMIT,
