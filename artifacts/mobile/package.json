@@ -60,7 +60,7 @@
     "@expo-google-fonts/space-grotesk": "^0.4.1",
     "expo-clipboard": "^55.0.15",
     "expo-file-system": "~55.0.24",
-    "expo-haptics": "^57.0.1",
+    "expo-haptics": "^55.0.16",
     "expo-sharing": "~55.0.22",
     "expo-speech": "^55.0.16",
     "react-native-webview": "13.16.0"

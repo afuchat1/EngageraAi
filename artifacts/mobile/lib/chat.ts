@@ -1,5 +1,4 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { fetch as expoFetch } from 'expo/fetch';
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from '@/lib/supabase';
 import { getDeviceLocation } from '@/lib/timezone-location';
 
@@ -174,9 +173,9 @@ export async function streamChat(
   }
 
   try {
-    let res: Awaited<ReturnType<typeof expoFetch>>;
+    let res: Response;
     try {
-      res = await expoFetch(EDGE_FUNCTION_URL, {
+      res = await fetch(EDGE_FUNCTION_URL, {
         method: 'POST',
         headers,
         body: JSON.stringify({ ...request, stream: true, userLocation: request.userLocation ?? DEVICE_LOCATION }),
