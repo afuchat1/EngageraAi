@@ -118,13 +118,15 @@ function sseFrame(data: Record<string, unknown>): string {
 function isCompleteImageRequest(text: string): boolean {
   const t = text.trim();
 
-  // Must be over 10 chars just to have enough words
-  if (t.length < 10) return false;
+  // Must be over 6 chars just to have enough words
+  if (t.length < 6) return false;
 
-  // Patterns that require a real subject (≥2 meaningful words after the trigger)
+  // Patterns that require a real subject (meaningful content after the trigger)
   const complete = [
+    // "generate/create/make an image OF something" — most natural phrasing
+    /\b(generate|create|make|produce|build)\s+(a\s+|an\s+|the\s+|me\s+a\s+|me\s+an\s+)?(image|picture|photo|drawing|painting|illustration|artwork|logo|poster|wallpaper|banner|thumbnail|graphic|portrait|scene|render)\s+(of|showing|depicting|featuring|about)\s+\w{3,}/i,
     // "generate/create/make/produce + ... + image-noun" with content in between
-    /\b(generate|create|make|produce|build)\b.{5,}\b(image|picture|photo|drawing|painting|illustration|artwork|logo|poster|wallpaper|banner|thumbnail|graphic|portrait|scene|render|design)\b/i,
+    /\b(generate|create|make|produce|build)\b.{3,}\b(image|picture|photo|drawing|painting|illustration|artwork|logo|poster|wallpaper|banner|thumbnail|graphic|portrait|scene|render|design)\b/i,
     // "draw/paint/sketch/illustrate/render me/a/an + ≥1 real word"
     /\b(draw|paint|sketch|illustrate|render)\s+(me\s+)?(a\s+|an\s+|the\s+|my\s+)?\w{3,}/i,
     // "show me a picture/image/photo of ..."
@@ -133,6 +135,8 @@ function isCompleteImageRequest(text: string): boolean {
     /\b(i\s+)?(want|need|would\s+like|give\s+me)\s+(a|an)\s+(image|picture|photo|drawing|illustration)\s+of\s+\w{3,}/i,
     // "generate a logo for X" / "design a poster about X"
     /\b(design|create|make|generate)\s+(a|an|the)\s+(logo|poster|banner|thumbnail|wallpaper)\s+(for|of|about|showing|with)\s+\w{3,}/i,
+    // "image of a X", "picture of a X" as standalone phrases
+    /\b(image|picture|photo|illustration|artwork)\s+of\s+(a\s+|an\s+|the\s+)?\w{3,}/i,
   ];
 
   return complete.some((p) => p.test(t));

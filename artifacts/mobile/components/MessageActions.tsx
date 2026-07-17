@@ -14,11 +14,9 @@ import { useColors } from '@/hooks/useColors';
 export function MessageActions({
   text,
   onRegenerate,
-  onDelete,
 }: {
   text: string;
   onRegenerate?: () => void;
-  onDelete?: () => void;
 }) {
   const colors = useColors();
   const [copied, setCopied] = useState(false);
@@ -63,7 +61,6 @@ export function MessageActions({
   const handleMore = () => {
     Alert.alert('Message options', undefined, [
       ...(onRegenerate ? [{ text: 'Regenerate', onPress: onRegenerate }] : []),
-      ...(onDelete ? [{ text: 'Delete response', style: 'destructive' as const, onPress: onDelete }] : []),
       { text: 'Cancel', style: 'cancel' as const },
     ]);
   };
@@ -94,7 +91,7 @@ export function MessageActions({
         onPress={handleSpeak}
       />
       <ActionButton icon="share-outline" color={mutedColor} onPress={handleShare} />
-      {(onRegenerate || onDelete) && (
+      {onRegenerate && (
         <ActionButton icon="ellipsis-horizontal" color={mutedColor} onPress={handleMore} />
       )}
     </View>

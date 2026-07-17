@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, FlatList, Keyboard, Pressable, StyleSheet, Text, View } from 'react-native';
-import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
+import { Alert, FlatList, KeyboardAvoidingView, Keyboard, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,7 +9,6 @@ import { ChatBubble, type DisplayMessage } from '@/components/ChatBubble';
 import { ChatInput } from '@/components/ChatInput';
 import { TypingDots } from '@/components/TypingDots';
 import { ImageGenIndicator } from '@/components/ImageGenIndicator';
-import { GuestBanner } from '@/components/GuestBanner';
 import { BrandMark } from '@/components/BrandMark';
 import { ModeSwitch, type ChatMode } from '@/components/ModeSwitch';
 import { Sidebar } from '@/components/Sidebar';
@@ -54,10 +52,8 @@ export default function ChatScreen() {
     setPendingImage,
     busy,
     send,
-    deleteMessage,
     regenerateMessage,
     isGuest,
-    remaining,
     guestBlocked,
     conversationId,
     startNewConversation,
@@ -169,7 +165,14 @@ export default function ChatScreen() {
 
       {/* ── Chat — always mounted for same reason ────────────────────────── */}
       <View style={[styles.flex, mode !== 'chat' && styles.hidden]}>
-        <KeyboardAvoidingView style={styles.flex} behavior="padding">
+        {/* KeyboardAvoidingView: padding on iOS (KAV shifts content up by kb
+            height), height on Android (KAV shrinks the view height instead).
+            keyboardVerticalOffset=0 because the header is OUTSIDE this KAV. */}
+        <KeyboardAvoidingView
+          style={styles.flex}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={0}
+        >
           {messages.length === 0 ? (
             <View style={styles.empty}>
               <View style={styles.emptyMark}>
@@ -193,7 +196,6 @@ export default function ChatScreen() {
                   <ChatBubble
                     message={item}
                     onRegenerate={item.role === 'assistant' ? regenerateMessage : undefined}
-                    onDelete={item.role === 'assistant' ? deleteMessage : undefined}
                   />
                 )
               }
@@ -202,7 +204,6 @@ export default function ChatScreen() {
           )}
 
           <View style={{ paddingBottom: insets.bottom + 10, paddingTop: 8 }}>
-            {isGuest && <GuestBanner remaining={remaining} />}
             <ChatInput
               value={inputText}
               onChangeText={setInputText}

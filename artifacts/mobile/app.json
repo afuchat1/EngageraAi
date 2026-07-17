@@ -1,8 +1,9 @@
 {
   "expo": {
     "name": "Engagera",
-    "slug": "mobile",
-    "version": "1.0.0",
+    "slug": "engagera",
+    "owner": "afuchat",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon-black.png",
     "scheme": "mobile",
@@ -19,6 +20,7 @@
     },
     "android": {
       "package": "com.engagera.mobile",
+      "versionCode": 2,
       "backgroundColor": "#000000",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/logo.png",
@@ -50,6 +52,11 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "d7a8c8dd-d199-4a58-a1fb-432abb520bdf"
+      }
     }
   }
 }

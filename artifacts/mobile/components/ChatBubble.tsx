@@ -58,11 +58,9 @@ function StreamCursor({ color }: { color: string }) {
 export const ChatBubble = memo(function ChatBubble({
   message,
   onRegenerate,
-  onDelete,
 }: {
   message: DisplayMessage;
   onRegenerate?: (id: string) => void;
-  onDelete?: (id: string) => void;
 }) {
   const colors = useColors();
   const isUser = message.role === 'user';
@@ -105,8 +103,7 @@ export const ChatBubble = memo(function ChatBubble({
       {showActions ? (
         <MessageActions
           text={plain}
-          onRegenerate={() => onRegenerate?.(message.id)}
-          onDelete={() => onDelete?.(message.id)}
+          onRegenerate={onRegenerate ? () => onRegenerate(message.id) : undefined}
         />
       ) : null}
     </View>
