@@ -1,7 +1,38 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
-import type { WeatherInfo } from '@/lib/chat';
+import * as Location from 'expo-location';
+
+// ── WMO weather-code helpers ──────────────────────────────────────────────────
+
+function wmoCondition(code: number): string {
+  if (code === 0)                    return 'Clear sky';
+  if (code <= 2)                     return 'Mainly clear';
+  if (code === 3)                    return 'Overcast';
+  if (code <= 48)                    return 'Foggy';
+  if (code <= 57)                    return 'Drizzle';
+  if (code <= 67)                    return 'Rain';
+  if (code <= 77)                    return 'Snow';
+  if (code <= 82)                    return 'Rain showers';
+  if (code <= 86)                    return 'Snow showers';
+  if (code === 95)                   return 'Thunderstorm';
+  return 'Thunderstorm';
+}
+
+function wmoIcon(code: number, isDay: boolean): string {
+  if (code === 0)          return isDay ? 'sun' : 'sun';
+  if (code <= 2)           return 'cloud-sun';
+  if (code === 3)          return 'cloud';
+  if (code <= 48)          return 'fog';
+  if (code <= 57)          return 'drizzle';
+  if (code <= 67)          return 'rain';
+  if (code <= 77)          return 'snow';
+  if (code <= 82)          return 'rain';
+  if (code <= 86)          return 'snow';
+  return 'storm';
+}
+
+// ── Icon renderer ─────────────────────────────────────────────────────────────
 
 function WeatherIcon({ icon, isDay }: { icon: string; isDay: boolean }) {
   const size = 40;
@@ -12,18 +43,12 @@ function WeatherIcon({ icon, isDay }: { icon: string; isDay: boolean }) {
           <Circle cx="20" cy="20" r="8" fill={isDay ? '#fbbf24' : 'rgba(255,255,255,0.5)'} />
           {Array.from({ length: 8 }, (_, i) => {
             const a = (i * 45) * (Math.PI / 180);
-            const stroke = isDay ? '#fbbf24' : 'rgba(255,255,255,0.4)';
             return (
-              <Line
-                key={i}
-                x1={20 + 12 * Math.cos(a)}
-                y1={20 + 12 * Math.sin(a)}
-                x2={20 + 16 * Math.cos(a)}
-                y2={20 + 16 * Math.sin(a)}
-                stroke={stroke}
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
+              <Line key={i}
+                x1={20 + 12 * Math.cos(a)} y1={20 + 12 * Math.sin(a)}
+                x2={20 + 16 * Math.cos(a)} y2={20 + 16 * Math.sin(a)}
+                stroke={isDay ? '#fbbf24' : 'rgba(255,255,255,0.4)'}
+                strokeWidth="1.5" strokeLinecap="round" />
             );
           })}
         </Svg>
@@ -40,7 +65,7 @@ function WeatherIcon({ icon, isDay }: { icon: string; isDay: boolean }) {
         <Svg width={size} height={size} viewBox="0 0 40 40">
           <Path d="M11 18a6 6 0 0 1 1-11.9A8 8 0 0 1 27 9.5 5.5 5.5 0 0 1 26 18H11z" fill="rgba(255,255,255,0.5)" />
           <Line x1="10" y1="24" x2="30" y2="24" stroke="rgba(255,255,255,0.4)" strokeWidth="2" strokeLinecap="round" />
-          <Line x1="8" y1="29" x2="32" y2="29" stroke="rgba(255,255,255,0.4)" strokeWidth="2" strokeLinecap="round" />
+          <Line x1="8"  y1="29" x2="32" y2="29" stroke="rgba(255,255,255,0.4)" strokeWidth="2" strokeLinecap="round" />
         </Svg>
       );
     case 'drizzle':
@@ -78,16 +103,98 @@ function WeatherIcon({ icon, isDay }: { icon: string; isDay: boolean }) {
   }
 }
 
-export function WeatherWidget({ weatherInfo }: { weatherInfo: WeatherInfo }) {
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+interface LiveWeather {
+  label: string;
+  tempC: number;
+  feelsLikeC: number;
+  condition: string;
+  icon: string;
+  windKph: number;
+  humidity: number;
+  isDay: boolean;
+}
+
+// ── Main widget ───────────────────────────────────────────────────────────────
+
+export function WeatherWidget() {
+  const [weather, setWeather] = useState<LiveWeather | null>(null);
+  const [error,   setError]   = useState('');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        // 1. Request location permission
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          setError('Location permission denied');
+          return;
+        }
+
+        // 2. Get GPS coordinates
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const { latitude, longitude } = pos.coords;
+
+        // 3. Fetch live weather from Open-Meteo (free, no API key)
+        const url =
+          `https://api.open-meteo.com/v1/forecast` +
+          `?latitude=${latitude}&longitude=${longitude}` +
+          `&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,weather_code,wind_speed_10m` +
+          `&wind_speed_unit=kmh`;
+        const res  = await fetch(url);
+        const data = await res.json();
+        const cur  = data.current;
+
+        // 4. Reverse-geocode for place name
+        const places = await Location.reverseGeocodeAsync({ latitude, longitude });
+        const p = places[0];
+        const label = p
+          ? [p.city || p.subregion, p.country].filter(Boolean).join(', ')
+          : 'Your location';
+
+        setWeather({
+          label,
+          tempC:       Math.round(cur.temperature_2m),
+          feelsLikeC:  Math.round(cur.apparent_temperature),
+          condition:   wmoCondition(cur.weather_code),
+          icon:        wmoIcon(cur.weather_code, cur.is_day === 1),
+          windKph:     Math.round(cur.wind_speed_10m),
+          humidity:    cur.relative_humidity_2m,
+          isDay:       cur.is_day === 1,
+        });
+      } catch (e: any) {
+        setError(e?.message ?? 'Could not load weather');
+      }
+    })();
+  }, []);
+
+  if (error) {
+    return (
+      <View style={styles.card}>
+        <Text style={styles.sub}>{error}</Text>
+      </View>
+    );
+  }
+
+  if (!weather) {
+    return (
+      <View style={styles.card}>
+        <ActivityIndicator size="small" color="rgba(255,255,255,0.5)" />
+        <Text style={[styles.sub, { marginLeft: 10 }]}>Getting your weather…</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.card}>
       <View style={styles.info}>
-        <Text style={styles.temp}>{weatherInfo.tempC}°C</Text>
-        <Text style={styles.label} numberOfLines={1}>{weatherInfo.label}</Text>
-        <Text style={styles.sub}>{weatherInfo.condition} · Feels {weatherInfo.feelsLikeC}°C</Text>
-        <Text style={styles.sub}>Humidity {weatherInfo.humidity}% · Wind {weatherInfo.windKph} km/h</Text>
+        <Text style={styles.temp}>{weather.tempC}°C</Text>
+        <Text style={styles.label} numberOfLines={1}>{weather.label}</Text>
+        <Text style={styles.sub}>{weather.condition} · Feels {weather.feelsLikeC}°C</Text>
+        <Text style={styles.sub}>Humidity {weather.humidity}% · Wind {weather.windKph} km/h</Text>
       </View>
-      <WeatherIcon icon={weatherInfo.icon} isDay={weatherInfo.isDay} />
+      <WeatherIcon icon={weather.icon} isDay={weather.isDay} />
     </View>
   );
 }
@@ -106,10 +213,7 @@ const styles = StyleSheet.create({
     maxWidth: 290,
     alignSelf: 'flex-start',
   },
-  info: {
-    flex: 1,
-    minWidth: 0,
-  },
+  info: { flex: 1, minWidth: 0 },
   temp: {
     fontSize: 28,
     fontWeight: '700',

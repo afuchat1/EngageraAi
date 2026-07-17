@@ -73,8 +73,8 @@ export const ChatBubble = memo(function ChatBubble({
   return (
     <View style={[styles.row, { alignItems: isUser ? 'flex-end' : 'flex-start' }]}>
       <View style={[styles.body, isUser ? [styles.bubble, { backgroundColor: colors.primary }] : styles.assistantBody]}>
-        {!isUser && message.timeInfo ? <ClockWidget timeInfo={message.timeInfo} /> : null}
-        {!isUser && message.weatherInfo ? <WeatherWidget weatherInfo={message.weatherInfo} /> : null}
+        {!isUser && message.timeInfo ? <ClockWidget /> : null}
+        {!isUser && message.weatherInfo ? <WeatherWidget /> : null}
 
         {message.imageUri ? (
           <Image source={{ uri: message.imageUri }} style={styles.image} />
