@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, FlatList, Keyboard, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
+import { Alert, FlatList, Keyboard, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -30,6 +29,13 @@ export default function ChatScreen() {
   const [mode, setMode] = useState<ChatMode>('chat');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
+  // Tracks the keyboard height for manual avoidance. KeyboardProvider from
+  // react-native-keyboard-controller sets windowSoftInputMode=adjustNothing
+  // globally, so neither the OS nor the stock KeyboardAvoidingView can move
+  // the layout. We listen to Keyboard events (which still fire under
+  // adjustNothing) and pad the input container ourselves — works in both
+  // Expo Go (no native module) and production APK.
+  const [kbHeight, setKbHeight] = useState(0);
 
   // Both sessions stay mounted at all times so switching modes with the
   // pill switch never loses either conversation's history.
@@ -74,15 +80,14 @@ export default function ChatScreen() {
   const lastIsPending = !!lastMessage?.pending;
   const lastIsStreaming = !!lastMessage?.streaming;
 
-  // Belt-and-suspenders auto-scroll: onContentSizeChange (below) already
-  // snaps to the newest message as it grows, but the keyboard opening or
-  // closing also resizes the visible list area — re-anchor to the bottom
-  // whenever that happens so the latest message is never left off-screen.
+  // Keyboard show/hide: track height for manual avoidance + keep scroll pinned.
   useEffect(() => {
-    const showSub = Keyboard.addListener('keyboardDidShow', () => {
+    const showSub = Keyboard.addListener('keyboardDidShow', (e) => {
+      setKbHeight(e.endCoordinates.height);
       listRef.current?.scrollToEnd({ animated: true });
     });
     const hideSub = Keyboard.addListener('keyboardDidHide', () => {
+      setKbHeight(0);
       listRef.current?.scrollToEnd({ animated: false });
     });
     return () => {
@@ -159,14 +164,7 @@ export default function ChatScreen() {
 
       {/* ── Chat — always mounted for same reason ────────────────────────── */}
       <View style={[styles.flex, mode !== 'chat' && styles.hidden]}>
-        {/* react-native-keyboard-controller's KAV uses Reanimated worklets
-            and correctly measures the keyboard frame on both iOS and Android,
-            including inside Expo Go. 'padding' mode works cross-platform. */}
-        <KeyboardAvoidingView
-          style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
-          keyboardVerticalOffset={0}
-        >
+        <View style={styles.flex}>
           {messages.length === 0 ? (
             <View style={styles.empty}>
               <View style={styles.emptyMark}>
@@ -197,7 +195,10 @@ export default function ChatScreen() {
             />
           )}
 
-          <View style={{ paddingBottom: insets.bottom + 10, paddingTop: 8 }}>
+          {/* paddingBottom expands when the keyboard is up to push the input
+              bar above it. kbHeight is always the raw keyboard height because
+              KeyboardProvider sets adjustNothing — no double-offset risk. */}
+          <View style={{ paddingBottom: kbHeight > 0 ? kbHeight + 6 : insets.bottom + 10, paddingTop: 8 }}>
             <ChatInput
               value={inputText}
               onChangeText={setInputText}
@@ -209,7 +210,7 @@ export default function ChatScreen() {
               placeholder={guestBlocked ? 'Sign in to keep chatting…' : copy.placeholder}
             />
           </View>
-        </KeyboardAvoidingView>
+        </View>
       </View>
 
       <Sidebar
