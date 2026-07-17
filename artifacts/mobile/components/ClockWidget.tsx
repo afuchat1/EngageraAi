@@ -1,16 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Line } from 'react-native-svg';
-import * as Location from 'expo-location';
 
 /**
- * Real-time clock widget — always shows the user's actual device timezone.
- * Reverse-geocodes the device position to display a city/country label.
+ * Real-time clock widget.
+ * Silently detects the user's timezone via IP geolocation (no permission prompt).
+ * Falls back to the device's own timezone if the lookup fails.
  */
 export function ClockWidget() {
   const [now, setNow] = useState(() => new Date());
-  const [cityLabel, setCityLabel] = useState<string>('');
-  const [locationReady, setLocationReady] = useState(false);
+  const [zone, setZone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const [cityLabel, setCityLabel] = useState('');
 
   // Tick every second
   useEffect(() => {
@@ -18,29 +18,17 @@ export function ClockWidget() {
     return () => clearInterval(id);
   }, []);
 
-  // Resolve city name once on mount
+  // Silently resolve location via IP — no permission needed
   useEffect(() => {
-    (async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === 'granted') {
-          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
-          const places = await Location.reverseGeocodeAsync(pos.coords);
-          const p = places[0];
-          if (p) {
-            setCityLabel([p.city || p.subregion, p.country].filter(Boolean).join(', '));
-          }
-        }
-      } catch {
-        // fall through — timezone display still works without a city name
-      } finally {
-        setLocationReady(true);
-      }
-    })();
+    fetch('https://ipapi.co/json/')
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.timezone) setZone(d.timezone);
+        const label = [d.city, d.country_name].filter(Boolean).join(', ');
+        if (label) setCityLabel(label);
+      })
+      .catch(() => {/* keep device defaults */});
   }, []);
-
-  // Always use the device's own IANA timezone
-  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   const fmt = (opts: Intl.DateTimeFormatOptions) =>
     new Intl.DateTimeFormat('en-US', { ...opts, timeZone: zone }).format(now);
@@ -59,15 +47,14 @@ export function ClockWidget() {
     try {
       const diff =
         (new Date(now.toLocaleString('en-US', { timeZone: zone })).getTime() -
-         new Date(now.toLocaleString('en-US', { timeZone: 'UTC' })).getTime()) / 60000;
+         new Date(now.toLocaleString('en-US', { timeZone: 'UTC'  })).getTime()) / 60000;
       return Math.round(diff);
     } catch { return 0; }
   })();
-  const sign   = utcOffsetMin >= 0 ? '+' : '-';
-  const abs    = Math.abs(utcOffsetMin);
+  const sign     = utcOffsetMin >= 0 ? '+' : '-';
+  const abs      = Math.abs(utcOffsetMin);
   const utcLabel = `UTC${sign}${Math.floor(abs / 60)}${abs % 60 ? ':' + String(abs % 60).padStart(2, '0') : ''}`;
 
-  // Clock hand angles
   const secDeg = seconds * 6;
   const minDeg = minutes * 6 + seconds * 0.1;
   const hrDeg  = (hours24 % 12) * 30 + minutes * 0.5;
@@ -88,13 +75,9 @@ export function ClockWidget() {
     <View style={styles.card}>
       <View style={styles.info}>
         <Text style={styles.digital}>{digital}</Text>
-        {!locationReady ? (
-          <ActivityIndicator size="small" color="rgba(255,255,255,0.4)" style={{ marginTop: 8 }} />
-        ) : (
-          <Text style={styles.label} numberOfLines={1}>
-            {cityLabel || zone.replace(/_/g, ' ')}
-          </Text>
-        )}
+        <Text style={styles.label} numberOfLines={1}>
+          {cityLabel || zone.replace(/_/g, ' ')}
+        </Text>
         <Text style={styles.sub}>{dateLabel} · {utcLabel}</Text>
       </View>
 
@@ -105,7 +88,7 @@ export function ClockWidget() {
         {Array.from({ length: 12 }, (_, i) => {
           const a = (i * 30 - 90) * (Math.PI / 180);
           const isQ = i % 3 === 0;
-          const r1 = isQ ? 24 : 26;
+          const r1  = isQ ? 24 : 26;
           return (
             <Line key={i}
               x1={32 + r1 * Math.cos(a)} y1={32 + r1 * Math.sin(a)}
@@ -147,14 +130,6 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
     letterSpacing: -0.5,
   },
-  label: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.55)',
-    marginTop: 6,
-  },
-  sub: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.3)',
-    marginTop: 2,
-  },
+  label: { fontSize: 13, color: 'rgba(255,255,255,0.55)', marginTop: 6 },
+  sub:   { fontSize: 11, color: 'rgba(255,255,255,0.3)',  marginTop: 2 },
 });
