@@ -10,6 +10,9 @@
     "userInterfaceStyle": "dark",
     "backgroundColor": "#000000",
     "newArchEnabled": true,
+    "updates": {
+      "enabled": false
+    },
     "splash": {
       "image": "./assets/images/logo.png",
       "resizeMode": "contain",
