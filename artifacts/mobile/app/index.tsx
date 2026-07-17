@@ -9,7 +9,6 @@ import { ChatBubble, type DisplayMessage } from '@/components/ChatBubble';
 import { ChatInput } from '@/components/ChatInput';
 import { TypingDots } from '@/components/TypingDots';
 import { ImageGenIndicator } from '@/components/ImageGenIndicator';
-import { GuestBanner } from '@/components/GuestBanner';
 import { BrandMark } from '@/components/BrandMark';
 import { ModeSwitch, type ChatMode } from '@/components/ModeSwitch';
 import { Sidebar } from '@/components/Sidebar';
@@ -54,7 +53,6 @@ export default function ChatScreen() {
     busy,
     send,
     isGuest,
-    remaining,
     conversationId,
     startNewConversation,
     loadConversation,
@@ -148,8 +146,6 @@ export default function ChatScreen() {
 
       {/* ── Chat — always mounted for same reason ────────────────────────── */}
       <View style={[styles.flex, mode !== 'chat' && styles.hidden]}>
-        {isGuest ? <GuestBanner remaining={remaining} /> : null}
-
         <KeyboardAvoidingView style={styles.flex} behavior="padding">
           {messages.length === 0 ? (
             <View style={styles.empty}>

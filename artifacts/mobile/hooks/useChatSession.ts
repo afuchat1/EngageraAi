@@ -135,6 +135,23 @@ export function useChatSession(model: string, contextHint?: string) {
     if (!text && !pendingImage) return;
     if (!user && guestBlocked) return;
 
+    // Image generation is for signed-in users only. Intercept here so
+    // the request never hits the backend — just drop a canned reply and
+    // a sign-in nudge into the thread instead.
+    const isImageReq = looksLikeImageRequest(text);
+    if (!user && isImageReq) {
+      const userMsg: DisplayMessage = { id: randomId(), role: 'user', text, imageUri: pendingImage?.uri };
+      const signInMsg: DisplayMessage = {
+        id: randomId(),
+        role: 'assistant',
+        text: 'Image generation is only available to signed-in users. Create a free account to unlock it — it only takes a moment.',
+      };
+      setMessages((prev) => [...prev, userMsg, signInMsg]);
+      setInputText('');
+      setPendingImage(null);
+      return;
+    }
+
     const userMessage: DisplayMessage = {
       id: randomId(),
       role: 'user',
@@ -145,7 +162,6 @@ export function useChatSession(model: string, contextHint?: string) {
     // Best-effort guess so the placeholder can show a "creating your
     // image" frame instead of the generic thinking dots. The backend
     // decides for real; this only affects which loading state is shown.
-    const isImageReq = looksLikeImageRequest(text);
 
     const historyForRequest: ChatMessage[] = [...messages, userMessage]
       .filter((m) => m.text.length > 0 || m.imageUri)
