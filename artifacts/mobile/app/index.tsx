@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, FlatList, Keyboard, Pressable, StyleSheet, Text, View } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { useChatSession } from '@/hooks/useChatSession';
@@ -9,6 +10,7 @@ import { ChatBubble, type DisplayMessage } from '@/components/ChatBubble';
 import { ChatInput } from '@/components/ChatInput';
 import { TypingDots } from '@/components/TypingDots';
 import { ImageGenIndicator } from '@/components/ImageGenIndicator';
+import { GuestBanner } from '@/components/GuestBanner';
 import { BrandMark } from '@/components/BrandMark';
 import { ModeSwitch, type ChatMode } from '@/components/ModeSwitch';
 import { Sidebar } from '@/components/Sidebar';
@@ -52,11 +54,32 @@ export default function ChatScreen() {
     setPendingImage,
     busy,
     send,
+    deleteMessage,
+    regenerateMessage,
     isGuest,
+    remaining,
+    guestBlocked,
     conversationId,
     startNewConversation,
     loadConversation,
   } = session;
+
+  // When the free guest cap is hit, immediately surface an actionable
+  // prompt — the passive "Guest limit reached" banner alone is easy to miss.
+  useEffect(() => {
+    if (!guestBlocked) return;
+    Alert.alert(
+      "Free messages used up",
+      `You've used all your free guest messages. Create a free account to keep chatting, generate images, and unlock all models.`,
+      [
+        {
+          text: 'Sign in',
+          onPress: () => router.push('/account'),
+        },
+        { text: 'Maybe later', style: 'cancel' },
+      ],
+    );
+  }, [guestBlocked]);
   const lastMessage = messages.length > 0 ? messages[messages.length - 1] : undefined;
   const lastIsPending = !!lastMessage?.pending;
   const lastIsStreaming = !!lastMessage?.streaming;
@@ -167,7 +190,11 @@ export default function ChatScreen() {
                 item.pending && item.text.length === 0 ? (
                   item.imageGenerating ? <ImageGenIndicator /> : <TypingDots label={item.searchStatus} />
                 ) : (
-                  <ChatBubble message={item} />
+                  <ChatBubble
+                    message={item}
+                    onRegenerate={item.role === 'assistant' ? regenerateMessage : undefined}
+                    onDelete={item.role === 'assistant' ? deleteMessage : undefined}
+                  />
                 )
               }
               onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: !lastIsStreaming })}
@@ -175,6 +202,7 @@ export default function ChatScreen() {
           )}
 
           <View style={{ paddingBottom: insets.bottom + 10, paddingTop: 8 }}>
+            {isGuest && <GuestBanner remaining={remaining} />}
             <ChatInput
               value={inputText}
               onChangeText={setInputText}
@@ -182,7 +210,8 @@ export default function ChatScreen() {
               image={pendingImage}
               onImagePicked={setPendingImage}
               busy={busy || lastIsPending}
-              placeholder={copy.placeholder}
+              disabled={guestBlocked}
+              placeholder={guestBlocked ? 'Sign in to keep chatting…' : copy.placeholder}
             />
           </View>
         </KeyboardAvoidingView>

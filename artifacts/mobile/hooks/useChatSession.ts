@@ -130,6 +130,182 @@ export function useChatSession(model: string, contextHint?: string) {
     [stopReveal],
   );
 
+  /**
+   * Core streaming runner shared by send() and regenerateMessage().
+   * Takes an already-built messages array, the placeholder assistant ID,
+   * whether this is an image-gen request, and the current conversation ID.
+   */
+  const runStreamRequest = useCallback(
+    async (
+      historyForRequest: ChatMessage[],
+      assistantId: string,
+      isImageReq: boolean,
+      convId: number | undefined,
+    ) => {
+      setBusy(true);
+      revealQueueRef.current = '';
+      streamEndedRef.current = false;
+
+      try {
+        await streamChat(
+          { messages: historyForRequest, model, conversationId: convId, contextHint },
+          {
+            onToken: (chunk) => {
+              if (isImageReq) {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId
+                      ? { ...m, text: m.text + chunk, pending: false, imageGenerating: false }
+                      : m,
+                  ),
+                );
+                return;
+              }
+              revealQueueRef.current += chunk;
+              startReveal(assistantId);
+            },
+            onSearchStatus: (message: string) => {
+              setMessages((prev) =>
+                prev.map((m) => (m.id === assistantId ? { ...m, searchStatus: message } : m)),
+              );
+            },
+            onMeta: (searchInfo: SearchInfo) => {
+              setMessages((prev) =>
+                prev.map((m) => (m.id === assistantId ? { ...m, searchInfo, searchStatus: undefined } : m)),
+              );
+            },
+            onDone: (done) => {
+              if (done.conversationId) setConversationId(done.conversationId);
+              if (typeof done.guestMessageCount === 'number') setGuestCount(done.guestMessageCount);
+              if (done.timeInfo || done.weatherInfo) {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId
+                      ? {
+                          ...m,
+                          ...(done.timeInfo ? { timeInfo: done.timeInfo } : {}),
+                          ...(done.weatherInfo ? { weatherInfo: done.weatherInfo } : {}),
+                        }
+                      : m,
+                  ),
+                );
+              }
+            },
+          },
+        );
+        streamEndedRef.current = true;
+        if (revealQueueRef.current.length === 0) {
+          stopReveal();
+          setMessages((prev) =>
+            prev.map((m) => (m.id === assistantId ? { ...m, streaming: false } : m)),
+          );
+        }
+      } catch (err) {
+        stopReveal();
+        if (err instanceof ChatRequestError && err.status === 429) {
+          setGuestBlocked(true);
+          const data = err.data as { guestMessageCount?: number } | undefined;
+          if (data?.guestMessageCount) setGuestCount(data.guestMessageCount);
+        }
+
+        const isRateLimited = err instanceof ChatRequestError && err.status === 429;
+        if (isImageReq && !isRateLimited) {
+          const recovered = await tryRecoverPersistedReply(convId);
+          if (recovered) {
+            setConversationId(recovered.conversationId);
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? { ...m, text: recovered.text, pending: false, streaming: false, imageGenerating: false }
+                  : m,
+              ),
+            );
+            setBusy(false);
+            return;
+          }
+        }
+
+        const message =
+          err instanceof ChatRequestError
+            ? err.status === 429
+              ? "You've used all your free guest messages. Sign in to keep chatting."
+              : err.message
+            : err instanceof Error && err.message
+              ? `Something went wrong: ${err.message}`
+              : 'Something went wrong. Please try again.';
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId ? { ...m, text: message, pending: false, streaming: false } : m,
+          ),
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [model, contextHint, startReveal, stopReveal],
+  );
+
+  /** Removes a single assistant message from the thread. */
+  const deleteMessage = useCallback((id: string) => {
+    setMessages((prev) => prev.filter((m) => m.id !== id));
+  }, []);
+
+  /**
+   * Re-runs the request for an existing assistant message.
+   * Strips the old reply (and any messages after it), replaces it with a
+   * fresh placeholder, then streams a new response using the same history
+   * that produced the original.
+   */
+  const regenerateMessage = useCallback(
+    async (id: string) => {
+      if (busy) return;
+      setMessages((prev) => {
+        const idx = prev.findIndex((m) => m.id === id);
+        if (idx === -1) return prev;
+        return prev.slice(0, idx); // remove assistant msg + anything after it
+      });
+
+      // Capture current messages synchronously before the state update lands
+      // by reading from a stable snapshot — we re-derive history from the
+      // trimmed array below using a functional update pattern.
+      setMessages((prev) => {
+        // At this point prev is already trimmed (above update applied).
+        // Build the request history from everything still in the thread.
+        const historyForRequest: ChatMessage[] = prev
+          .filter((m) => m.text.length > 0 || m.imageUri)
+          .map((m) => ({ role: m.role, content: m.text }));
+
+        if (historyForRequest.length === 0) return prev;
+
+        const assistantId = randomId();
+        const lastUserText = prev.filter((m) => m.role === 'user').at(-1)?.text ?? '';
+        const isImageReq = looksLikeImageRequest(lastUserText);
+
+        // Schedule the network call after this render — we can't await inside
+        // a setState updater, so we kick it off asynchronously.
+        setTimeout(() => {
+          setConversationId((convId) => {
+            runStreamRequest(historyForRequest, assistantId, isImageReq, convId);
+            return convId; // no change to conversationId itself
+          });
+        }, 0);
+
+        return [
+          ...prev,
+          {
+            id: assistantId,
+            role: 'assistant' as const,
+            text: '',
+            pending: true,
+            streaming: !isImageReq,
+            imageGenerating: isImageReq,
+          },
+        ];
+      });
+    },
+    [busy, runStreamRequest],
+  );
+
   const send = useCallback(async () => {
     const text = inputText.trim();
     if (!text && !pendingImage) return;
@@ -195,115 +371,9 @@ export function useChatSession(model: string, contextHint?: string) {
     ]);
     setInputText('');
     setPendingImage(null);
-    setBusy(true);
 
-    revealQueueRef.current = '';
-    streamEndedRef.current = false;
-
-    try {
-      await streamChat(
-        {
-          messages: historyForRequest,
-          model,
-          conversationId,
-          contextHint,
-        },
-        {
-          // Queue each arriving chunk instead of applying it straight to
-          // state — startReveal's clock drains the queue a few characters
-          // at a time so the message always types in, even if the network
-          // delivers several tokens (or a whole sentence) in one frame.
-          //
-          // Image replies arrive as one giant already-finished chunk (a
-          // full data: URI, sometimes 100KB+) rather than a token stream —
-          // typing that in char-by-char would be slow and pointless, so it
-          // is applied straight to state instead of going through the
-          // reveal queue.
-          onToken: (chunk) => {
-            if (isImageReq) {
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantId
-                    ? { ...m, text: m.text + chunk, pending: false, imageGenerating: false }
-                    : m,
-                ),
-              );
-              return;
-            }
-            revealQueueRef.current += chunk;
-            startReveal(assistantId);
-          },
-          onSearchStatus: (message: string) => {
-            setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, searchStatus: message } : m)));
-          },
-          onMeta: (searchInfo: SearchInfo) => {
-            setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, searchInfo, searchStatus: undefined } : m)));
-          },
-          onDone: (done) => {
-            if (done.conversationId) setConversationId(done.conversationId);
-            if (typeof done.guestMessageCount === 'number') setGuestCount(done.guestMessageCount);
-            if (done.timeInfo || done.weatherInfo) {
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantId
-                    ? { ...m, ...(done.timeInfo ? { timeInfo: done.timeInfo } : {}), ...(done.weatherInfo ? { weatherInfo: done.weatherInfo } : {}) }
-                    : m,
-                ),
-              );
-            }
-          },
-        },
-      );
-      // The reveal clock keeps draining any queued text after this point;
-      // it flips `streaming` off itself once the queue is fully drained.
-      streamEndedRef.current = true;
-      if (revealQueueRef.current.length === 0) {
-        stopReveal();
-        setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, streaming: false } : m)));
-      }
-    } catch (err) {
-      stopReveal();
-      if (err instanceof ChatRequestError && err.status === 429) {
-        setGuestBlocked(true);
-        const data = err.data as { guestMessageCount?: number } | undefined;
-        if (data?.guestMessageCount) setGuestCount(data.guestMessageCount);
-      }
-
-      // Image replies are especially likely to fail locally (slow network
-      // downloading a large base64 payload) after the backend has already
-      // generated and saved them — check the server before showing an error.
-      const isRateLimited = err instanceof ChatRequestError && err.status === 429;
-      if (isImageReq && !isRateLimited) {
-        const recovered = await tryRecoverPersistedReply(conversationId);
-        if (recovered) {
-          setConversationId(recovered.conversationId);
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantId
-                ? { ...m, text: recovered.text, pending: false, streaming: false, imageGenerating: false }
-                : m,
-            ),
-          );
-          setBusy(false);
-          return;
-        }
-      }
-
-      const message =
-        err instanceof ChatRequestError
-          ? err.status === 429
-            ? "You've used all your free guest messages. Sign in to keep chatting."
-            : err.message
-          : err instanceof Error && err.message
-            ? `Something went wrong: ${err.message}`
-            : 'Something went wrong. Please try again.';
-      setMessages((prev) =>
-        prev.map((m) => (m.id === assistantId ? { ...m, text: message, pending: false, streaming: false } : m)),
-      );
-    } finally {
-      setBusy(false);
-    }
-  }, [inputText, pendingImage, messages, model, contextHint, user, guestBlocked, conversationId, startReveal, stopReveal]);
+    await runStreamRequest(historyForRequest, assistantId, isImageReq, conversationId);
+  }, [inputText, pendingImage, messages, user, guestBlocked, conversationId, runStreamRequest]);
 
   return {
     messages,
@@ -313,6 +383,8 @@ export function useChatSession(model: string, contextHint?: string) {
     setPendingImage,
     busy,
     send,
+    deleteMessage,
+    regenerateMessage,
     isGuest: !user,
     remaining,
     guestBlocked,

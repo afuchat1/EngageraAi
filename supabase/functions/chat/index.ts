@@ -934,6 +934,16 @@ Deno.serve(async (req: Request) => {
     const isAnyImageIntent  = isCompleteImage || isIncompleteImage || looksLikeImageIntent(userText);
     const shouldSearch      = !isAnyImageIntent && userText.length > 3 && needsWebSearch(userText);
 
+    // Image generation is only available to signed-in users — guests can
+    // text-chat freely but must create a free account to generate images.
+    if (isCompleteImage && authResult.type === "guest") {
+      return json({
+        error: "Sign in to generate images. Create a free account to unlock image generation.",
+        requiresAuth: true,
+        feature: "image_generation",
+      }, 401);
+    }
+
     // Detect URLs in the user message that should be read
     const userUrls = extractUrls(userText);
 

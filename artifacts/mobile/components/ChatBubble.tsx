@@ -68,7 +68,8 @@ export const ChatBubble = memo(function ChatBubble({
   const isUser = message.role === 'user';
   const isLive = !isUser && (message.streaming || message.pending);
   const plain = message.text.length > 0 ? toPlainText(message.text) : '';
-  const showActions = !isUser && !isLive && !!message.text.trim() && (onRegenerate || onDelete);
+  // Show the action bar on every finished assistant message that has content.
+  const showActions = !isUser && !isLive && !!message.text.trim();
 
   return (
     <View style={[styles.row, { alignItems: isUser ? 'flex-end' : 'flex-start' }]}>
