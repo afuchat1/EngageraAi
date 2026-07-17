@@ -276,11 +276,13 @@ function extractWeatherLocation(text: string): string | null {
   const t = text.toLowerCase().trim();
   if (!/\b(weather|temperature|forecast|rain|snow|sunny|cloudy|humid|hot|cold|wind|storm)\b/i.test(t)) return null;
 
-  // "weather in X" / "weather at X" / "weather for X"
+  // Only match when a preposition clearly introduces a place name.
+  // Deliberately omit greedy "weather <word>" patterns — they capture
+  // non-place words like "like", "today", "outside", "conditions", etc.
+  // and geocode them to random cities (the original source of the mismatch).
   const locMatch =
     text.match(/\b(?:weather|temperature|forecast)\b\s+(?:in|at|for|of)\s+([A-Za-z\s,]+?)(?:\?|$|,|\.|!)/i) ||
-    text.match(/\b(?:in|at)\s+([A-Za-z\s,]{3,40}?)(?:'s)?\s+weather/i) ||
-    text.match(/(?:weather|forecast|temperature)\s+([A-Za-z]{3,}(?:\s+[A-Za-z]{3,})?)/i);
+    text.match(/\b(?:in|at)\s+([A-Za-z\s,]{3,40}?)(?:'s)?\s+weather/i);
 
   return locMatch ? locMatch[1].trim() : null;
 }
@@ -863,6 +865,7 @@ Deno.serve(async (req: Request) => {
       conversationId?: string;
       stream?: boolean;
       contextHint?: string;
+      userLocation?: string;
     };
     try {
       body = await req.json();
@@ -876,6 +879,7 @@ Deno.serve(async (req: Request) => {
       conversationId,
       stream: wantsStream = true,
       contextHint,
+      userLocation,
     } = body;
 
     if (!Array.isArray(rawMessages) || rawMessages.length === 0) {
@@ -926,9 +930,22 @@ Deno.serve(async (req: Request) => {
     // Detect URLs in the user message that should be read
     const userUrls = extractUrls(userText);
 
-    // Detect weather / time requests
-    const weatherLocation = extractWeatherLocation(userText);
-    const timeLocation    = extractTimeLocation(userText);
+    // Detect weather / time requests.
+    // When the user doesn't name a city, fall back to the location the client
+    // derived from the device timezone — never to UTC or a geocoded garbage word.
+    const _weatherLoc = extractWeatherLocation(userText);
+    const weatherLocation = _weatherLoc ?? (
+      /\b(weather|temperature|forecast|rain|snow|sunny|cloudy|humid|hot|cold|wind|storm)\b/i.test(userText) && userLocation
+        ? userLocation
+        : null
+    );
+
+    const _timeLoc = extractTimeLocation(userText);
+    // extractTimeLocation returns "UTC" when no city was named — replace with
+    // the user's real location so the clock widget shows their local time.
+    const timeLocation = _timeLoc === null ? null
+      : (_timeLoc === "UTC" && userLocation) ? userLocation
+      : _timeLoc;
 
     // ── Builder helper ────────────────────────────────────────────────────────
     function buildMessages(searchCtx: string, urlCtx: string, weatherCtx: string): ChatMessage[] {

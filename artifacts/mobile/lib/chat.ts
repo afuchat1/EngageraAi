@@ -1,6 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetch as expoFetch } from 'expo/fetch';
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from '@/lib/supabase';
+import { getDeviceLocation } from '@/lib/timezone-location';
+
+// Resolved once at module load — synchronous, zero network, no permissions.
+const _deviceLoc = getDeviceLocation();
+const DEVICE_LOCATION =
+  _deviceLoc.city && _deviceLoc.country
+    ? `${_deviceLoc.city}, ${_deviceLoc.country}`
+    : _deviceLoc.city || undefined;
 
 export type ContentPart =
   | { type: 'text'; text: string }
@@ -17,6 +25,7 @@ export interface ChatRequest {
   conversationId?: number;
   contextHint?: string;
   stream?: boolean;
+  userLocation?: string;
 }
 
 export interface SearchSource {
@@ -164,7 +173,7 @@ export async function streamChat(
       res = await expoFetch(EDGE_FUNCTION_URL, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ ...request, stream: true }),
+        body: JSON.stringify({ ...request, stream: true, userLocation: request.userLocation ?? DEVICE_LOCATION }),
         signal: controller.signal,
       });
     } catch (networkErr) {
