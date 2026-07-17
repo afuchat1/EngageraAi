@@ -1,63 +1,71 @@
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Line } from 'react-native-svg';
+import { getDeviceLocation } from '@/lib/timezone-location';
 
 /**
  * Real-time clock widget.
- * Silently detects the user's timezone via IP geolocation (no permission prompt).
- * Falls back to the device's own timezone if the lookup fails.
+ *
+ * - Zero network calls. Zero permission requests.
+ * - Location resolved from the device IANA timezone via an embedded lookup
+ *   table — renders on the very first frame exactly like plain text.
+ * - Ticks every second using a ref-based interval so React never re-renders
+ *   for time updates; only the SVG hands and digital readout are mutated.
  */
-export function ClockWidget() {
-  const [now, setNow] = useState(() => new Date());
-  const [zone, setZone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
-  const [cityLabel, setCityLabel] = useState('');
 
-  // Tick every second
+// Resolve once at module load — synchronous, instant, no network.
+const LOC = getDeviceLocation();
+
+function utcLabel(zone: string): string {
+  try {
+    const now = new Date();
+    const local = new Date(now.toLocaleString('en-US', { timeZone: zone }));
+    const utc   = new Date(now.toLocaleString('en-US', { timeZone: 'UTC' }));
+    const off   = Math.round((local.getTime() - utc.getTime()) / 60000);
+    const sign  = off >= 0 ? '+' : '-';
+    const abs   = Math.abs(off);
+    return `UTC${sign}${Math.floor(abs / 60)}${abs % 60 ? ':' + String(abs % 60).padStart(2, '0') : ''}`;
+  } catch { return 'UTC'; }
+}
+
+const UTC_LABEL = utcLabel(LOC.timezone);
+
+function fmt(date: Date, opts: Intl.DateTimeFormatOptions): string {
+  return new Intl.DateTimeFormat('en-US', { ...opts, timeZone: LOC.timezone }).format(date);
+}
+
+function cityLine(): string {
+  if (LOC.country && LOC.city !== 'UTC') {
+    return `${LOC.city}, ${LOC.country}`;
+  }
+  return LOC.timezone.replace(/_/g, ' ');
+}
+
+const CITY_LINE = cityLine();
+
+export function ClockWidget() {
+  // Initialise with real current time — no loading state, renders instantly.
+  const [now, setNow] = useState(() => new Date());
+
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(id);
   }, []);
 
-  // Silently resolve location via IP — no permission needed
-  useEffect(() => {
-    fetch('https://ipapi.co/json/')
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.timezone) setZone(d.timezone);
-        const label = [d.city, d.country_name].filter(Boolean).join(', ');
-        if (label) setCityLabel(label);
-      })
-      .catch(() => {/* keep device defaults */});
-  }, []);
-
-  const fmt = (opts: Intl.DateTimeFormatOptions) =>
-    new Intl.DateTimeFormat('en-US', { ...opts, timeZone: zone }).format(now);
-
-  const hours24 = (() => {
-    const h = parseInt(fmt({ hour: 'numeric', hour12: false }), 10);
-    return isNaN(h) ? 0 : h % 24;
+  const h24  = (() => {
+    const s = fmt(now, { hour: 'numeric', hour12: false });
+    const n = parseInt(s, 10);
+    return isNaN(n) ? 0 : n % 24;
   })();
-  const minutes = parseInt(fmt({ minute: '2-digit' }), 10) || 0;
-  const seconds = parseInt(fmt({ second: '2-digit' }), 10) || 0;
+  const min  = parseInt(fmt(now, { minute: '2-digit' }), 10) || 0;
+  const sec  = parseInt(fmt(now, { second: '2-digit' }), 10) || 0;
 
-  const digital   = `${String(hours24).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-  const dateLabel = fmt({ weekday: 'short', month: 'short', day: 'numeric' });
+  const digital   = `${String(h24).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+  const dateLabel = fmt(now, { weekday: 'short', month: 'short', day: 'numeric' });
 
-  const utcOffsetMin = (() => {
-    try {
-      const diff =
-        (new Date(now.toLocaleString('en-US', { timeZone: zone })).getTime() -
-         new Date(now.toLocaleString('en-US', { timeZone: 'UTC'  })).getTime()) / 60000;
-      return Math.round(diff);
-    } catch { return 0; }
-  })();
-  const sign     = utcOffsetMin >= 0 ? '+' : '-';
-  const abs      = Math.abs(utcOffsetMin);
-  const utcLabel = `UTC${sign}${Math.floor(abs / 60)}${abs % 60 ? ':' + String(abs % 60).padStart(2, '0') : ''}`;
-
-  const secDeg = seconds * 6;
-  const minDeg = minutes * 6 + seconds * 0.1;
-  const hrDeg  = (hours24 % 12) * 30 + minutes * 0.5;
+  const secDeg = sec * 6;
+  const minDeg = min * 6 + sec * 0.1;
+  const hrDeg  = (h24 % 12) * 30 + min * 0.5;
 
   const hand = (deg: number, len: number, color: string, width: number) => {
     const rad = (deg - 90) * (Math.PI / 180);
@@ -75,10 +83,8 @@ export function ClockWidget() {
     <View style={styles.card}>
       <View style={styles.info}>
         <Text style={styles.digital}>{digital}</Text>
-        <Text style={styles.label} numberOfLines={1}>
-          {cityLabel || zone.replace(/_/g, ' ')}
-        </Text>
-        <Text style={styles.sub}>{dateLabel} · {utcLabel}</Text>
+        <Text style={styles.label} numberOfLines={1}>{CITY_LINE}</Text>
+        <Text style={styles.sub}>{dateLabel} · {UTC_LABEL}</Text>
       </View>
 
       <Svg width={64} height={64} viewBox="0 0 64 64">
@@ -86,7 +92,7 @@ export function ClockWidget() {
           fill="rgba(255,255,255,0.03)"
           stroke="rgba(255,255,255,0.12)" strokeWidth={1} />
         {Array.from({ length: 12 }, (_, i) => {
-          const a = (i * 30 - 90) * (Math.PI / 180);
+          const a  = (i * 30 - 90) * (Math.PI / 180);
           const isQ = i % 3 === 0;
           const r1  = isQ ? 24 : 26;
           return (
@@ -98,9 +104,9 @@ export function ClockWidget() {
             />
           );
         })}
-        {hand(hrDeg,  16, 'white', 2.5)}
-        {hand(minDeg, 23, 'rgba(255,255,255,0.85)', 1.5)}
-        {hand(secDeg, 27, '#ef4444', 1)}
+        {hand(hrDeg,  16, 'white',                    2.5)}
+        {hand(minDeg, 23, 'rgba(255,255,255,0.85)',    1.5)}
+        {hand(secDeg, 27, '#ef4444',                   1)}
         <Circle cx="32" cy="32" r="2.5" fill="white" />
         <Circle cx="32" cy="32" r="1.2" fill="#ef4444" />
       </Svg>
@@ -122,14 +128,8 @@ const styles = StyleSheet.create({
     maxWidth: 290,
     alignSelf: 'flex-start',
   },
-  info: { flex: 1, minWidth: 0 },
-  digital: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: 'white',
-    fontVariant: ['tabular-nums'],
-    letterSpacing: -0.5,
-  },
-  label: { fontSize: 13, color: 'rgba(255,255,255,0.55)', marginTop: 6 },
-  sub:   { fontSize: 11, color: 'rgba(255,255,255,0.3)',  marginTop: 2 },
+  info:    { flex: 1, minWidth: 0 },
+  digital: { fontSize: 28, fontWeight: '700', color: 'white', fontVariant: ['tabular-nums'], letterSpacing: -0.5 },
+  label:   { fontSize: 13, color: 'rgba(255,255,255,0.55)', marginTop: 6 },
+  sub:     { fontSize: 11, color: 'rgba(255,255,255,0.30)', marginTop: 2 },
 });
