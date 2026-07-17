@@ -16,17 +16,10 @@ import { CHAT_MODEL, LAB_MODEL } from '@/lib/chat';
 import { fetchConversationMessages, type ConversationSummary } from '@/lib/conversations';
 import { SearchEngine } from '@/components/SearchEngine';
 
-const COPY: Record<ChatMode, { placeholder: string; emptyTitle: string; emptyBody: string }> = {
-  chat: {
-    placeholder: 'Message Engagera…',
-    emptyTitle: 'Ask me anything',
-    emptyBody: 'Attach a photo and I can read, describe, or reason about it too.',
-  },
-  lab: {
-    placeholder: 'Ask Lab to research…',
-    emptyTitle: 'Deep research',
-    emptyBody: 'Lab browses the web, reasons over multiple sources, and cites everything it finds.',
-  },
+const CHAT_COPY = {
+  placeholder: 'Message Engagera…',
+  emptyTitle: 'Ask me anything',
+  emptyBody: 'Attach a photo and I can read, describe, or reason about it too.',
 };
 
 export default function ChatScreen() {
@@ -42,7 +35,7 @@ export default function ChatScreen() {
   const chatSession = useChatSession(CHAT_MODEL);
   const labSession = useChatSession(LAB_MODEL, 'research');
   const session = mode === 'chat' ? chatSession : labSession;
-  const copy = COPY[mode];
+  const copy = CHAT_COPY;
 
   const {
     messages,

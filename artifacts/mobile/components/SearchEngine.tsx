@@ -138,7 +138,7 @@ function decodeHtml(text: string): string {
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
-function Bone({ w, h = 14, r = 6 }: { w?: string | number; h?: number; r?: number }) {
+const Bone = React.memo(function Bone({ w, h = 14, r = 6 }: { w?: string | number; h?: number; r?: number }) {
   const anim = useRef(new Animated.Value(0.35)).current;
   useEffect(() => {
     const loop = Animated.loop(
@@ -153,21 +153,21 @@ function Bone({ w, h = 14, r = 6 }: { w?: string | number; h?: number; r?: numbe
   return (
     <Animated.View style={[{ height: h, borderRadius: r, backgroundColor: 'rgba(255,255,255,0.08)' }, w ? { width: w } : { alignSelf: 'stretch' }, { opacity: anim }] as any} />
   );
-}
+});
 
 // ─── Favicon ──────────────────────────────────────────────────────────────────
 
-function Favicon({ url, size = 14 }: { url?: string; size?: number }) {
+const Favicon = React.memo(function Favicon({ url, size = 14 }: { url?: string; size?: number }) {
   const colors = useColors();
   const [err, setErr] = useState(false);
   const uri = url ? `https://${hostOf(url)}/favicon.ico` : '';
   if (err || !uri) return <Ionicons name="globe-outline" size={size} color={colors.mutedForeground} />;
   return <Image source={{ uri }} style={{ width: size, height: size, borderRadius: 3 }} onError={() => setErr(true)} />;
-}
+});
 
 // ─── Blinking cursor ──────────────────────────────────────────────────────────
 
-function Cursor({ color }: { color: string }) {
+const Cursor = React.memo(function Cursor({ color }: { color: string }) {
   const anim = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     const loop = Animated.loop(
@@ -180,11 +180,11 @@ function Cursor({ color }: { color: string }) {
     return () => loop.stop();
   }, [anim]);
   return <Animated.Text style={{ opacity: anim, color }}> ▋</Animated.Text>;
-}
+});
 
 // ─── Tab bar ──────────────────────────────────────────────────────────────────
 
-function TabBar({ active, onChange }: { active: Tab; onChange: (t: Tab) => void }) {
+const TabBar = React.memo(function TabBar({ active, onChange }: { active: Tab; onChange: (t: Tab) => void }) {
   const colors = useColors();
   return (
     <View style={[tb.wrap, { borderBottomColor: colors.border }]}>
@@ -206,7 +206,7 @@ function TabBar({ active, onChange }: { active: Tab; onChange: (t: Tab) => void 
       </ScrollView>
     </View>
   );
-}
+});
 
 const tb = StyleSheet.create({
   wrap: { height: 44, borderBottomWidth: StyleSheet.hairlineWidth },
@@ -218,7 +218,7 @@ const tb = StyleSheet.create({
 
 // ─── AI Snippet Card (All tab — hard-capped at 150 chars) ────────────────────
 
-function AiSnippet({
+const AiSnippet = React.memo(function AiSnippet({
   messages, streaming, error, sources, onGoAi, onOpenBrowser,
 }: {
   messages: AiMsg[]; streaming: boolean; error: string;
@@ -286,7 +286,7 @@ function AiSnippet({
       ) : null}
     </View>
   );
-}
+});
 
 const snip = StyleSheet.create({
   card:        { marginHorizontal: 14, marginTop: 12, marginBottom: 4, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
@@ -317,7 +317,7 @@ const snip = StyleSheet.create({
  *  - Follow-up Q&A shown as clean divider sections
  *  - Pinned follow-up input at the bottom
  */
-function AiChatTab({
+const AiChatTab = React.memo(function AiChatTab({
   messages, streaming, sources, error, onSend, onOpenBrowser,
 }: {
   messages: AiMsg[]; streaming: boolean; sources: AiSrc[];
@@ -521,7 +521,7 @@ function AiChatTab({
       </View>
     </KeyboardAvoidingView>
   );
-}
+});
 
 const ai = StyleSheet.create({
   scroll: { paddingBottom: 8 },
@@ -568,7 +568,7 @@ const ai = StyleSheet.create({
 
 // ─── Web Result Card ──────────────────────────────────────────────────────────
 
-function WebCard({ item, onPress }: { item: WebResult; onPress: (url: string) => void }) {
+const WebCard = React.memo(function WebCard({ item, onPress }: { item: WebResult; onPress: (url: string) => void }) {
   const colors = useColors();
   const [err, setErr] = useState(false);
   const host = hostOf(item.url);
@@ -590,7 +590,7 @@ function WebCard({ item, onPress }: { item: WebResult; onPress: (url: string) =>
       </View>
     </Pressable>
   );
-}
+});
 const wc = StyleSheet.create({
   card:  { paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth },
   meta:  { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
@@ -604,7 +604,7 @@ const wc = StyleSheet.create({
 
 // ─── Official Site Card ───────────────────────────────────────────────────────
 
-function OfficialCard({ url, onPress }: { url: string; onPress: (url: string) => void }) {
+const OfficialCard = React.memo(function OfficialCard({ url, onPress }: { url: string; onPress: (url: string) => void }) {
   const colors = useColors();
   const host = hostOf(url);
   return (
@@ -622,7 +622,7 @@ function OfficialCard({ url, onPress }: { url: string; onPress: (url: string) =>
       <Ionicons name="chevron-forward" size={14} color={colors.mutedForeground} />
     </Pressable>
   );
-}
+});
 const ofc = StyleSheet.create({
   card:     { flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 14, marginVertical: 8, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, padding: 12 },
   icon:     { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
@@ -636,7 +636,7 @@ const ofc = StyleSheet.create({
 
 const IMG_COL = (Dimensions.get('window').width - 28 - 8) / 3;
 
-function ImageGrid({ images, onPress }: { images: ImageResult[]; onPress: (url: string) => void }) {
+const ImageGrid = React.memo(function ImageGrid({ images, onPress }: { images: ImageResult[]; onPress: (url: string) => void }) {
   const colors = useColors();
   const rows: ImageResult[][] = [];
   for (let i = 0; i < images.length; i += 3) rows.push(images.slice(i, i + 3));
@@ -654,11 +654,11 @@ function ImageGrid({ images, onPress }: { images: ImageResult[]; onPress: (url: 
       <View style={{ height: 32 }} />
     </ScrollView>
   );
-}
+});
 
 // ─── Video card ───────────────────────────────────────────────────────────────
 
-function VideoCard({ item, onPress }: { item: VideoResult; onPress: (url: string) => void }) {
+const VideoCard = React.memo(function VideoCard({ item, onPress }: { item: VideoResult; onPress: (url: string) => void }) {
   const colors = useColors();
   const [err, setErr] = useState(false);
   return (
@@ -680,7 +680,7 @@ function VideoCard({ item, onPress }: { item: VideoResult; onPress: (url: string
       </View>
     </Pressable>
   );
-}
+});
 const vc = StyleSheet.create({
   wrap:        { marginHorizontal: 14, marginBottom: 18 },
   thumb:       { width: '100%', aspectRatio: 16 / 9, borderRadius: 14, overflow: 'hidden', marginBottom: 10 },
@@ -693,7 +693,7 @@ const vc = StyleSheet.create({
 
 // ─── News cards ───────────────────────────────────────────────────────────────
 
-function NewsHero({ item, onPress }: { item: NewsResult; onPress: (url: string) => void }) {
+const NewsHero = React.memo(function NewsHero({ item, onPress }: { item: NewsResult; onPress: (url: string) => void }) {
   const colors = useColors();
   const [err, setErr] = useState(false);
   return (
@@ -708,7 +708,7 @@ function NewsHero({ item, onPress }: { item: NewsResult; onPress: (url: string) 
       </View>
     </Pressable>
   );
-}
+});
 const nh = StyleSheet.create({
   card: { marginHorizontal: 14, marginTop: 10, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
   img:  { width: '100%', height: 180 },
@@ -718,7 +718,7 @@ const nh = StyleSheet.create({
   desc: { fontSize: 13, fontFamily: 'Inter_400Regular', lineHeight: 19 },
 });
 
-function NewsRow({ item, onPress }: { item: NewsResult; onPress: (url: string) => void }) {
+const NewsRow = React.memo(function NewsRow({ item, onPress }: { item: NewsResult; onPress: (url: string) => void }) {
   const colors = useColors();
   const [err, setErr] = useState(false);
   return (
@@ -733,7 +733,7 @@ function NewsRow({ item, onPress }: { item: NewsResult; onPress: (url: string) =
       ) : null}
     </Pressable>
   );
-}
+});
 const nr = StyleSheet.create({
   card:  { flexDirection: 'row', gap: 12, alignItems: 'flex-start', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth },
   src:   { fontSize: 11, fontFamily: 'Inter_400Regular' },
@@ -744,7 +744,7 @@ const nr = StyleSheet.create({
 
 // ─── Finance card ─────────────────────────────────────────────────────────────
 
-function FinCard({ item, onPress }: { item: FinanceResult; onPress: (url: string) => void }) {
+const FinCard = React.memo(function FinCard({ item, onPress }: { item: FinanceResult; onPress: (url: string) => void }) {
   const colors = useColors();
   const [err, setErr] = useState(false);
   return (
@@ -760,7 +760,7 @@ function FinCard({ item, onPress }: { item: FinanceResult; onPress: (url: string
       ) : null}
     </Pressable>
   );
-}
+});
 const fin = StyleSheet.create({
   card:  { flexDirection: 'row', gap: 12, alignItems: 'flex-start', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth },
   left:  { flex: 1, gap: 4 },
@@ -773,7 +773,7 @@ const fin = StyleSheet.create({
 
 // ─── Section header ───────────────────────────────────────────────────────────
 
-function SectionHead({ icon, label }: { icon: keyof typeof Ionicons.glyphMap; label: string }) {
+const SectionHead = React.memo(function SectionHead({ icon, label }: { icon: keyof typeof Ionicons.glyphMap; label: string }) {
   const colors = useColors();
   return (
     <View style={[sh.wrap, { borderBottomColor: colors.border }]}>
@@ -781,7 +781,7 @@ function SectionHead({ icon, label }: { icon: keyof typeof Ionicons.glyphMap; la
       <Text style={[sh.label, { color: colors.mutedForeground }]}>{label}</Text>
     </View>
   );
-}
+});
 const sh = StyleSheet.create({
   wrap:  { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
   label: { fontSize: 11, fontFamily: 'Inter_600SemiBold', letterSpacing: 0.6, textTransform: 'uppercase' },
@@ -789,7 +789,7 @@ const sh = StyleSheet.create({
 
 // ─── Empty state ──────────────────────────────────────────────────────────────
 
-function Empty({ loading: isLoading, icon, label }: { loading: boolean; icon: keyof typeof Ionicons.glyphMap; label: string }) {
+const Empty = React.memo(function Empty({ loading: isLoading, icon, label }: { loading: boolean; icon: keyof typeof Ionicons.glyphMap; label: string }) {
   const colors = useColors();
   if (isLoading) return <ActivityIndicator color={colors.foreground} style={{ marginTop: 60 }} />;
   return (
@@ -798,7 +798,7 @@ function Empty({ loading: isLoading, icon, label }: { loading: boolean; icon: ke
       <Text style={[em.txt, { color: colors.mutedForeground }]}>{label}</Text>
     </View>
   );
-}
+});
 const em = StyleSheet.create({
   wrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingBottom: 80 },
   txt:  { fontSize: 14, fontFamily: 'Inter_400Regular' },
@@ -806,7 +806,7 @@ const em = StyleSheet.create({
 
 // ─── Web skeleton ─────────────────────────────────────────────────────────────
 
-function WebSkeleton() {
+const WebSkeleton = React.memo(function WebSkeleton() {
   return (
     <View style={{ paddingHorizontal: 16, paddingVertical: 14, gap: 8 }}>
       <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 4 }}>
@@ -819,11 +819,11 @@ function WebSkeleton() {
       <Bone w="85%" h={12} r={4} />
     </View>
   );
-}
+});
 
 // ─── All-tab feed ─────────────────────────────────────────────────────────────
 
-function AllFeed({
+const AllFeed = React.memo(function AllFeed({
   results, officialSiteUrl, loading, aiMessages, aiStreaming, aiError, aiSources,
   onGoAi, onPress,
 }: {
@@ -903,11 +903,11 @@ function AllFeed({
       ) : null}
     </ScrollView>
   );
-}
+});
 
 // ─── Landing ──────────────────────────────────────────────────────────────────
 
-function Landing({ history, onSearch, onRemove, onClearHistory }: {
+const Landing = React.memo(function Landing({ history, onSearch, onRemove, onClearHistory }: {
   history: SearchHistoryItem[]; onSearch: (q: string) => void;
   onRemove: (q: string) => void; onClearHistory: () => void;
 }) {
@@ -959,7 +959,7 @@ function Landing({ history, onSearch, onRemove, onClearHistory }: {
       )}
     </ScrollView>
   );
-}
+});
 
 const land = StyleSheet.create({
   section:      { marginTop: 20 },
@@ -1007,6 +1007,9 @@ export function SearchEngine({ topPad }: { topPad: number }) {
   const shouldShowSug = focused && query.trim().length >= 1 && (showSug || !!potentialDomain);
 
   useEffect(() => { loadSearchHistory().then(setHistory); }, []);
+
+  // Abort any in-flight AI stream on unmount so it doesn't update stale state
+  useEffect(() => () => { aiAbortRef.current?.abort(); }, []);
 
   // Suggestion debounce
   useEffect(() => {
@@ -1093,7 +1096,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
       setLoading((l) => ({ ...l, [key === 'web' ? 'web' : key]: false }));
     };
 
-    fetchWebResults(trimmed).then(({ results: web }) => {
+    fetchWebResults(trimmed).then((web) => {
       if (searchIdRef.current !== id) return;
       upd('web', web);
     }).catch(() => upd('web', []));
@@ -1101,9 +1104,9 @@ export function SearchEngine({ topPad }: { topPad: number }) {
       if (searchIdRef.current !== id || !url) return;
       setOfficial(url);
     }).catch(() => {});
-    fetchImageResults(trimmed, '').then((r) => upd('images', r)).catch(() => upd('images', []));
-    fetchVideoResults(trimmed, '').then((r) => upd('videos', r)).catch(() => upd('videos', []));
-    fetchNewsResults(trimmed, '').then((r) => upd('news', r)).catch(() => upd('news', []));
+    fetchImageResults(trimmed).then((r) => upd('images', r)).catch(() => upd('images', []));
+    fetchVideoResults(trimmed).then((r) => upd('videos', r)).catch(() => upd('videos', []));
+    fetchNewsResults(trimmed).then((r) => upd('news', r)).catch(() => upd('news', []));
     fetchFinanceResults(trimmed).then((r) => upd('finance', r)).catch(() => upd('finance', []));
   }, []);
 
