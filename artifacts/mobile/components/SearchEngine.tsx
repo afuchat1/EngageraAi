@@ -107,6 +107,35 @@ function hostOf(url: string) {
   try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; }
 }
 
+/** Strip markdown syntax so plain-text surfaces never show raw ## or ** */
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/^#{1,6}\s+/gm, '')          // ## headings
+    .replace(/\*\*(.+?)\*\*/gs, '$1')     // **bold**
+    .replace(/\*(.+?)\*/gs, '$1')         // *italic*
+    .replace(/`{1,3}([^`]*)`{1,3}/g, '$1') // `code`
+    .replace(/^[-*+]\s+/gm, '')           // bullet markers
+    .replace(/^\d+\.\s+/gm, '')           // numbered list markers
+    .replace(/^>\s+/gm, '')               // blockquotes
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // [link text](url)
+    .replace(/\n{2,}/g, ' ')              // collapse newlines to spaces
+    .replace(/\n/g, ' ')
+    .trim();
+}
+
+/** Decode HTML entities that search scrapers leave in titles/snippets */
+function decodeHtml(text: string): string {
+  return text
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCharCode(Number(d)))
+    .replace(/&amp;/g,  '&')
+    .replace(/&lt;/g,   '<')
+    .replace(/&gt;/g,   '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, ' ');
+}
+
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
 function Bone({ w, h = 14, r = 6 }: { w?: string | number; h?: number; r?: number }) {
@@ -197,8 +226,9 @@ function AiSnippet({
 }) {
   const colors = useColors();
   const assistantText = messages.find((m) => m.role === 'assistant')?.content ?? '';
-  const snippet = assistantText.slice(0, AI_SNIPPET_LIMIT);
-  const isTruncated = assistantText.length > AI_SNIPPET_LIMIT;
+  const plainText   = stripMarkdown(assistantText);
+  const snippet     = plainText.slice(0, AI_SNIPPET_LIMIT);
+  const isTruncated = plainText.length > AI_SNIPPET_LIMIT;
 
   if (error && !assistantText) return null;
   if (!assistantText && !streaming) return null;
@@ -551,8 +581,8 @@ function WebCard({ item, onPress }: { item: WebResult; onPress: (url: string) =>
       </View>
       <View style={wc.body}>
         <View style={{ flex: 1 }}>
-          <Text style={[wc.title, { color: colors.foreground }]} numberOfLines={2}>{item.title}</Text>
-          {item.description ? <Text style={[wc.desc, { color: colors.mutedForeground }]} numberOfLines={2}>{item.description}</Text> : null}
+          <Text style={[wc.title, { color: colors.foreground }]} numberOfLines={2}>{decodeHtml(item.title)}</Text>
+          {item.description ? <Text style={[wc.desc, { color: colors.mutedForeground }]} numberOfLines={2}>{decodeHtml(item.description)}</Text> : null}
         </View>
         {item.thumbnail && !err ? (
           <Image source={{ uri: item.thumbnail }} style={wc.thumb} resizeMode="cover" onError={() => setErr(true)} />
@@ -643,7 +673,7 @@ function VideoCard({ item, onPress }: { item: VideoResult; onPress: (url: string
         {item.duration ? <View style={vc.dur}><Text style={vc.durTxt}>{item.duration}</Text></View> : null}
       </View>
       <View>
-        <Text style={[vc.title, { color: colors.foreground }]} numberOfLines={2}>{item.title}</Text>
+        <Text style={[vc.title, { color: colors.foreground }]} numberOfLines={2}>{decodeHtml(item.title)}</Text>
         <Text style={[vc.meta, { color: colors.mutedForeground }]} numberOfLines={1}>
           {[item.publisher, item.age].filter(Boolean).join(' · ')}
         </Text>
@@ -673,8 +703,8 @@ function NewsHero({ item, onPress }: { item: NewsResult; onPress: (url: string) 
       ) : null}
       <View style={nh.body}>
         <Text style={[nh.src, { color: colors.mutedForeground }]}>{item.source}</Text>
-        <Text style={[nh.title, { color: colors.foreground }]} numberOfLines={2}>{item.title}</Text>
-        {item.description ? <Text style={[nh.desc, { color: colors.mutedForeground }]} numberOfLines={2}>{item.description}</Text> : null}
+        <Text style={[nh.title, { color: colors.foreground }]} numberOfLines={2}>{decodeHtml(item.title)}</Text>
+        {item.description ? <Text style={[nh.desc, { color: colors.mutedForeground }]} numberOfLines={2}>{decodeHtml(item.description)}</Text> : null}
       </View>
     </Pressable>
   );
@@ -695,7 +725,7 @@ function NewsRow({ item, onPress }: { item: NewsResult; onPress: (url: string) =
     <Pressable style={[nr.card, { borderBottomColor: colors.border }]} onPress={() => onPress(item.url)}>
       <View style={{ flex: 1, gap: 4 }}>
         <Text style={[nr.src, { color: colors.mutedForeground }]}>{item.source}</Text>
-        <Text style={[nr.title, { color: colors.foreground }]} numberOfLines={2}>{item.title}</Text>
+        <Text style={[nr.title, { color: colors.foreground }]} numberOfLines={2}>{decodeHtml(item.title)}</Text>
         {item.age ? <Text style={[nr.age, { color: colors.mutedForeground }]}>{item.age}</Text> : null}
       </View>
       {item.thumbnail && !err ? (
@@ -721,8 +751,8 @@ function FinCard({ item, onPress }: { item: FinanceResult; onPress: (url: string
     <Pressable style={({ pressed }) => [fin.card, { borderBottomColor: colors.border }, pressed && { opacity: 0.7 }]} onPress={() => onPress(item.url)}>
       <View style={fin.left}>
         <Text style={[fin.src, { color: colors.mutedForeground }]}>{item.source}</Text>
-        <Text style={[fin.title, { color: colors.foreground }]} numberOfLines={2}>{item.title}</Text>
-        {item.description ? <Text style={[fin.desc, { color: colors.mutedForeground }]} numberOfLines={1}>{item.description}</Text> : null}
+        <Text style={[fin.title, { color: colors.foreground }]} numberOfLines={2}>{decodeHtml(item.title)}</Text>
+        {item.description ? <Text style={[fin.desc, { color: colors.mutedForeground }]} numberOfLines={1}>{decodeHtml(item.description)}</Text> : null}
         {item.age ? <Text style={[fin.age, { color: colors.mutedForeground }]}>{item.age}</Text> : null}
       </View>
       {item.thumbnail && !err ? (
