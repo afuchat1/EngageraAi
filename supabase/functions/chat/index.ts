@@ -318,7 +318,7 @@ function interpretWmo(code: number, isDay: boolean): { condition: string; icon: 
   return { condition: "Cloudy", icon: "cloud" };
 }
 
-async function fetchWeather(location: string, requestId: string): Promise<WeatherInfo | null> {
+async function fetchWeather(location: string, requestId: string, preferredLabel?: string): Promise<WeatherInfo | null> {
   try {
     const geo = await geocode(location);
     if (!geo) return null;
@@ -346,9 +346,16 @@ async function fetchWeather(location: string, requestId: string): Promise<Weathe
     const isDay = (c.is_day ?? 1) === 1;
     const { condition, icon } = interpretWmo(c.weather_code ?? 0, isDay);
 
+    // Use the client-supplied label when one is provided (device location
+    // derived from timezone table) so the AI response always matches
+    // the exact city name shown in the weather widget — the geocoding API
+    // can return a country-level or differently-spelled name that would
+    // mismatch what the widget displays.
+    const label = preferredLabel ?? geo.name;
+
     log("info", "weather.success", { requestId, location, condition });
     return {
-      label: geo.name,
+      label,
       tempC: Math.round(c.temperature_2m ?? 0),
       feelsLikeC: Math.round(c.apparent_temperature ?? 0),
       condition,
@@ -1070,9 +1077,15 @@ Deno.serve(async (req: Request) => {
             }
 
             if (weatherLocation) {
+              // When we fell back to the device location (user didn't name a
+              // city), pass the original client label so the AI and the widget
+              // always agree on the city name — the geocoding API can return a
+              // different (often country-level) spelling that mismatches the
+              // widget's timezone-table label.
+              const weatherPreferredLabel = _weatherLoc === null ? userLocation : undefined;
               parallelTasks.push(
                 (async () => {
-                  weatherInfo = await fetchWeather(weatherLocation, requestId) ?? undefined;
+                  weatherInfo = await fetchWeather(weatherLocation, requestId, weatherPreferredLabel) ?? undefined;
                   if (weatherInfo) {
                     weatherCtx = `Location: ${weatherInfo.label}, Temp: ${weatherInfo.tempC}°C (feels like ${weatherInfo.feelsLikeC}°C), Condition: ${weatherInfo.condition}, Humidity: ${weatherInfo.humidity}%, Wind: ${weatherInfo.windKph} km/h`;
                   }
