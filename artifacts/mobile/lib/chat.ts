@@ -178,7 +178,12 @@ export async function streamChat(
       res = await fetch(EDGE_FUNCTION_URL, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ ...request, stream: true, userLocation: request.userLocation ?? DEVICE_LOCATION }),
+        // stream: false → server returns a single application/json body.
+        // The edge function doesn't do real token streaming (it buffers the
+        // full LLM response then sends one SSE event anyway), so there is no
+        // UX difference. JSON is far more reliable in React Native because
+        // response.body.getReader() is unreliable on Android/Expo Go.
+        body: JSON.stringify({ ...request, stream: false, userLocation: request.userLocation ?? DEVICE_LOCATION }),
         signal: controller.signal,
       });
     } catch (networkErr) {
@@ -190,40 +195,59 @@ export async function streamChat(
       });
     }
 
-    if (!res.ok || !res.body) {
+    // Only treat non-2xx as an error. Do NOT gate on res.body — in some
+    // React Native / Expo Go fetch implementations body is null even for
+    // perfectly valid JSON responses, which previously caused every
+    // successful 200 to be misread as a failure.
+    if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText || `HTTP ${res.status}` }));
       throw new ChatRequestError(err.error ?? `Chat request failed (HTTP ${res.status}).`, res.status, err);
     }
 
-    // Image generation always answers with a single application/json body
-    // (never text/event-stream) even when the request asked for stream:
-    // true, because the backend has to wait for the whole image before it
-    // can reply. Detect that here and synthesize the same token/done
-    // events the SSE path would have produced, instead of trying to parse
-    // JSON as SSE frames (which previously threw "Stream ended
-    // unexpectedly" and surfaced as "Something went wrong").
+    // With stream: false the server always returns application/json.
+    // We also handle the case where res.body is null (some RN builds) by
+    // routing through res.json() regardless of content-type in that case.
     const contentType = res.headers.get('content-type') ?? '';
-    if (contentType.includes('application/json')) {
+    if (contentType.includes('application/json') || !res.body) {
       let data: Record<string, unknown>;
       try {
         data = await res.json();
       } catch {
-        // The response was cut off or corrupted in transit (common on a
-        // slow/flaky connection downloading a large image reply) — the
-        // backend has typically already generated and saved the message by
-        // this point, so the caller may still be able to recover it.
         throw new ChatRequestError(
           'The server sent back an incomplete response. Please try again.',
           502,
           { error: 'invalid_json' },
         );
       }
-      const content: string = typeof (data as any)?.message?.content === 'string' ? (data as any).message.content : '';
-      if (content) handlers.onToken?.(content);
+
+      const content: string =
+        typeof (data as any)?.message?.content === 'string' ? (data as any).message.content : '';
+
+      // Guard: empty content means the AI returned nothing — surface it as
+      // an error so the user sees actionable text instead of a blank bubble.
+      if (!content) {
+        throw new ChatRequestError(
+          'The AI returned an empty response. Please try again.',
+          502,
+          { error: 'empty_response' },
+        );
+      }
+
+      handlers.onToken?.(content);
+
+      // Fire onMeta for search results so callers don't need separate
+      // handling for streaming vs JSON response paths.
+      const si = (data as any)?.searchInfo as SearchInfo | undefined;
+      if (si && Array.isArray(si.sources) && si.sources.length > 0) handlers.onMeta?.(si);
+
       handlers.onDone?.({
         model: (data as any)?.model,
         conversationId: (data as any)?.conversationId,
-        searchInfo: (data as any)?.searchInfo,
+        searchInfo: si,
+        // timeInfo and weatherInfo were missing from the JSON handler —
+        // the server includes them but they were never forwarded to the UI.
+        timeInfo: (data as any)?.timeInfo as TimeInfo | undefined,
+        weatherInfo: (data as any)?.weatherInfo as WeatherInfo | undefined,
         guestMessageCount: (data as any)?.guestMessageCount,
         guestMessageLimit: (data as any)?.guestMessageLimit,
       });
