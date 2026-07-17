@@ -363,23 +363,42 @@ async function fetchWeather(location: string, requestId: string): Promise<Weathe
 
 // ── Time widget ───────────────────────────────────────────────────────────────
 
+/**
+ * Returns a location string when the user is asking about time, or null when
+ * they're clearly not. When no location is specified we default to "UTC" so
+ * the clock widget always renders — never return null just because the user
+ * didn't say a city name.
+ */
 function extractTimeLocation(text: string): string | null {
-  if (!/\b(time|what time|current time|clock|timezone)\b/i.test(text)) return null;
+  if (!/\b(time|what time|current time|clock|timezone|what's the time|whats the time)\b/i.test(text)) return null;
+
+  // Explicit location: "time in Tokyo", "what time is it in Paris", "clock in Berlin"
   const loc =
-    text.match(/\b(?:time\s+in|time\s+at|time\s+for|clock\s+in|what\s+time\s+is\s+it\s+in)\s+([A-Za-z\s,]+?)(?:\?|$|,|\.|!)/i) ||
+    text.match(/\b(?:time\s+in|time\s+at|time\s+for|clock\s+in|what\s+time\s+is\s+it\s+in|what(?:'s|s)\s+the\s+time\s+in)\s+([A-Za-z\s,]+?)(?:\?|$|,|\.|!)/i) ||
     text.match(/\bin\s+([A-Za-z\s,]{3,30}?)(?:'s)?\s+(?:time|timezone)/i);
-  return loc ? loc[1].trim() : null;
+
+  // No location specified → default to UTC so the widget always shows
+  return loc ? loc[1].trim() : "UTC";
 }
 
 async function fetchTimeInfo(location: string, requestId: string): Promise<TimeInfo | null> {
+  // UTC needs no geocoding
+  if (/^utc$/i.test(location.trim())) {
+    log("info", "time.utc", { requestId });
+    return { ianaZone: "UTC", label: "UTC" };
+  }
   try {
     const geo = await geocode(location);
-    if (!geo) return null;
+    if (!geo) {
+      // Geocoding failed — still show UTC rather than nothing
+      log("warn", "time.geocode_failed", { requestId, location });
+      return { ianaZone: "UTC", label: `UTC (couldn't find "${location}")` };
+    }
     log("info", "time.success", { requestId, location, zone: geo.ianaZone });
     return { ianaZone: geo.ianaZone, label: geo.name };
   } catch (err) {
     log("warn", "time.error", { requestId, location, error: String(err) });
-    return null;
+    return { ianaZone: "UTC", label: "UTC" };
   }
 }
 
@@ -598,6 +617,11 @@ function needsWebSearch(text: string): boolean {
   // Don't search for image generation — the backend handles that separately
   if (looksLikeImageIntent(text)) return false;
 
+  // Pure time queries ("what is the time", "what time is it") are handled
+  // by the time widget — no web search needed, and searching produces the
+  // wrong behaviour (the AI cites time.is and asks for a timezone).
+  if (/^\s*(what(?:'s|\s+is|\s+was)?\s+the\s+time|what\s+time\s+is\s+it|current\s+time|time\s+now|what\s+time\s+now)\s*[\?!.]?\s*$/i.test(text.trim())) return false;
+
   // Skip purely creative writing / math
   if (/^(write (me |a |an |the )?|compose |draft |create a (story|poem|essay|letter|email))/i.test(text.trim())) return false;
   if (/^(calculate|compute|solve for|what is \d[\d\s+\-*/^()]*[=?]|simplify|integrate|differentiate)/i.test(text.trim())) return false;
@@ -652,6 +676,8 @@ Core rules — follow every one of these without exception:
 - NO MARKERS: Never show [source], [1], [SEARCH], {{citation}}, or any implementation detail.
 - CODE: Always use fenced code blocks with the correct language label.
 - IMAGE PROMPTS: If asked to generate an image but the description is incomplete or vague, ask the user "What would you like me to generate? Please describe the image in detail." Do NOT attempt generation with an incomplete prompt.
+- TIME: When the user asks what time it is, a live clock widget is already displayed in the UI. Confirm it in one short sentence (e.g. "Here's the current UTC time." or "Here's the time in Tokyo."). NEVER ask the user what timezone they want — if they didn't specify one, UTC is already shown. NEVER search the web for the current time.
+- WEATHER: When weather data is available, a weather widget is already displayed. Confirm the conditions briefly (e.g. "Here's the current weather in Lagos."). NEVER search the web for weather — the data is already fetched.
 `.trim();
 
   let context = "";
