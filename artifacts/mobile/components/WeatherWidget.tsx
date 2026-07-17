@@ -123,22 +123,29 @@ export function WeatherWidget() {
   useEffect(() => {
     (async () => {
       try {
-        // 1. Silently detect location via IP — no permission prompt
-        const geoRes  = await fetch('https://ipapi.co/json/');
-        const geo     = await geoRes.json();
-        const lat     = geo.latitude  as number;
-        const lon     = geo.longitude as number;
-        const label   = [geo.city, geo.country_name].filter(Boolean).join(', ') || 'Your location';
+        // 1. IP geolocation — same source as ClockWidget, no permission needed
+        const geoRes = await fetch('https://ipapi.co/json/');
+        if (!geoRes.ok) throw new Error(`geo ${geoRes.status}`);
+        const geo = await geoRes.json();
 
-        // 2. Fetch live weather from Open-Meteo (free, no API key)
+        // Guard: ipapi returns {error:true} when rate-limited
+        const lat = typeof geo.latitude  === 'number' ? geo.latitude  : parseFloat(geo.latitude);
+        const lon = typeof geo.longitude === 'number' ? geo.longitude : parseFloat(geo.longitude);
+        if (!isFinite(lat) || !isFinite(lon)) throw new Error('location unavailable');
+
+        const label = [geo.city, geo.country_name].filter(Boolean).join(', ') || 'Your location';
+
+        // 2. Live weather from Open-Meteo (free, no API key)
         const wxUrl =
           `https://api.open-meteo.com/v1/forecast` +
           `?latitude=${lat}&longitude=${lon}` +
           `&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,weather_code,wind_speed_10m` +
           `&wind_speed_unit=kmh`;
-        const wxRes  = await fetch(wxUrl);
+        const wxRes = await fetch(wxUrl);
+        if (!wxRes.ok) throw new Error(`weather ${wxRes.status}`);
         const wxData = await wxRes.json();
         const cur    = wxData.current;
+        if (!cur) throw new Error('no current weather data');
 
         setWeather({
           label,
@@ -150,8 +157,10 @@ export function WeatherWidget() {
           humidity:   cur.relative_humidity_2m,
           isDay:      cur.is_day === 1,
         });
-      } catch (e: any) {
-        setError(e?.message ?? 'Could not load weather');
+      } catch {
+        // Silent failure — widget simply stays in loading state rather than
+        // surfacing a raw error message inside the chat UI
+        setError('Weather unavailable');
       }
     })();
   }, []);
