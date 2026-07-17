@@ -29,6 +29,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { InAppBrowser } from '@/components/InAppBrowser';
+import { Markdown } from '@/components/Markdown';
 import { streamChat, LAB_MODEL } from '@/lib/chat';
 import {
   fetchSuggestions,
@@ -70,10 +71,14 @@ const EMPTY_RESULTS: Results  = { web: [], images: [], videos: [], news: [], fin
 const NOT_LOADING:  Loading   = { web: false, images: false, videos: false, news: false, finance: false };
 const AI_SNIPPET_LIMIT = 150;
 const AI_PROMPT = [
-  'You are "Engagera AI" on a search-results page.',
-  'Answer in 4–6 clear sentences of plain prose (no markdown headers or bullet lists unless asked).',
-  'Be concise and direct. For follow-ups keep the context.',
-  'If time-sensitive and unverifiable, say so briefly.',
+  'You are "Engagera AI" — a search-results AI summary assistant.',
+  'Write a structured, authoritative summary of the topic using markdown:',
+  '  - Start with one short intro sentence (no heading needed).',
+  '  - Use ## headings to organise 2–4 key sections.',
+  '  - Use bullet lists with **bold key terms** followed by a colon and concise explanation.',
+  '  - Highlight the most important facts clearly.',
+  '  - End with a brief "Key Takeaway" or "Bottom Line" sentence (no heading).',
+  'Keep total length moderate — thorough but skimmable. For follow-ups keep prior context.',
 ].join(' ');
 
 const TABS: { key: Tab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
@@ -272,113 +277,188 @@ const snip = StyleSheet.create({
 // Uses inverted FlatList — the standard React Native chat pattern.
 // Content anchors to bottom, no scrollToEnd calls, no layout gaps.
 
+/**
+ * AI Summary Tab — Google AI Mode-style.
+ * Renders the assistant response as a rich Markdown document with:
+ *  - Header bar (Engagera AI + live "generating" badge)
+ *  - Initial query shown as a right-aligned pill
+ *  - Full Markdown body (headings, bold-term bullets, paragraphs)
+ *  - Numbered source cards with favicon
+ *  - Follow-up Q&A shown as clean divider sections
+ *  - Pinned follow-up input at the bottom
+ */
 function AiChatTab({
   messages, streaming, sources, error, onSend, onOpenBrowser,
 }: {
   messages: AiMsg[]; streaming: boolean; sources: AiSrc[];
   error: string; onSend: (text: string) => void; onOpenBrowser: (url: string) => void;
 }) {
-  const colors = useColors();
-  const insets = useSafeAreaInsets();
+  const colors  = useColors();
+  const insets  = useSafeAreaInsets();
+  const scrollRef = useRef<ScrollView>(null);
   const [input, setInput] = useState('');
 
-  // inverted FlatList needs data reversed
-  const reversed = useMemo(() => [...messages].reverse(), [messages]);
+  // Snap to top whenever the first message resets (new query)
+  const firstContent = messages[0]?.content ?? '';
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ x: 0, y: 0, animated: false });
+  }, [firstContent]);
 
-  const renderItem = useCallback(({ item: msg, index }: { item: AiMsg; index: number }) => {
-    if (msg.role === 'user') {
-      return (
-        <View style={ch.userRow}>
-          <View style={[ch.userBubble, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[ch.userText, { color: colors.foreground }]}>{msg.content}</Text>
-          </View>
-        </View>
-      );
-    }
-
-    // assistant — index 0 in reversed = most recent (bottom-most when inverted)
-    const isLatest = index === 0;
-    const showSources = isLatest && !streaming && sources.length > 0;
-
-    return (
-      <View style={ch.aiRow}>
-        <View style={ch.aiMeta}>
-          <View style={[ch.aiIcon, { backgroundColor: 'rgba(255,255,255,0.08)' }]}>
-            <Ionicons name="sparkles" size={10} color={colors.foreground} />
-          </View>
-          <Text style={[ch.aiName, { color: colors.mutedForeground }]}>Engagera AI</Text>
-          {streaming && isLatest ? <ActivityIndicator size="small" color={colors.mutedForeground} style={{ transform: [{ scale: 0.65 }] }} /> : null}
-        </View>
-
-        {msg.content ? (
-          <Text style={[ch.aiText, { color: colors.foreground }]}>
-            {msg.content}
-            {streaming && isLatest ? <Cursor color={colors.foreground} /> : null}
-          </Text>
-        ) : streaming && isLatest ? (
-          <View style={{ gap: 5, marginTop: 4 }}>
-            <Bone h={13} />
-            <Bone w="75%" h={13} />
-          </View>
-        ) : null}
-
-        {showSources ? (
-          <View style={ch.sources}>
-            <Text style={[ch.sourcesLabel, { color: colors.mutedForeground }]}>Sources</Text>
-            {sources.map((src, si) => (
-              <Pressable key={si} style={[ch.sourceRow, { borderColor: colors.border }]} onPress={() => onOpenBrowser(src.url)}>
-                <View style={[ch.srcNum, { backgroundColor: colors.card }]}>
-                  <Text style={[ch.srcNumTxt, { color: colors.mutedForeground }]}>{si + 1}</Text>
-                </View>
-                <Favicon url={src.url} size={13} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[ch.srcTitle, { color: colors.foreground }]} numberOfLines={1}>{src.title || src.host}</Text>
-                  <Text style={[ch.srcHost, { color: colors.mutedForeground }]} numberOfLines={1}>{src.host}</Text>
-                </View>
-                <Ionicons name="open-outline" size={12} color={colors.mutedForeground} />
-              </Pressable>
-            ))}
-          </View>
-        ) : null}
-      </View>
-    );
-  }, [streaming, sources, onOpenBrowser, colors]);
-
-  const handleSend = () => {
+  const handleSend = useCallback(() => {
     const t = input.trim();
     if (!t || streaming) return;
     setInput('');
     Keyboard.dismiss();
     onSend(t);
-  };
+  }, [input, streaming, onSend]);
 
   if (error && messages.length === 0) {
     return (
-      <View style={ch.errWrap}>
+      <View style={ai.errWrap}>
         <Ionicons name="alert-circle-outline" size={28} color={colors.mutedForeground} />
-        <Text style={[ch.errText, { color: colors.mutedForeground }]}>{error}</Text>
+        <Text style={[ai.errText, { color: colors.mutedForeground }]}>{error}</Text>
       </View>
     );
   }
 
+  // Split messages into pairs: [user, assistant]
+  // messages[0]=user query, messages[1]=main answer, messages[2]=follow-up user, [3]=answer …
+  const pairs: { user: string; assistant: string }[] = [];
+  for (let i = 0; i < messages.length; i += 2) {
+    pairs.push({
+      user:      messages[i]?.content ?? '',
+      assistant: messages[i + 1]?.content ?? '',
+    });
+  }
+  const mainPair     = pairs[0] ?? { user: '', assistant: '' };
+  const followUpPairs = pairs.slice(1);
+  const isLastPair   = (idx: number) => idx === followUpPairs.length - 1;
+
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <FlatList
-        inverted
-        data={reversed}
-        keyExtractor={(_, i) => `aim-${i}`}
-        renderItem={renderItem}
+      {/* ── Scrollable body ─────────────────────────────────────────── */}
+      <ScrollView
+        ref={scrollRef}
         style={{ flex: 1 }}
-        contentContainerStyle={ch.listContent}
+        contentContainerStyle={ai.scroll}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        ListFooterComponent={<View style={{ height: 8 }} />}
-      />
-      <View style={[ch.inputWrap, { paddingBottom: insets.bottom + 10, borderTopColor: colors.border, backgroundColor: colors.background }]}>
-        <View style={[ch.inputRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      >
+        {/* Header */}
+        <View style={ai.header}>
+          <View style={[ai.headerDot, { backgroundColor: colors.foreground }]}>
+            <Ionicons name="sparkles" size={10} color={colors.background} />
+          </View>
+          <Text style={[ai.headerLabel, { color: colors.foreground }]}>Engagera AI</Text>
+          {streaming ? (
+            <View style={ai.genBadge}>
+              <ActivityIndicator
+                size="small"
+                color={colors.mutedForeground}
+                style={{ transform: [{ scale: 0.6 }] }}
+              />
+              <Text style={[ai.genText, { color: colors.mutedForeground }]}>generating…</Text>
+            </View>
+          ) : null}
+        </View>
+
+        {/* Initial query pill */}
+        {mainPair.user ? (
+          <View style={ai.queryRow}>
+            <View style={[ai.queryBubble, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[ai.queryText, { color: colors.foreground }]}>{mainPair.user}</Text>
+            </View>
+          </View>
+        ) : null}
+
+        {/* Main AI summary — rich Markdown */}
+        <View style={ai.bodyWrap}>
+          {mainPair.assistant ? (
+            <Markdown text={mainPair.assistant} color={colors.foreground} />
+          ) : streaming ? (
+            <View style={{ gap: 8, marginTop: 4 }}>
+              <Bone h={13} />
+              <Bone w="88%" h={13} />
+              <Bone w="70%" h={13} />
+              <Bone h={13} />
+              <Bone w="80%" h={13} />
+            </View>
+          ) : null}
+        </View>
+
+        {/* Sources */}
+        {!streaming && sources.length > 0 ? (
+          <View style={[ai.sourceSection, { borderTopColor: colors.border }]}>
+            <Text style={[ai.sourceLabel, { color: colors.mutedForeground }]}>Sources</Text>
+            <View style={ai.sourceGrid}>
+              {sources.map((src, si) => (
+                <Pressable
+                  key={si}
+                  style={[ai.sourceCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  onPress={() => onOpenBrowser(src.url)}
+                >
+                  <View style={[ai.srcBadge, { backgroundColor: colors.background }]}>
+                    <Text style={[ai.srcBadgeTxt, { color: colors.mutedForeground }]}>{si + 1}</Text>
+                  </View>
+                  <Favicon url={src.url} size={13} />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={[ai.srcTitle, { color: colors.foreground }]} numberOfLines={1}>{src.title || src.host}</Text>
+                    <Text style={[ai.srcHost, { color: colors.mutedForeground }]} numberOfLines={1}>{src.host}</Text>
+                  </View>
+                  <Ionicons name="open-outline" size={12} color={colors.mutedForeground} />
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        ) : null}
+
+        {/* Follow-up Q&A sections */}
+        {followUpPairs.map((pair, idx) => (
+          <View key={idx} style={[ai.followSection, { borderTopColor: colors.border }]}>
+            {/* Follow-up question */}
+            <View style={ai.queryRow}>
+              <View style={[ai.queryBubble, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Text style={[ai.queryText, { color: colors.foreground }]}>{pair.user}</Text>
+              </View>
+            </View>
+
+            {/* Follow-up answer */}
+            <View style={[ai.headerMini]}>
+              <View style={[ai.headerDot, { backgroundColor: colors.foreground }]}>
+                <Ionicons name="sparkles" size={10} color={colors.background} />
+              </View>
+              <Text style={[ai.headerLabel, { color: colors.foreground }]}>Engagera AI</Text>
+              {streaming && isLastPair(idx) ? (
+                <ActivityIndicator size="small" color={colors.mutedForeground} style={{ transform: [{ scale: 0.65 }] }} />
+              ) : null}
+            </View>
+
+            <View style={ai.bodyWrap}>
+              {pair.assistant ? (
+                <Markdown text={pair.assistant} color={colors.foreground} />
+              ) : streaming && isLastPair(idx) ? (
+                <View style={{ gap: 8 }}>
+                  <Bone h={13} />
+                  <Bone w="75%" h={13} />
+                </View>
+              ) : null}
+            </View>
+          </View>
+        ))}
+
+        <View style={{ height: 24 }} />
+      </ScrollView>
+
+      {/* ── Follow-up input ─────────────────────────────────────────── */}
+      <View style={[ai.inputBar, {
+        paddingBottom: insets.bottom + 10,
+        borderTopColor: colors.border,
+        backgroundColor: colors.background,
+      }]}>
+        <View style={[ai.inputRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Ionicons name="sparkles-outline" size={15} color={colors.mutedForeground} />
           <TextInput
-            style={[ch.input, { color: colors.foreground }]}
+            style={[ai.input, { color: colors.foreground }]}
             placeholder="Ask a follow-up…"
             placeholderTextColor={colors.mutedForeground}
             value={input}
@@ -388,7 +468,6 @@ function AiChatTab({
             autoCapitalize="none"
             autoCorrect={false}
             editable={!streaming}
-            multiline={false}
           />
           {input.length > 0 && !streaming ? (
             <Pressable hitSlop={10} onPress={() => setInput('')}>
@@ -397,9 +476,12 @@ function AiChatTab({
           ) : null}
         </View>
         <Pressable
-          style={[ch.sendBtn, { backgroundColor: streaming || !input.trim() ? colors.card : colors.foreground }]}
+          style={[ai.sendBtn, {
+            backgroundColor: streaming || !input.trim() ? colors.card : colors.foreground,
+          }]}
           onPress={handleSend}
-          disabled={streaming || !input.trim()}>
+          disabled={streaming || !input.trim()}
+        >
           {streaming ? (
             <ActivityIndicator size="small" color={colors.mutedForeground} />
           ) : (
@@ -411,34 +493,47 @@ function AiChatTab({
   );
 }
 
-const ch = StyleSheet.create({
-  listContent: { paddingHorizontal: 14, paddingTop: 14, gap: 18 },
-  // user
-  userRow:    { alignItems: 'flex-end' },
-  userBubble: { maxWidth: '80%', borderRadius: 18, borderBottomRightRadius: 4, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 14, paddingVertical: 10 },
-  userText:   { fontSize: 15, fontFamily: 'Inter_400Regular', lineHeight: 22 },
-  // assistant
-  aiRow:  { gap: 8 },
-  aiMeta: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  aiIcon: { width: 20, height: 20, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
-  aiName: { fontSize: 12, fontFamily: 'Inter_500Medium' },
-  aiText: { fontSize: 15, fontFamily: 'Inter_400Regular', lineHeight: 25 },
-  // sources
-  sources:      { marginTop: 10, gap: 7 },
-  sourcesLabel: { fontSize: 11, fontFamily: 'Inter_600SemiBold', letterSpacing: 0.5, textTransform: 'uppercase' },
-  sourceRow:    { flexDirection: 'row', alignItems: 'center', gap: 9, borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, padding: 10 },
-  srcNum:       { width: 20, height: 20, borderRadius: 6, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  srcNumTxt:    { fontSize: 10, fontFamily: 'Inter_700Bold' },
-  srcTitle:     { fontSize: 13, fontFamily: 'Inter_600SemiBold' },
-  srcHost:      { fontSize: 11, fontFamily: 'Inter_400Regular' },
-  // error
+const ai = StyleSheet.create({
+  scroll: { paddingBottom: 8 },
+
+  // ── Header ──
+  header:      { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 10 },
+  headerMini:  { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 10 },
+  headerDot:   { width: 20, height: 20, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
+  headerLabel: { fontSize: 13, fontFamily: 'Inter_600SemiBold', flex: 1 },
+  genBadge:    { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  genText:     { fontSize: 11, fontFamily: 'Inter_400Regular' },
+
+  // ── Query pill ──
+  queryRow:    { paddingHorizontal: 16, paddingBottom: 12, alignItems: 'flex-end' },
+  queryBubble: { maxWidth: '80%', borderRadius: 18, borderBottomRightRadius: 4, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 14, paddingVertical: 9 },
+  queryText:   { fontSize: 15, fontFamily: 'Inter_400Regular', lineHeight: 22 },
+
+  // ── Body ──
+  bodyWrap: { paddingHorizontal: 16, paddingBottom: 4 },
+
+  // ── Sources ──
+  sourceSection: { marginTop: 16, paddingTop: 14, borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: 16, gap: 10 },
+  sourceLabel:   { fontSize: 11, fontFamily: 'Inter_600SemiBold', letterSpacing: 0.5, textTransform: 'uppercase' },
+  sourceGrid:    { gap: 7 },
+  sourceCard:    { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
+  srcBadge:      { width: 22, height: 22, borderRadius: 6, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  srcBadgeTxt:   { fontSize: 10, fontFamily: 'Inter_700Bold' },
+  srcTitle:      { fontSize: 13, fontFamily: 'Inter_600SemiBold' },
+  srcHost:       { fontSize: 11, fontFamily: 'Inter_400Regular' },
+
+  // ── Follow-up section ──
+  followSection: { marginTop: 16, paddingTop: 14, borderTopWidth: StyleSheet.hairlineWidth },
+
+  // ── Error ──
   errWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 40, paddingBottom: 80 },
   errText: { fontSize: 14, fontFamily: 'Inter_400Regular', textAlign: 'center', lineHeight: 20 },
-  // input
-  inputWrap: { paddingHorizontal: 12, paddingTop: 10, gap: 8, flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth },
-  inputRow:  { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, height: 44, borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 14 },
-  input:     { flex: 1, fontSize: 15, fontFamily: 'Inter_400Regular', padding: 0 },
-  sendBtn:   { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+
+  // ── Input bar ──
+  inputBar: { paddingHorizontal: 12, paddingTop: 10, gap: 8, flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth },
+  inputRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, height: 44, borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 14 },
+  input:    { flex: 1, fontSize: 15, fontFamily: 'Inter_400Regular', padding: 0 },
+  sendBtn:  { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
 });
 
 // ─── Web Result Card ──────────────────────────────────────────────────────────
