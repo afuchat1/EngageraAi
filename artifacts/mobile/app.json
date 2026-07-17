@@ -2,7 +2,6 @@
   "expo": {
     "name": "Engagera",
     "slug": "engagera",
-    "owner": "afuchat",
     "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon-black.png",
