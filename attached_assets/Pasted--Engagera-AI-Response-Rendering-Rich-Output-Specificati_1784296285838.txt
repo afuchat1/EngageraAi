@@ -1,0 +1,519 @@
+# Engagera AI Response Rendering & Rich Output Specification
+
+## Objective
+
+Upgrade the response rendering system so Engagera AI produces clean, professional, modern responses.
+
+Users should never see raw markdown syntax, internal placeholders, implementation tags, or ugly URLs.
+
+The interface should feel polished and comparable to modern AI assistants.
+
+---
+
+# 1. Never Expose Internal Syntax
+
+The AI may internally generate structured output, but the frontend must render it into UI components.
+
+Never display things like:
+
+````
+[LIVE SEARCH]
+
+[source]
+
+<tool>
+
+{{citation}}
+
+```code```
+
+[[internal]]
+
+https://...
+
+markdown artifacts
+
+JSON
+
+XML
+
+HTML tags
+
+````
+
+The user should never know how the backend works.
+
+---
+
+# 2. Branded Links
+
+Never display raw URLs inside normal responses.
+
+Instead display:
+
+✔ Company favicon
+
+✔ Brand name
+
+Example:
+
+Instead of
+
+https://www.microsoft.com
+
+Show
+
+🟦 Microsoft
+
+Instead of
+
+https://github.com
+
+Show
+
+⚫ GitHub
+
+Instead of
+
+https://supabase.com
+
+Show
+
+🟢 Supabase
+
+Clicking opens the official website.
+
+The frontend should automatically detect known domains and replace them with:
+
+* favicon
+* company name
+* official title
+
+---
+
+# 3. Automatic Link Cards
+
+When the AI references an important website, render it as a small card.
+
+Example:
+
+---
+
+🟦 Microsoft
+
+Official Website
+
+microsoft.com
+
+---
+
+Not plain text.
+
+---
+
+# 4. Source Section
+
+Whenever information comes from search, include a clean Sources section.
+
+Example
+
+Sources
+
+🟦 Microsoft
+
+Official Website
+
+📰 Reuters
+
+Published Jul 2026
+
+📰 BBC
+
+Published Jul 2026
+
+The user immediately knows where the answer came from.
+
+Sources should appear after the answer.
+
+Not mixed into paragraphs.
+
+---
+
+# 5. Source Ranking
+
+Always order sources:
+
+Official website
+
+Official documentation
+
+Government
+
+Trusted News
+
+Academic
+
+Community
+
+Unknown
+
+---
+
+# 6. Source Cards
+
+Each source should contain:
+
+favicon
+
+brand name
+
+page title
+
+optional date
+
+click action
+
+Do NOT display long URLs.
+
+---
+
+# 7. Rich Citations
+
+Instead of
+
+(https://...)
+
+Display
+
+Microsoft
+
+Reuters
+
+BBC
+
+GitHub
+
+Supabase
+
+OpenAI
+
+Apple
+
+Cloudflare
+
+etc.
+
+---
+
+# 8. Beautiful Code Blocks
+
+Code blocks should have:
+
+language label
+
+syntax highlighting
+
+single Copy button
+
+line numbers (optional)
+
+collapse for large files
+
+Example
+
+Python
+
+Copy
+
+def hello():
+print("Hello")
+
+Only one copy button per block.
+
+---
+
+# 9. Writing Documents
+
+Whenever the AI creates:
+
+emails
+
+letters
+
+essays
+
+prompts
+
+reports
+
+blogs
+
+scripts
+
+documentation
+
+contracts
+
+announcements
+
+meeting notes
+
+or any long-form content...
+
+Automatically render a Document Block instead of plain chat text.
+
+Document Block features:
+
+📄 Document icon
+
+Editable title
+
+Word count
+
+Estimated reading time
+
+One large Copy button
+
+Download as TXT
+
+Download as Markdown
+
+Download as PDF
+
+Expand
+
+Collapse
+
+Fullscreen editor
+
+The document should look like a lightweight editor rather than a chat bubble.
+
+---
+
+# 10. Copy Behaviour
+
+Every document has one copy button.
+
+Never place copy buttons on every paragraph.
+
+Copy should preserve:
+
+headings
+
+lists
+
+tables
+
+formatting
+
+spacing
+
+code
+
+---
+
+# 11. Tables
+
+Render tables professionally.
+
+Responsive.
+
+Sortable when possible.
+
+Sticky headers.
+
+Mobile friendly.
+
+Never show markdown tables directly.
+
+---
+
+# 12. Lists
+
+Convert markdown lists into native UI lists.
+
+Support:
+
+checkboxes
+
+bullets
+
+numbered
+
+nested
+
+---
+
+# 13. Images
+
+If search returns images:
+
+Display them in a gallery.
+
+Rounded corners.
+
+Lazy loading.
+
+Open fullscreen.
+
+Show source.
+
+---
+
+# 14. Videos
+
+If videos are referenced:
+
+Render embedded preview cards.
+
+Thumbnail
+
+Duration
+
+Publisher
+
+Play button
+
+Never raw links.
+
+---
+
+# 15. Citations
+
+Inline citations should be small numbered badges.
+
+Example
+
+The CEO announced...
+
+¹
+
+Clicking opens the Sources panel.
+
+---
+
+# 16. Search Indicator
+
+When external tools run show:
+
+Searching official sources...
+
+Looking up live information...
+
+Verifying sources...
+
+Fetching latest data...
+
+Never show:
+
+Thinking...
+
+Analyzing...
+
+Reasoning...
+
+Internal prompts
+
+Model names
+
+Tool names
+
+---
+
+# 17. Rendering Pipeline
+
+The backend returns structured data.
+
+The frontend converts it into UI components.
+
+AI Output
+
+↓
+
+Response Parser
+
+↓
+
+Renderer
+
+↓
+
+Rich Components
+
+↓
+
+Chat UI
+
+The renderer is responsible for formatting.
+
+The AI should never worry about UI.
+
+---
+
+# 18. Component Library
+
+Create reusable components:
+
+RichLink
+
+SourceCard
+
+SourceList
+
+DocumentBlock
+
+CodeBlock
+
+TableView
+
+ImageGallery
+
+VideoCard
+
+CitationBadge
+
+SearchStatus
+
+QuoteBlock
+
+MathBlock
+
+WarningBox
+
+SuccessBox
+
+InfoBox
+
+---
+
+# 19. Design Language
+
+Use:
+
+Rounded corners
+
+Soft spacing
+
+Subtle borders
+
+No heavy shadows
+
+Responsive layout
+
+Accessible typography
+
+Consistent iconography
+
+Fast rendering
+
+Minimal visual clutter
+
+---
+
+# 20. Overall Goal
+
+Engagera AI should never expose raw implementation details.
+
+Instead, every response should be transformed into polished, interactive UI components that make the experience feel professional, trustworthy, and easy to read.
+
+The chat interface should prioritize clarity, clean branding, and rich interactions over plain text whenever appropriate.
