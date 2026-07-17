@@ -6,18 +6,12 @@ import { defineConfig } from 'vite';
 import runtimeErrorOverlay from '@replit/vite-plugin-runtime-error-modal';
 
 const rawPort = process.env.PORT;
-const isBuild = process.argv.includes('build');
-
-// PORT is only required for the dev/preview server, not during `vite build`.
-if (!rawPort && !isBuild) {
-  throw new Error(
-    'PORT environment variable is required but was not provided.',
-  );
-}
-
 const port = rawPort ? Number(rawPort) : 3000;
 
-if (!isBuild && (Number.isNaN(port) || port <= 0)) {
+// Only validate PORT when it is explicitly provided (dev server).
+// During `vite build` (Vercel, CI) PORT is not set and defaults to 3000;
+// the server block is ignored by Vite during a production build anyway.
+if (rawPort && (Number.isNaN(port) || port <= 0)) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
@@ -62,7 +56,12 @@ export default defineConfig({
         'attached_assets',
       ),
     },
-    dedupe: ['react', 'react-dom'],
+    // Force a single copy of these packages across the monorepo.
+    // Without dedupe, pnpm can hoist separate instances of react-query
+    // (one for the app, one inside @workspace/api-client-react), which
+    // causes "No QueryClient set" at runtime because the hooks look up
+    // the QueryClient via a module-level context that differs per instance.
+    dedupe: ['react', 'react-dom', '@tanstack/react-query'],
   },
   root: path.resolve(import.meta.dirname),
   build: {
