@@ -17,7 +17,6 @@ import { createClient } from "npm:@supabase/supabase-js@2";
  */
 
 // ── Provider URLs ─────────────────────────────────────────────────────────────
-const ANTHROPIC_URL  = "https://api.anthropic.com/v1/messages";
 const GROQ_URL       = "https://api.groq.com/openai/v1/chat/completions";
 const CEREBRAS_URL   = "https://api.cerebras.ai/v1/chat/completions";
 const CF_BASE        = "https://api.cloudflare.com/client/v4/accounts";
@@ -80,56 +79,6 @@ function toChat(msgs: IncomingMessage[]): ChatMessage[] {
   return msgs
     .filter((m) => ["user", "assistant", "system"].includes(m.role))
     .map((m) => ({ role: m.role, content: getTextContent(m.content) }));
-}
-
-// ── Anthropic Messages API call ───────────────────────────────────────────────
-async function callClaude(
-  key: string,
-  model: string,
-  messages: ChatMessage[],
-  systemPrompt: string,
-  maxTokens: number,
-  requestId: string,
-): Promise<AIResult> {
-  // Claude requires system as a top-level param; filter system msgs out of the array
-  const anthropicMessages = messages
-    .filter((m) => m.role === "user" || m.role === "assistant")
-    .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
-
-  try {
-    const res = await fetch(ANTHROPIC_URL, {
-      method: "POST",
-      headers: {
-        "x-api-key": key,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        system: systemPrompt,
-        messages: anthropicMessages,
-        max_tokens: maxTokens,
-      }),
-      signal: AbortSignal.timeout(30_000),
-    });
-    if (!res.ok) {
-      const err = await res.text().catch(() => "");
-      log("warn", "claude.http_error", { requestId, status: res.status, err: err.slice(0, 200) });
-      return { ok: false, content: "", inputTokens: 0, outputTokens: 0, error: `HTTP ${res.status}` };
-    }
-    const data = await res.json() as {
-      content?: { type: string; text?: string }[];
-      usage?: { input_tokens?: number; output_tokens?: number };
-    };
-    const content = data.content?.find((b) => b.type === "text")?.text ?? "";
-    const inputTokens = data.usage?.input_tokens ?? 0;
-    const outputTokens = data.usage?.output_tokens ?? 0;
-    log("info", "claude.success", { requestId, model, inputTokens, outputTokens });
-    return { ok: true, content, inputTokens, outputTokens, provider: "anthropic", model };
-  } catch (err) {
-    log("warn", "claude.error", { requestId, error: String(err) });
-    return { ok: false, content: "", inputTokens: 0, outputTokens: 0, error: String(err) };
-  }
 }
 
 // ── OpenAI-compatible call ────────────────────────────────────────────────────
@@ -214,17 +163,10 @@ async function callCloudflare(
 // ── Provider chain ────────────────────────────────────────────────────────────
 async function callWithFallback(
   messages: ChatMessage[],
-  keys: { anthropic?: string; groq?: string; cerebras?: string; cloudflare?: string; cloudflareAccountId?: string },
+  keys: { groq?: string; cerebras?: string; cloudflare?: string; cloudflareAccountId?: string },
   maxTokens: number,
   requestId: string,
-  systemPrompt: string,
-  useClaude: boolean,
 ): Promise<AIResult> {
-  // 0. Claude claude-opus-4-7 (Lab AI primary — only when requested)
-  if (useClaude && keys.anthropic) {
-    const r = await callClaude(keys.anthropic, "claude-opus-4-7", messages, systemPrompt, maxTokens, requestId);
-    if (r.ok) return r;
-  }
   // 1. Groq (primary — llama-3.3-70b)
   if (keys.groq) {
     const r = await callOAI(GROQ_URL, keys.groq, "llama-3.3-70b-versatile", messages, maxTokens, requestId, "groq");
@@ -406,7 +348,6 @@ Deno.serve(async (req: Request) => {
     }
 
     const keys = {
-      anthropic:           Deno.env.get("ANTHROPIC_API_KEY")     || undefined,
       groq:                Deno.env.get("GROQ_API_KEY")         || undefined,
       cerebras:            Deno.env.get("CEREBRAS_API_KEY")      || undefined,
       cloudflare:          Deno.env.get("CLOUDFLARE_API_TOKEN")  || undefined,
@@ -493,9 +434,7 @@ Deno.serve(async (req: Request) => {
     ];
 
     const maxTokens = 2048;
-    // Route engagera-2.1 (Lab AI) through Claude claude-opus-4-7 when available
-    const useClaude = model === "engagera-2.1" && !!keys.anthropic;
-    const result = await callWithFallback(chatMessages, keys, maxTokens, requestId, systemPrompt, useClaude);
+    const result = await callWithFallback(chatMessages, keys, maxTokens, requestId);
 
     if (!result.ok) {
       log("error", "handler.all_providers_failed", { requestId, error: result.error });
