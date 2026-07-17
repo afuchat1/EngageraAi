@@ -141,56 +141,56 @@ export default function ChatScreen() {
         </Pressable>
       </View>
 
-      {mode === 'lab' ? (
-        /* ── Lab: full search engine ──────────────────────────────────── */
+      {/* ── Lab — always mounted so search/AI state survives mode switches ── */}
+      <View style={[styles.flex, mode !== 'lab' && styles.hidden]}>
         <SearchEngine topPad={0} />
-      ) : (
-        /* ── Chat ─────────────────────────────────────────────────────── */
-        <>
-          {isGuest ? <GuestBanner remaining={remaining} /> : null}
+      </View>
 
-          <KeyboardAvoidingView style={styles.flex} behavior="padding">
-            {messages.length === 0 ? (
-              <View style={styles.empty}>
-                <View style={styles.emptyMark}>
-                  <BrandMark size={48} />
-                </View>
-                <Text style={[styles.emptyTitle, { color: colors.foreground }]}>{copy.emptyTitle}</Text>
-                <Text style={[styles.emptyBody, { color: colors.mutedForeground }]}>{copy.emptyBody}</Text>
+      {/* ── Chat — always mounted for same reason ────────────────────────── */}
+      <View style={[styles.flex, mode !== 'chat' && styles.hidden]}>
+        {isGuest ? <GuestBanner remaining={remaining} /> : null}
+
+        <KeyboardAvoidingView style={styles.flex} behavior="padding">
+          {messages.length === 0 ? (
+            <View style={styles.empty}>
+              <View style={styles.emptyMark}>
+                <BrandMark size={48} />
               </View>
-            ) : (
-              <FlatList
-                ref={listRef}
-                data={messages}
-                keyExtractor={(item) => item.id}
-                contentContainerStyle={styles.listContent}
-                keyboardDismissMode="interactive"
-                keyboardShouldPersistTaps="handled"
-                renderItem={({ item }) =>
-                  item.pending && item.text.length === 0 ? (
-                    item.imageGenerating ? <ImageGenIndicator /> : <TypingDots label={item.searchStatus} />
-                  ) : (
-                    <ChatBubble message={item} />
-                  )
-                }
-                onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: !lastIsStreaming })}
-              />
-            )}
-
-            <View style={{ paddingBottom: insets.bottom + 10, paddingTop: 8 }}>
-              <ChatInput
-                value={inputText}
-                onChangeText={setInputText}
-                onSend={handleSend}
-                image={pendingImage}
-                onImagePicked={setPendingImage}
-                busy={busy || lastIsPending}
-                placeholder={copy.placeholder}
-              />
+              <Text style={[styles.emptyTitle, { color: colors.foreground }]}>{copy.emptyTitle}</Text>
+              <Text style={[styles.emptyBody, { color: colors.mutedForeground }]}>{copy.emptyBody}</Text>
             </View>
-          </KeyboardAvoidingView>
-        </>
-      )}
+          ) : (
+            <FlatList
+              ref={listRef}
+              data={messages}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.listContent}
+              keyboardDismissMode="interactive"
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item }) =>
+                item.pending && item.text.length === 0 ? (
+                  item.imageGenerating ? <ImageGenIndicator /> : <TypingDots label={item.searchStatus} />
+                ) : (
+                  <ChatBubble message={item} />
+                )
+              }
+              onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: !lastIsStreaming })}
+            />
+          )}
+
+          <View style={{ paddingBottom: insets.bottom + 10, paddingTop: 8 }}>
+            <ChatInput
+              value={inputText}
+              onChangeText={setInputText}
+              onSend={handleSend}
+              image={pendingImage}
+              onImagePicked={setPendingImage}
+              busy={busy || lastIsPending}
+              placeholder={copy.placeholder}
+            />
+          </View>
+        </KeyboardAvoidingView>
+      </View>
 
       <Sidebar
         open={sidebarOpen}
@@ -207,6 +207,8 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   flex: { flex: 1 },
+  // Keeps a view mounted (state preserved) but completely invisible + layout-free
+  hidden: { display: 'none' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
