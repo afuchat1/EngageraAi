@@ -9,20 +9,40 @@ import { ChatBubble, type DisplayMessage } from '@/components/ChatBubble';
 import { ChatInput } from '@/components/ChatInput';
 import { TypingDots } from '@/components/TypingDots';
 import { ImageGenIndicator } from '@/components/ImageGenIndicator';
-import { GuestBanner } from '@/components/GuestBanner';
 import { BrandMark } from '@/components/BrandMark';
+import { ModeSwitch, type ChatMode } from '@/components/ModeSwitch';
 import { Sidebar } from '@/components/Sidebar';
-import { CHAT_MODEL } from '@/lib/chat';
+import { CHAT_MODEL, LAB_MODEL } from '@/lib/chat';
 import { fetchConversationMessages, type ConversationSummary } from '@/lib/conversations';
+import { SearchEngine } from '@/components/SearchEngine';
+
+const COPY: Record<ChatMode, { placeholder: string; emptyTitle: string; emptyBody: string }> = {
+  chat: {
+    placeholder: 'Message Engagera…',
+    emptyTitle: 'Ask me anything',
+    emptyBody: 'Attach a photo and I can read, describe, or reason about it too.',
+  },
+  lab: {
+    placeholder: 'Ask Lab to research…',
+    emptyTitle: 'Deep research',
+    emptyBody: 'Lab browses the web, reasons over multiple sources, and cites everything it finds.',
+  },
+};
 
 export default function ChatScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const listRef = useRef<FlatList>(null);
+  const [mode, setMode] = useState<ChatMode>('chat');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
 
-  const session = useChatSession(CHAT_MODEL);
+  // Both sessions stay mounted at all times so switching modes with the
+  // pill switch never loses either conversation's history.
+  const chatSession = useChatSession(CHAT_MODEL);
+  const labSession = useChatSession(LAB_MODEL, 'research');
+  const session = mode === 'chat' ? chatSession : labSession;
+  const copy = COPY[mode];
 
   const {
     messages,
@@ -33,7 +53,6 @@ export default function ChatScreen() {
     busy,
     send,
     isGuest,
-    remaining,
     conversationId,
     startNewConversation,
     loadConversation,
@@ -42,6 +61,10 @@ export default function ChatScreen() {
   const lastIsPending = !!lastMessage?.pending;
   const lastIsStreaming = !!lastMessage?.streaming;
 
+  // Belt-and-suspenders auto-scroll: onContentSizeChange (below) already
+  // snaps to the newest message as it grows, but the keyboard opening or
+  // closing also resizes the visible list area — re-anchor to the bottom
+  // whenever that happens so the latest message is never left off-screen.
   useEffect(() => {
     const showSub = Keyboard.addListener('keyboardDidShow', () => {
       listRef.current?.scrollToEnd({ animated: true });
@@ -56,17 +79,23 @@ export default function ChatScreen() {
   }, []);
 
   const handleSend = useCallback(() => {
+    // Close the keyboard the instant Send is tapped so the just-sent
+    // message and the reply that follows are fully visible immediately,
+    // instead of staying hidden behind the keyboard until it's dismissed.
     Keyboard.dismiss();
     send();
   }, [send]);
 
   const handleNewChat = useCallback(() => {
-    startNewConversation();
+    chatSession.startNewConversation();
+    labSession.startNewConversation();
     setSidebarOpen(false);
-  }, [startNewConversation]);
+  }, [chatSession, labSession]);
 
   const handleSelectConversation = useCallback(
     async (conv: ConversationSummary) => {
+      const targetMode: ChatMode = conv.model === LAB_MODEL ? 'lab' : 'chat';
+      const target = targetMode === 'lab' ? labSession : chatSession;
       try {
         const history = await fetchConversationMessages(conv.id);
         const displayMessages: DisplayMessage[] = history
@@ -79,13 +108,14 @@ export default function ChatScreen() {
             timeInfo: m.timeInfo,
             weatherInfo: m.weatherInfo,
           }));
-        loadConversation(conv.id, displayMessages);
+        target.loadConversation(conv.id, displayMessages);
+        setMode(targetMode);
         setSidebarOpen(false);
       } catch {
         Alert.alert('Could not open chat', 'Please check your connection and try again.');
       }
     },
-    [loadConversation],
+    [chatSession, labSession],
   );
 
   return (
@@ -102,57 +132,61 @@ export default function ChatScreen() {
           <Ionicons name="menu-outline" size={24} color={colors.foreground} />
         </Pressable>
 
-        <BrandMark size={28} />
+        <ModeSwitch value={mode} onChange={setMode} />
 
         <Pressable onPress={handleNewChat} hitSlop={10} style={styles.headerBtn}>
           <Ionicons name="create-outline" size={22} color={colors.foreground} />
         </Pressable>
       </View>
 
-      {isGuest ? <GuestBanner remaining={remaining} /> : null}
+      {/* ── Lab — always mounted so search/AI state survives mode switches ── */}
+      <View style={[styles.flex, mode !== 'lab' && styles.hidden]}>
+        <SearchEngine topPad={0} />
+      </View>
 
-      <KeyboardAvoidingView style={styles.flex} behavior="padding">
-        {messages.length === 0 ? (
-          <View style={styles.empty}>
-            <View style={styles.emptyMark}>
-              <BrandMark size={48} />
+      {/* ── Chat — always mounted for same reason ────────────────────────── */}
+      <View style={[styles.flex, mode !== 'chat' && styles.hidden]}>
+        <KeyboardAvoidingView style={styles.flex} behavior="padding">
+          {messages.length === 0 ? (
+            <View style={styles.empty}>
+              <View style={styles.emptyMark}>
+                <BrandMark size={48} />
+              </View>
+              <Text style={[styles.emptyTitle, { color: colors.foreground }]}>{copy.emptyTitle}</Text>
+              <Text style={[styles.emptyBody, { color: colors.mutedForeground }]}>{copy.emptyBody}</Text>
             </View>
-            <Text style={[styles.emptyTitle, { color: colors.foreground }]}>Ask me anything</Text>
-            <Text style={[styles.emptyBody, { color: colors.mutedForeground }]}>
-              Attach a photo and I can read, describe, or reason about it too.
-            </Text>
-          </View>
-        ) : (
-          <FlatList
-            ref={listRef}
-            data={messages}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.listContent}
-            keyboardDismissMode="interactive"
-            keyboardShouldPersistTaps="handled"
-            renderItem={({ item }) =>
-              item.pending && item.text.length === 0 ? (
-                item.imageGenerating ? <ImageGenIndicator /> : <TypingDots />
-              ) : (
-                <ChatBubble message={item} />
-              )
-            }
-            onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: !lastIsStreaming })}
-          />
-        )}
+          ) : (
+            <FlatList
+              ref={listRef}
+              data={messages}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.listContent}
+              keyboardDismissMode="interactive"
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item }) =>
+                item.pending && item.text.length === 0 ? (
+                  item.imageGenerating ? <ImageGenIndicator /> : <TypingDots label={item.searchStatus} />
+                ) : (
+                  <ChatBubble message={item} />
+                )
+              }
+              onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: !lastIsStreaming })}
+            />
+          )}
 
-        <View style={{ paddingBottom: insets.bottom + 10, paddingTop: 8 }}>
-          <ChatInput
-            value={inputText}
-            onChangeText={setInputText}
-            onSend={handleSend}
-            image={pendingImage}
-            onImagePicked={setPendingImage}
-            busy={busy || lastIsPending}
-            placeholder="Message Engagera…"
-          />
-        </View>
-      </KeyboardAvoidingView>
+          <View style={{ paddingBottom: insets.bottom + 10, paddingTop: 8 }}>
+            <ChatInput
+              value={inputText}
+              onChangeText={setInputText}
+              onSend={handleSend}
+              image={pendingImage}
+              onImagePicked={setPendingImage}
+              busy={busy || lastIsPending}
+              placeholder={copy.placeholder}
+            />
+          </View>
+        </KeyboardAvoidingView>
+      </View>
 
       <Sidebar
         open={sidebarOpen}
@@ -169,6 +203,8 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   flex: { flex: 1 },
+  // Keeps a view mounted (state preserved) but completely invisible + layout-free
+  hidden: { display: 'none' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
