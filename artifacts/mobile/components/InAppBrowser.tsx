@@ -450,7 +450,11 @@ export function InAppBrowser({ url, onClose, onSearchFallback }: Props) {
           {tabs.map((tab) => (
             <WebView
               key={tab.id}
-              ref={(ref) => { webViewRefs.current.set(tab.id, ref); }}
+              ref={(ref) => {
+                // Only store live refs; skip the null call React makes on unmount.
+                // closeTab() already removes the entry when a tab is destroyed.
+                if (ref) webViewRefs.current.set(tab.id, ref);
+              }}
               source={{ uri: tab.initialUrl }}
               style={[s.webView, tab.id !== activeTabId && s.hiddenWebView]}
               onNavigationStateChange={(state) => handleNavState(tab.id, state)}

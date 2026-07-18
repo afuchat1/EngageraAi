@@ -28,7 +28,7 @@ import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
-import { InAppBrowser } from '@/components/InAppBrowser';
+import { useBrowser } from '@/contexts/BrowserContext';
 import { Markdown } from '@/components/Markdown';
 import { streamChat, LAB_MODEL } from '@/lib/chat';
 import {
@@ -998,7 +998,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
   const [results,     setResults]     = useState<Results>(EMPTY_RESULTS);
   const [loading,     setLoading]     = useState<Loading>(NOT_LOADING);
   const [official,    setOfficial]    = useState<string | null>(null);
-  const [browserUrl,  setBrowserUrl]  = useState<string | null>(null);
+  const { open: openInBrowser }       = useBrowser();
   const [history,     setHistory]     = useState<SearchHistoryItem[]>([]);
   const searchIdRef = useRef(0);
 
@@ -1144,8 +1144,8 @@ export function SearchEngine({ topPad }: { topPad: number }) {
         if (r.url && !r.url.includes('news.google.com')) target = r.url;
       } catch { /* keep original url on network error */ }
     }
-    setBrowserUrl(target);
-  }, []);
+    openInBrowser(target);
+  }, [openInBrowser]);
 
   return (
     <View style={[root.wrap, { paddingTop: topPad }]}>
@@ -1192,7 +1192,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
           {potentialDomain ? (
             <Pressable
               style={[root.sugRow, { borderBottomColor: colors.border }, suggestions.length === 0 && { borderBottomWidth: 0 }]}
-              onPress={() => { setShowSug(false); setQuery(''); setSubmitted(''); inputRef.current?.blur(); setBrowserUrl(`https://${potentialDomain}`); }}>
+              onPress={() => { setShowSug(false); setQuery(''); setSubmitted(''); inputRef.current?.blur(); openInBrowser(`https://${potentialDomain}`); }}>
               <View style={[root.sugDomIcon, { backgroundColor: colors.background }]}>
                 <Ionicons name="globe" size={12} color={colors.foreground} />
               </View>
@@ -1290,9 +1290,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
         </View>
       ) : null}
 
-      <InAppBrowser
-        url={browserUrl} onClose={() => setBrowserUrl(null)}
-        onSearchFallback={(q) => { setBrowserUrl(null); doSearch(q); }} />
+      {/* Browser is managed globally via BrowserContext — no local InAppBrowser instance needed */}
     </View>
   );
 }

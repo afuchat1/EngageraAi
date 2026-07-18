@@ -40,7 +40,7 @@ function IncomingUrlHandler() {
     // URL that launched the app cold (app was not running).
     Linking.getInitialURL().then((url) => {
       if (url && /^https?:\/\//i.test(url)) open(url);
-    });
+    }).catch(() => { /* ignore — no initial URL on cold start without an intent */ });
 
     // URL received while the app is already running (foreground / background).
     const sub = Linking.addEventListener('url', ({ url }) => {
