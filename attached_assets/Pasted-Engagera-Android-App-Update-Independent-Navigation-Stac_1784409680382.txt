@@ -1,0 +1,189 @@
+Engagera Android App Update – Independent Navigation Stacks (Android Only)
+
+Objective
+
+Implement independent navigation stacks only in the Engagera Android application.
+
+This feature is strictly limited to the Android app and must not be implemented on the Engagera website.
+
+The website must remain exactly as it is today, with its current navigation, routing, and user experience unchanged.
+
+Do not modify the web application in any way.
+
+This update is exclusive to the native/mobile Android experience.
+
+---
+
+Platform Scope
+
+Apply Only To
+
+- ✅ Engagera Android App
+
+Do NOT Apply To
+
+- ❌ Engagera Website
+- ❌ Web Browser Version
+- ❌ Desktop Web Experience
+- ❌ Mobile Web Browser Experience
+- ❌ Any PWA version
+
+The website must continue using its original navigation and routing.
+
+No UI, layout, navigation, or state-management changes should be introduced on the website.
+
+---
+
+Modules
+
+Create exactly four independent navigation stacks inside the Android app only.
+
+Engagera Android
+
+├── AI Chat
+├── Search Engine
+├── Lab
+└── Web Browser
+
+Each module must behave like an independent mini application while remaining inside the Engagera Android app.
+
+---
+
+AI Chat Stack
+
+Maintain independently:
+
+- Current conversation
+- Scroll position
+- Streaming response
+- Typing/search state
+- Draft input
+- Attached files
+- Conversation history
+
+If the user leaves AI Chat while the AI is responding, the response must continue in the background.
+
+Returning to AI Chat should restore the exact state without restarting the conversation.
+
+---
+
+Search Engine Stack
+
+Maintain independently:
+
+- Search query
+- Search filters
+- Search results
+- Scroll position
+- Open result preview
+- Image tab
+- News tab
+
+Switching away from Search must never reset its state.
+
+---
+
+Lab Stack
+
+Maintain independently:
+
+- Current workspace
+- Generated content
+- Running tasks
+- Scroll position
+- Selected tools
+- Unsaved edits
+
+Everything should resume exactly where the user left it.
+
+---
+
+Web Browser Stack
+
+Maintain independently:
+
+- Current page
+- Multiple browser tabs
+- Back/forward history
+- Scroll position
+- Loading progress
+- Downloads
+- Form inputs
+
+Leaving the browser must not reload pages or lose browsing state.
+
+---
+
+Navigation Rules
+
+Each of the four modules must have its own independent navigation history.
+
+Switching between modules must never destroy another module's state.
+
+The transition should feel instantaneous.
+
+---
+
+Background Behaviour
+
+Inactive modules should remain alive whenever possible.
+
+Examples:
+
+- AI continues generating responses.
+- Browser continues loading pages.
+- Search retains fetched results.
+- Lab keeps unsaved work.
+
+---
+
+Memory Management
+
+If Android reclaims memory:
+
+- Save each module's navigation state.
+- Save UI state.
+- Save scroll position.
+- Restore automatically when reopened.
+
+The restoration should be seamless.
+
+---
+
+Performance
+
+Switching between:
+
+AI Chat ⇄ Search ⇄ Lab ⇄ Browser
+
+should feel immediate.
+
+Avoid:
+
+- White screens
+- Reloading screens
+- Lost navigation history
+- Lost drafts
+- Lost scroll position
+
+---
+
+Important Restriction
+
+This architecture is an Android-only enhancement.
+
+Do not reuse this navigation system on the website.
+
+The website must remain exactly as it currently functions.
+
+Its routing, navigation, page transitions, and behavior should stay unchanged.
+
+Only the Android application should gain independent navigation stacks for these four modules.
+
+---
+
+Expected Result
+
+The Engagera Android app should provide a super app experience similar to apps like WeChat and Binance, where AI Chat, Search Engine, Lab, and the Web Browser behave like independent applications within a single app.
+
+Meanwhile, the Engagera website should remain completely unchanged, preserving its existing navigation and user experience.
