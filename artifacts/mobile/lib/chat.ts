@@ -96,8 +96,9 @@ export function looksLikeImageRequest(text: string): boolean {
 
   // Complete-prompt patterns (real subject present)
   const COMPLETE = [
-    // "generate/create/make an image OF something" — most natural phrasing
-    /\b(generate|create|make|produce|build)\s+(a\s+|an\s+|the\s+|me\s+a\s+|me\s+an\s+)?(image|picture|photo|drawing|painting|illustration|artwork|logo|poster|wallpaper|banner|thumbnail|graphic|portrait|scene|render)\s+(of|showing|depicting|featuring|about)\s+\w{3,}/i,
+    // "generate/create/make an image OF something" — most natural phrasing.
+    // Optional article (a/an/the) before the subject handles "of a lion" etc.
+    /\b(generate|create|make|produce|build)\s+(a\s+|an\s+|the\s+|me\s+a\s+|me\s+an\s+)?(image|picture|photo|drawing|painting|illustration|artwork|logo|poster|wallpaper|banner|thumbnail|graphic|portrait|scene|render)\s+(of|showing|depicting|featuring|about)\s+(a\s+|an\s+|the\s+)?\w{3,}/i,
     // "generate + ... + image-noun" with 3+ chars between
     /\b(generate|create|make|produce|build)\b.{3,}\b(image|picture|photo|drawing|painting|illustration|artwork|logo|poster|wallpaper|banner|thumbnail|graphic|portrait|scene|render|design)\b/i,
     // "draw/paint/sketch/illustrate/render me/a/an + ≥1 real word"

@@ -123,8 +123,10 @@ function isCompleteImageRequest(text: string): boolean {
 
   // Patterns that require a real subject (meaningful content after the trigger)
   const complete = [
-    // "generate/create/make an image OF something" — most natural phrasing
-    /\b(generate|create|make|produce|build)\s+(a\s+|an\s+|the\s+|me\s+a\s+|me\s+an\s+)?(image|picture|photo|drawing|painting|illustration|artwork|logo|poster|wallpaper|banner|thumbnail|graphic|portrait|scene|render)\s+(of|showing|depicting|featuring|about)\s+\w{3,}/i,
+    // "generate/create/make an image OF something" — most natural phrasing.
+    // Allow an optional article (a/an/the) before the subject so that
+    // "generate an image of a lion" correctly matches.
+    /\b(generate|create|make|produce|build)\s+(a\s+|an\s+|the\s+|me\s+a\s+|me\s+an\s+)?(image|picture|photo|drawing|painting|illustration|artwork|logo|poster|wallpaper|banner|thumbnail|graphic|portrait|scene|render)\s+(of|showing|depicting|featuring|about)\s+(a\s+|an\s+|the\s+)?\w{3,}/i,
     // "generate/create/make/produce + ... + image-noun" with content in between
     /\b(generate|create|make|produce|build)\b.{3,}\b(image|picture|photo|drawing|painting|illustration|artwork|logo|poster|wallpaper|banner|thumbnail|graphic|portrait|scene|render|design)\b/i,
     // "draw/paint/sketch/illustrate/render me/a/an + ≥1 real word"
@@ -688,7 +690,7 @@ Core rules — follow every one of these without exception:
 - URLS: NEVER include raw https:// URLs in your response text. Refer to sources by their domain/name only (e.g. "According to Reuters", "GitHub shows...", "The official Apple page states...").
 - NO MARKERS: Never show [source], [1], [SEARCH], {{citation}}, or any implementation detail.
 - CODE: Always use fenced code blocks with the correct language label.
-- IMAGE PROMPTS: If asked to generate an image but the description is incomplete or vague, ask the user "What would you like me to generate? Please describe the image in detail." Do NOT attempt generation with an incomplete prompt.
+- IMAGE PROMPTS: When the user asks you to generate an image, tell them it is being generated and describe what you are about to create. Never ask follow-up questions about an image request — generate immediately using whatever description they provided.
 - TIME: When the user asks what time it is, a live clock widget is already displayed in the UI. Confirm it in one short sentence (e.g. "Here's the current UTC time." or "Here's the time in Tokyo."). NEVER ask the user what timezone they want — if they didn't specify one, UTC is already shown. NEVER search the web for the current time.
 - WEATHER: When weather data is available, a weather widget is already displayed. Confirm the conditions briefly (e.g. "Here's the current weather in Lagos."). NEVER search the web for weather — the data is already fetched.
 `.trim();
@@ -933,9 +935,11 @@ Deno.serve(async (req: Request) => {
         getTextContent(incomingMessages[0].content).toLowerCase().includes("dev"));
 
     // ── Classify the request ──────────────────────────────────────────────────
-    const isCompleteImage   = isCompleteImageRequest(userText);
-    const isIncompleteImage = !isCompleteImage && isIncompleteImagePrompt(userText);
-    const isAnyImageIntent  = isCompleteImage || isIncompleteImage || looksLikeImageIntent(userText);
+    // Any recognised image intent is treated as a complete request — we never
+    // ask the user for more details before generating. If the prompt is vague,
+    // Flux will generate something reasonable and the user can refine from there.
+    const isCompleteImage   = isCompleteImageRequest(userText) || looksLikeImageIntent(userText);
+    const isAnyImageIntent  = isCompleteImage;
     const shouldSearch      = !isAnyImageIntent && userText.length > 3 && needsWebSearch(userText);
 
     // Image generation is only available to signed-in users — guests can
@@ -1035,34 +1039,6 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      // ── Incomplete image prompt — ask for description ─────────────────────
-      if (isIncompleteImage) {
-        const clarification = "What would you like me to generate? Please describe the image in detail — for example: \"a sunset over a mountain lake with reflections\" or \"a logo for a tech startup with a bold, minimal design\".";
-        const fakeResult: AIResult = { ok: true, content: clarification, inputTokens: 0, outputTokens: 0 };
-        const convId = await persistConversation(db, authResult, userText, fakeResult, model, conversationId, false, requestId);
-        let newGuestCount: number | undefined;
-        if (authResult.type === "guest") newGuestCount = await incrementGuestCount(db, authResult.guestSessionId);
-
-        const sseStream = new ReadableStream({
-          start(ctrl) {
-            const enq = (frame: string) => ctrl.enqueue(enc.encode(frame));
-            enq(sseFrame({ type: "token", content: clarification }));
-            enq(sseFrame({
-              type: "done",
-              model,
-              conversationId: convId,
-              ...(newGuestCount !== undefined && { guestMessageCount: newGuestCount, guestMessageLimit: GUEST_LIMIT }),
-            }));
-            enq("data: [DONE]\n\n");
-            ctrl.close();
-          },
-        });
-
-        return new Response(sseStream, {
-          status: 200,
-          headers: { ...CORS, "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "X-Accel-Buffering": "no" },
-        });
-      }
 
       // ── Standard text path (with optional search + URL fetch + weather/time) ─
       const sseStream = new ReadableStream({
@@ -1212,13 +1188,6 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Incomplete image in non-streaming mode
-    if (isIncompleteImage) {
-      const content = "What would you like me to generate? Please describe the image in detail.";
-      const fakeResult: AIResult = { ok: true, content, inputTokens: 0, outputTokens: 0 };
-      const convId = await persistConversation(db, authResult, userText, fakeResult, model, conversationId, false, requestId);
-      return json({ id: requestId, model, message: { role: "assistant", content }, conversationId: convId });
-    }
 
     // Standard text path
     let searchSources: SearchSource[] = [];

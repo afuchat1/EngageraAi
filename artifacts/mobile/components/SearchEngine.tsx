@@ -327,6 +327,14 @@ const AiChatTab = React.memo(function AiChatTab({
   const insets  = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
   const [input, setInput] = useState('');
+  // Manual keyboard avoidance — same approach as the main chat screen.
+  // KeyboardProvider sets adjustNothing globally so we track height ourselves.
+  const [kbHeight, setKbHeight] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', (e) => setKbHeight(e.endCoordinates.height));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKbHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
 
   // Snap to top whenever the first message resets (new query)
   const firstContent = messages[0]?.content ?? '';
@@ -365,7 +373,7 @@ const AiChatTab = React.memo(function AiChatTab({
   const isLastPair   = (idx: number) => idx === followUpPairs.length - 1;
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <View style={{ flex: 1 }}>
       {/* ── Scrollable body ─────────────────────────────────────────── */}
       <ScrollView
         ref={scrollRef}
@@ -481,7 +489,7 @@ const AiChatTab = React.memo(function AiChatTab({
 
       {/* ── Follow-up input ─────────────────────────────────────────── */}
       <View style={[ai.inputBar, {
-        paddingBottom: insets.bottom + 10,
+        paddingBottom: kbHeight > 0 ? kbHeight + 6 : insets.bottom + 10,
         borderTopColor: colors.border,
         backgroundColor: colors.background,
       }]}>
@@ -519,7 +527,7 @@ const AiChatTab = React.memo(function AiChatTab({
           )}
         </Pressable>
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 });
 
