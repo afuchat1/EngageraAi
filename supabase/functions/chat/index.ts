@@ -109,6 +109,195 @@ function sseFrame(data: Record<string, unknown>): string {
   return `data: ${JSON.stringify(data)}\n\n`;
 }
 
+// ── Uploaded-image helpers ────────────────────────────────────────────────────
+
+/** Returns true when the latest user message contains an image_url content part. */
+function hasImageAttachment(msgs: IncomingMessage[]): boolean {
+  const last = msgs.filter((m) => m.role === "user").at(-1);
+  if (!last || typeof last.content === "string") return false;
+  return last.content.some((p) => p.type === "image_url");
+}
+
+/** Extracts the data-URL from the latest user message's image_url part, or null. */
+function extractLastImageUrl(msgs: IncomingMessage[]): string | null {
+  const last = msgs.filter((m) => m.role === "user").at(-1);
+  if (!last || typeof last.content === "string") return null;
+  const part = last.content.find(
+    (p): p is { type: "image_url"; image_url: { url: string } } => p.type === "image_url",
+  );
+  return part?.image_url.url ?? null;
+}
+
+type ImageIntent = "edit" | "question" | "none";
+
+/**
+ * Classifies the user's caption:
+ *   "edit"     — caption describes a transformation (add/remove/change/recolor…)
+ *   "question" — caption asks something or requests analysis
+ *   "none"     — no meaningful caption; AI should analyse and ask what they want
+ */
+function detectImageIntent(text: string): ImageIntent {
+  const t = text.trim().toLowerCase();
+  if (!t || t.length < 3) return "none";
+
+  const editPatterns = [
+    /\b(edit|modify|change|alter|adjust|fix|update)\b/,
+    /\b(crop|resize|rotate|flip|mirror|stretch|scale)\b/,
+    /\b(convert|transform|turn\s+(it\s+)?into)\b/,
+    /\b(make\s+(it|this|the)\b)/,
+    /\b(add|remove|delete|erase|replace|put|insert|apply)\b/,
+    /\b(color|recolor|colorize|brighten|darken|lighten|saturate|desaturate)\b/,
+    /\b(sharpen|blur|denoise|enhance|upscale|restore)\b/,
+    /\b(background|foreground|filter|effect|style|artistic|cartoon|anime|sketch|oil\s+painting|watercolor)\b/,
+    /\b(write|add\s+text|put\s+text|label)\b/,
+    /\b(increase|decrease|boost)\b.*\b(contrast|brightness|exposure)\b/,
+  ];
+
+  const questionPatterns = [
+    /^(what|who|how|where|when|why|is|are|does|can|could|do|should|would)\b/,
+    /\b(tell\s+me|describe|explain|analyze|identify|read|translate|summarize)\b/,
+    /\b(what('s|\s+is)\s+(in|this|that|the))\b/,
+    /\b(what\s+do\s+you\s+see)\b/,
+    /\?/,
+  ];
+
+  if (editPatterns.some((p) => p.test(t))) return "edit";
+  if (questionPatterns.some((p) => p.test(t))) return "question";
+  // Default: treat any caption as an analysis / fulfillment request
+  return "question";
+}
+
+/** Decodes a data-URL string ("data:image/jpeg;base64,…") to a Uint8Array. */
+function dataUrlToBytes(dataUrl: string): Uint8Array {
+  const commaIdx = dataUrl.indexOf(",");
+  if (commaIdx === -1) throw new Error("Invalid data URL");
+  const b64 = dataUrl.slice(commaIdx + 1);
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+/**
+ * Calls Groq's llama-4-scout vision model to analyse an image.
+ * Prior conversation messages are sent as text-only for context.
+ */
+async function callGroqVision(
+  imageUrl: string,
+  captionText: string,
+  allMessages: IncomingMessage[],
+  groqKey: string,
+  requestId: string,
+): Promise<AIResult> {
+  // All messages except the current user turn (which contains the image)
+  const prior = allMessages
+    .slice(0, -1)
+    .filter((m) => ["user", "assistant"].includes(m.role))
+    .map((m) => ({ role: m.role, content: getTextContent(m.content) }));
+
+  // Multimodal content for the current user turn
+  const userContent: (
+    | { type: "text"; text: string }
+    | { type: "image_url"; image_url: { url: string } }
+  )[] = [];
+  if (captionText) userContent.push({ type: "text", text: captionText });
+  userContent.push({ type: "image_url", image_url: { url: imageUrl } });
+
+  const systemContent = captionText
+    ? "You are an advanced AI assistant with vision. Carefully analyze the attached image and fulfill the user's request directly, clearly, and thoroughly. If the request is ambiguous, ask one focused clarifying question."
+    : "You are an advanced AI assistant with vision. The user has sent an image without a caption. Analyze it thoroughly: describe every meaningful element — objects, people, text, colors, composition, mood, and any notable details. After your analysis, ask the user what they would like you to do with this image.";
+
+  const payload = {
+    model: "meta-llama/llama-4-scout-17b-16e-instruct",
+    messages: [
+      { role: "system", content: systemContent },
+      ...prior,
+      { role: "user", content: userContent },
+    ],
+    max_tokens: 1024,
+  };
+
+  try {
+    const res = await fetch(GROQ_URL, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${groqKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!res.ok) {
+      const err = await res.text().catch(() => "");
+      log("warn", "vision.http_error", { requestId, status: res.status, err: err.slice(0, 200) });
+      return { ok: false, content: "", inputTokens: 0, outputTokens: 0, error: `HTTP ${res.status}` };
+    }
+    const data = (await res.json()) as {
+      choices?: { message?: { content?: string | null } }[];
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
+    };
+    const content = data.choices?.[0]?.message?.content ?? "";
+    const inputTokens = data.usage?.prompt_tokens ?? 0;
+    const outputTokens = data.usage?.completion_tokens ?? 0;
+    log("info", "vision.success", { requestId, inputTokens, outputTokens });
+    return { ok: true, content, inputTokens, outputTokens, provider: "groq-vision", model: "llama-4-scout" };
+  } catch (err) {
+    log("warn", "vision.error", { requestId, error: String(err) });
+    return { ok: false, content: "", inputTokens: 0, outputTokens: 0, error: String(err) };
+  }
+}
+
+/**
+ * Edits an image using Cloudflare's stable-diffusion-v1-5-img2img model.
+ * Returns a markdown image string on success, null on failure.
+ */
+async function editImageCF(
+  imageDataUrl: string,
+  prompt: string,
+  token: string,
+  accountId: string,
+  requestId: string,
+): Promise<string | null> {
+  const url = `${CF_BASE}/${accountId}/ai/run/@cf/runwayml/stable-diffusion-v1-5-img2img`;
+  try {
+    const bytes = dataUrlToBytes(imageDataUrl);
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt,
+        image: Array.from(bytes),
+        num_steps: 20,
+        strength: 0.75,
+        guidance: 7.5,
+      }),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      log("warn", "img2img.http_error", { requestId, status: res.status, err: errText.slice(0, 200) });
+      return null;
+    }
+    const contentType = res.headers.get("content-type") ?? "";
+    if (contentType.includes("application/json")) {
+      const data = (await res.json()) as { result?: { image?: string } };
+      const b64 = data?.result?.image;
+      if (!b64) return null;
+      return `![Edited Image](data:image/png;base64,${b64})`;
+    }
+    const buf = await res.arrayBuffer();
+    const imgBytes = new Uint8Array(buf);
+    let binary = "";
+    const chunkSize = 8192;
+    for (let i = 0; i < imgBytes.length; i += chunkSize) {
+      binary += String.fromCharCode(...imgBytes.subarray(i, i + chunkSize));
+    }
+    const b64 = btoa(binary);
+    log("info", "img2img.success", { requestId, bytes: imgBytes.length });
+    return `![Edited Image](data:image/png;base64,${b64})`;
+  } catch (err) {
+    log("warn", "img2img.error", { requestId, error: String(err) });
+    return null;
+  }
+}
+
 // ── Image generation ──────────────────────────────────────────────────────────
 
 // An image request is "complete" when there's a meaningful subject after the verb.
@@ -934,16 +1123,23 @@ Deno.serve(async (req: Request) => {
       (incomingMessages[0]?.role === "system" &&
         getTextContent(incomingMessages[0].content).toLowerCase().includes("dev"));
 
+    // ── Detect uploaded image ─────────────────────────────────────────────────
+    const hasUploadedImage = hasImageAttachment(incomingMessages);
+    const uploadedImageUrl = hasUploadedImage ? extractLastImageUrl(incomingMessages) : null;
+    const imageCaption     = hasUploadedImage ? userText.trim() : "";
+    const imageIntent      = hasUploadedImage ? detectImageIntent(imageCaption) : ("none" as ImageIntent);
+
     // ── Classify the request ──────────────────────────────────────────────────
     // Any recognised image intent is treated as a complete request — we never
     // ask the user for more details before generating. If the prompt is vague,
     // Flux will generate something reasonable and the user can refine from there.
-    const isCompleteImage   = isCompleteImageRequest(userText) || looksLikeImageIntent(userText);
-    const isAnyImageIntent  = isCompleteImage;
+    const isCompleteImage   = !hasUploadedImage && (isCompleteImageRequest(userText) || looksLikeImageIntent(userText));
+    const isAnyImageIntent  = isCompleteImage || hasUploadedImage;
+    // Skip web search for both text-based image gen and uploaded-image requests
     const shouldSearch      = !isAnyImageIntent && userText.length > 3 && needsWebSearch(userText);
 
-    // Image generation is only available to signed-in users — guests can
-    // text-chat freely but must create a free account to generate images.
+    // Text-based image generation (Flux) is only available to signed-in users.
+    // Image analysis and editing via an attached image is available to all.
     if (isCompleteImage && authResult.type === "guest") {
       return json({
         error: "Sign in to generate images. Create a free account to unlock image generation.",
@@ -989,7 +1185,58 @@ Deno.serve(async (req: Request) => {
     if (wantsStream) {
       const enc = new TextEncoder();
 
-      // ── Image generation path ────────────────────────────────────────────
+      // ── Uploaded image path (vision analysis / image editing) ─────────────
+      if (hasUploadedImage && uploadedImageUrl) {
+        // Helper: return a JSON image payload (large base64 always goes as JSON)
+        const returnImageJson = async (content: string, mdl: string) => {
+          const fakeResult: AIResult = { ok: true, content, inputTokens: 0, outputTokens: 0, provider: "cloudflare-img2img", model: mdl };
+          const convId = await persistConversation(db, authResult, imageCaption || "[image]", fakeResult, model, conversationId, false, requestId);
+          let ngc: number | undefined;
+          if (authResult.type === "guest") ngc = await incrementGuestCount(db, authResult.guestSessionId);
+          return json({ id: requestId, model: mdl, message: { role: "assistant", content }, conversationId: convId, ...(ngc !== undefined && { guestMessageCount: ngc, guestMessageLimit: GUEST_LIMIT }) });
+        };
+
+        // Helper: return a text response via SSE stream
+        const returnTextSse = async (content: string, mdl: string) => {
+          const fakeResult: AIResult = { ok: true, content, inputTokens: 0, outputTokens: 0, provider: "groq-vision", model: mdl };
+          const convId = await persistConversation(db, authResult, imageCaption || "[image]", fakeResult, model, conversationId, false, requestId);
+          let ngc: number | undefined;
+          if (authResult.type === "guest") ngc = await incrementGuestCount(db, authResult.guestSessionId);
+          const sseStream = new ReadableStream({
+            start(ctrl) {
+              const enq = (f: string) => ctrl.enqueue(enc.encode(f));
+              enq(sseFrame({ type: "token", content }));
+              enq(sseFrame({ type: "done", model: mdl, conversationId: convId, ...(ngc !== undefined && { guestMessageCount: ngc, guestMessageLimit: GUEST_LIMIT }) }));
+              enq("data: [DONE]\n\n");
+              ctrl.close();
+            },
+          });
+          return new Response(sseStream, { status: 200, headers: { ...CORS, "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "X-Accel-Buffering": "no" } });
+        };
+
+        // Image editing: try img2img first
+        if (imageIntent === "edit" && keys.cloudflare && keys.cloudflareAccountId) {
+          log("info", "img2img.start", { requestId, prompt: imageCaption.slice(0, 80) });
+          const edited = await editImageCF(uploadedImageUrl, imageCaption, keys.cloudflare, keys.cloudflareAccountId, requestId);
+          if (edited) return returnImageJson(edited, "stable-diffusion-v1-5-img2img");
+          // img2img failed — fall through to vision analysis as graceful degradation
+          log("warn", "img2img.failed_fallback_to_vision", { requestId });
+        }
+
+        // Vision analysis (question, no-caption, or img2img fallback)
+        if (keys.groq) {
+          log("info", "vision.start", { requestId, intent: imageIntent, captionLen: imageCaption.length });
+          const visionResult = await callGroqVision(uploadedImageUrl, imageCaption, incomingMessages, keys.groq, requestId);
+          if (visionResult.ok && visionResult.content) {
+            return returnTextSse(visionResult.content, "llama-4-scout");
+          }
+        }
+
+        // Both vision and img2img unavailable — graceful error via SSE
+        return returnTextSse("I wasn't able to process your image right now. Please try again in a moment.", model);
+      }
+
+      // ── Text-based image generation path ────────────────────────────────
       if (isCompleteImage) {
         if (!keys.cloudflare || !keys.cloudflareAccountId) {
           // No image gen credentials — fall through to text response
@@ -1171,6 +1418,33 @@ Deno.serve(async (req: Request) => {
     // ═══════════════════════════════════════════════════════════════════════
     // JSON fallback path (stream: false)
     // ═══════════════════════════════════════════════════════════════════════
+
+    // ── Uploaded image path (JSON) ─────────────────────────────────────────
+    if (hasUploadedImage && uploadedImageUrl) {
+      const persistAndReturn = async (content: string, mdl: string) => {
+        const fakeResult: AIResult = { ok: true, content, inputTokens: 0, outputTokens: 0 };
+        const convId = await persistConversation(db, authResult, imageCaption || "[image]", fakeResult, model, conversationId, false, requestId);
+        let ngc: number | undefined;
+        if (authResult.type === "guest") ngc = await incrementGuestCount(db, authResult.guestSessionId);
+        return json({ id: requestId, model: mdl, message: { role: "assistant", content }, conversationId: convId, ...(ngc !== undefined && { guestMessageCount: ngc, guestMessageLimit: GUEST_LIMIT }) });
+      };
+
+      if (imageIntent === "edit" && keys.cloudflare && keys.cloudflareAccountId) {
+        log("info", "img2img.start.json", { requestId, prompt: imageCaption.slice(0, 80) });
+        const edited = await editImageCF(uploadedImageUrl, imageCaption, keys.cloudflare, keys.cloudflareAccountId, requestId);
+        if (edited) return persistAndReturn(edited, "stable-diffusion-v1-5-img2img");
+      }
+
+      if (keys.groq) {
+        log("info", "vision.start.json", { requestId, intent: imageIntent });
+        const visionResult = await callGroqVision(uploadedImageUrl, imageCaption, incomingMessages, keys.groq, requestId);
+        if (visionResult.ok && visionResult.content) {
+          return persistAndReturn(visionResult.content, "llama-4-scout");
+        }
+      }
+
+      return persistAndReturn("I wasn't able to process your image right now. Please try again in a moment.", model);
+    }
 
     // Image gen in non-streaming mode
     if (isCompleteImage && keys.cloudflare && keys.cloudflareAccountId) {

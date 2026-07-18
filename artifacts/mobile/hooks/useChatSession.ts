@@ -311,12 +311,15 @@ export function useChatSession(model: string, contextHint?: string) {
     if (!text && !pendingImage) return;
     if (!user && guestBlocked) return;
 
-    // Image generation is for signed-in users only. Intercept here so
-    // the request never hits the backend — just drop a canned reply and
-    // a sign-in nudge into the thread instead.
-    const isImageReq = looksLikeImageRequest(text);
+    // When the user has attached an image, we route to vision analysis / image
+    // editing — NOT to the Flux text-to-image generator. Vision is available to
+    // all users; only text-based image generation (Flux) requires sign-in.
+    const hasImage = !!pendingImage;
+    const isImageReq = !hasImage && looksLikeImageRequest(text);
+
     if (!user && isImageReq) {
-      const userMsg: DisplayMessage = { id: randomId(), role: 'user', text, imageUri: pendingImage?.uri };
+      // isImageReq is only true when hasImage is false, so pendingImage is null here
+      const userMsg: DisplayMessage = { id: randomId(), role: 'user', text, imageUri: undefined };
       const signInMsg: DisplayMessage = {
         id: randomId(),
         role: 'assistant',
