@@ -20,3 +20,8 @@ timeoutMs = 20000
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+EXPO_TOKEN = "pdsUuloHEYcjb_Xj9d9PbM6GeM1SwMYqhZHRgEwm"
