@@ -1,5 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, FlatList, Keyboard, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  Alert,
+  Keyboard,
+  LayoutChangeEvent,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -28,30 +37,18 @@ const CHAT_COPY = {
   emptyBody: 'Attach a photo and I can read, describe, or reason about it too.',
 };
 
-// ─── FocusBubble ────────────────────────────────────────────────────────────
+// ─── FocusBubble ─────────────────────────────────────────────────────────────
 // Wraps a chat item with a gentle slide-up + fade-in on mount.
-// Only plays the animation when isNew=true at mount time — history renders
-// instantly. Because it only reads isNew once (empty dep array), re-renders
-// caused by FlatList recycling don't re-trigger the animation.
-function FocusBubble({
-  isNew,
-  children,
-}: {
-  isNew: boolean;
-  children: React.ReactNode;
-}) {
+// Only animates when isNew=true at mount time — history items skip the wrapper.
+function FocusBubble({ isNew, children }: { isNew: boolean; children: React.ReactNode }) {
   const translateY = useSharedValue(isNew ? 26 : 0);
   const opacity = useSharedValue(isNew ? 0 : 1);
 
   useEffect(() => {
     if (isNew) {
-      translateY.value = withTiming(0, {
-        duration: 400,
-        easing: Easing.out(Easing.cubic),
-      });
-      opacity.value = withTiming(1, { duration: 320 });
+      translateY.value = withTiming(0, { duration: 420, easing: Easing.out(Easing.cubic) });
+      opacity.value = withTiming(1, { duration: 340 });
     }
-    // Intentionally empty deps — animate on mount only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -60,51 +57,46 @@ function FocusBubble({
     opacity: opacity.value,
   }));
 
-  // Skip the Animated.View wrapper entirely for old messages to keep
-  // the render path lightweight.
   if (!isNew) return <>{children}</>;
   return <Animated.View style={animStyle}>{children}</Animated.View>;
 }
 
-// ─── ChatScreen ──────────────────────────────────────────────────────────────
+// ─── ChatScreen ───────────────────────────────────────────────────────────────
 export default function ChatScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const listRef = useRef<FlatList>(null);
+  const scrollRef = useRef<ScrollView>(null);
   const [mode, setMode] = useState<ChatMode>('chat');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
-
-  // Tracks the keyboard height for manual avoidance. KeyboardProvider from
-  // react-native-keyboard-controller sets windowSoftInputMode=adjustNothing
-  // globally, so neither the OS nor the stock KeyboardAvoidingView can move
-  // the layout. We listen to Keyboard events (which still fire under
-  // adjustNothing) and pad the input container ourselves.
   const [kbHeight, setKbHeight] = useState(0);
 
-  // ── Focus mode state ────────────────────────────────────────────────────
-  // animateFromIdx: messages at this index and above slide/fade in on mount.
-  //   undefined = no animation (fresh load or loaded conversation).
-  // focusScrollIdxRef: where to scroll when a new conversation pair starts or
-  //   the keyboard pops up. Kept as a ref so keyboard listeners stay stable.
+  // ── Focus-mode tracking ──────────────────────────────────────────────────
+  // animateFromIdx: items at this index and above slide+fade in on mount.
   const [animateFromIdx, _setAnimateFromIdx] = useState<number | undefined>(undefined);
   const animateFromIdxRef = useRef<number | undefined>(undefined);
-  const focusScrollIdxRef = useRef(0);
-
   const setAnimateFromIdx = useCallback((v: number | undefined) => {
     animateFromIdxRef.current = v;
     _setAnimateFromIdx(v);
   }, []);
 
-  // Records the expected index of the next user message (set at send time) so
-  // we can scroll to it once FlatList has rendered that item.
-  const pendingFocusRef = useRef<number | null>(null);
+  // Stores the y-offset (in scroll-content coordinates) of every rendered message.
+  // Populated by onLayout on each message wrapper. Used to scroll precisely so the
+  // current user message sits at the very top of the visible area.
+  const msgYRef = useRef<Map<string, number>>(new Map());
 
-  // ── Sessions ────────────────────────────────────────────────────────────
+  // The ID of the message we want pinned to the top of the visible area.
+  // Updated each time the user sends a new message.
+  const focusMsgIdRef = useRef<string | null>(null);
+
+  // Pending: we've called send() and are waiting for the new message to render
+  // (so we can read its y-offset from onLayout).
+  const pendingFocusIdRef = useRef<string | null>(null);
+
+  // ── Sessions ──────────────────────────────────────────────────────────────
   const chatSession = useChatSession(CHAT_MODEL);
   const labSession = useChatSession(LAB_MODEL, 'research');
   const session = mode === 'chat' ? chatSession : labSession;
-  const copy = CHAT_COPY;
 
   const {
     messages,
@@ -119,6 +111,9 @@ export default function ChatScreen() {
     conversationId,
   } = session;
 
+  const lastMessage = messages.length > 0 ? messages[messages.length - 1] : undefined;
+  const lastIsPending = !!lastMessage?.pending;
+
   // Guest cap alert
   useEffect(() => {
     if (!guestBlocked) return;
@@ -132,80 +127,101 @@ export default function ChatScreen() {
     );
   }, [guestBlocked]);
 
-  const lastMessage = messages.length > 0 ? messages[messages.length - 1] : undefined;
-  const lastIsPending = !!lastMessage?.pending;
-
-  // ── scrollToFocus ────────────────────────────────────────────────────────
-  // Smoothly scrolls the list so the first message of the active conversation
-  // pair is pinned at the top of the visible area. Falls back to scrollToEnd
-  // for index 0 (first-ever message) or empty lists.
-  const scrollToFocus = useCallback(
-    (idx: number, animated = true) => {
-      if (idx <= 0 || messages.length === 0) {
-        listRef.current?.scrollToEnd({ animated });
-        return;
+  // ── Scroll helpers ────────────────────────────────────────────────────────
+  /**
+   * Scrolls so `msgId` is at the very top of the visible area.
+   * Falls back to scrollToEnd if the layout hasn't been measured yet.
+   */
+  const scrollToMsg = useCallback(
+    (msgId: string, animated = true) => {
+      const y = msgYRef.current.get(msgId);
+      if (y !== undefined) {
+        // Subtract a small amount of top padding so the bubble breathes.
+        scrollRef.current?.scrollTo({ y: Math.max(0, y - 12), animated });
+      } else {
+        scrollRef.current?.scrollToEnd({ animated });
       }
-      const safeIdx = Math.min(idx, messages.length - 1);
-      listRef.current?.scrollToIndex({
-        index: safeIdx,
-        animated,
-        viewPosition: 0,  // pin to top of visible area
-        viewOffset: 4,
-      });
     },
-    [messages.length],
+    [],
   );
 
-  // ── Keyboard listeners (manual avoidance) ───────────────────────────────
+  // ── Keyboard listeners ────────────────────────────────────────────────────
   useEffect(() => {
     const showSub = Keyboard.addListener('keyboardDidShow', (e) => {
       setKbHeight(e.endCoordinates.height);
-      // Re-pin the active conversation to the top so it isn't hidden behind
-      // the keyboard.
-      const fi = focusScrollIdxRef.current;
-      setTimeout(() => scrollToFocus(fi), 60);
+      const id = focusMsgIdRef.current;
+      setTimeout(() => {
+        if (id) scrollToMsg(id, true);
+        else scrollRef.current?.scrollToEnd({ animated: true });
+      }, 60);
     });
     const hideSub = Keyboard.addListener('keyboardDidHide', () => {
       setKbHeight(0);
     });
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, [scrollToFocus]);
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, [scrollToMsg]);
 
-  // ── Pending-focus effect ─────────────────────────────────────────────────
-  // After send() adds the new user message to the list, scroll to it and
-  // mark messages from that index onwards as "new" (→ fade-in animation).
+  // ── onLayout callback for each message row ────────────────────────────────
+  const handleMsgLayout = useCallback(
+    (msgId: string, e: LayoutChangeEvent) => {
+      const y = e.nativeEvent.layout.y;
+      msgYRef.current.set(msgId, y);
+
+      // If this is the message we were waiting for (just rendered after send),
+      // scroll to it now that we have its y position.
+      if (pendingFocusIdRef.current === msgId) {
+        pendingFocusIdRef.current = null;
+        setTimeout(() => scrollToMsg(msgId, true), 40);
+      }
+    },
+    [scrollToMsg],
+  );
+
+  // ── Watch messages for new sends ──────────────────────────────────────────
+  // pendingFocusRef holds the expected index of the new user message.
+  // We stash the index at send time and resolve the ID once messages updates.
+  const pendingFocusIndexRef = useRef<number | null>(null);
+
   useEffect(() => {
-    if (pendingFocusRef.current !== null && messages.length > pendingFocusRef.current) {
-      const idx = pendingFocusRef.current;
-      pendingFocusRef.current = null;
-      focusScrollIdxRef.current = idx;
-      setAnimateFromIdx(idx);
-      setTimeout(() => scrollToFocus(idx), 100);
-    }
-  }, [messages, setAnimateFromIdx, scrollToFocus]);
+    if (pendingFocusIndexRef.current !== null && messages.length > pendingFocusIndexRef.current) {
+      const idx = pendingFocusIndexRef.current;
+      pendingFocusIndexRef.current = null;
 
-  // ── Send ─────────────────────────────────────────────────────────────────
+      const msg = messages[idx];
+      if (!msg) return;
+
+      focusMsgIdRef.current = msg.id;
+      setAnimateFromIdx(idx);
+
+      // If onLayout already fired (fast render), scroll immediately.
+      const y = msgYRef.current.get(msg.id);
+      if (y !== undefined) {
+        setTimeout(() => scrollToMsg(msg.id, true), 60);
+      } else {
+        // Otherwise, onLayout will trigger the scroll when the row renders.
+        pendingFocusIdRef.current = msg.id;
+      }
+    }
+  }, [messages, setAnimateFromIdx, scrollToMsg]);
+
+  // ── Send ──────────────────────────────────────────────────────────────────
   const handleSend = useCallback(() => {
     Keyboard.dismiss();
-    // Record where the new user message will land so the pending-focus effect
-    // can scroll to it once FlatList has rendered it.
-    pendingFocusRef.current = messages.length;
+    pendingFocusIndexRef.current = messages.length;
     send();
   }, [send, messages.length]);
 
-  // ── New chat ─────────────────────────────────────────────────────────────
+  // ── New chat ──────────────────────────────────────────────────────────────
   const handleNewChat = useCallback(() => {
     chatSession.startNewConversation();
     labSession.startNewConversation();
     setAnimateFromIdx(undefined);
-    focusScrollIdxRef.current = 0;
+    focusMsgIdRef.current = null;
+    msgYRef.current.clear();
     setSidebarOpen(false);
   }, [chatSession, labSession, setAnimateFromIdx]);
 
-  // ── Load conversation ────────────────────────────────────────────────────
+  // ── Load conversation ─────────────────────────────────────────────────────
   const handleSelectConversation = useCallback(
     async (conv: ConversationSummary) => {
       const targetMode: ChatMode = conv.model === LAB_MODEL ? 'lab' : 'chat';
@@ -227,48 +243,23 @@ export default function ChatScreen() {
           }));
         target.loadConversation(conv.id, displayMessages);
 
-        // Scroll to the last user message so the final exchange is visible.
-        // No fade-in animation — this is a history load, not a fresh send.
-        const lastUserIdx = displayMessages.reduce(
-          (best, m, i) => (m.role === 'user' ? i : best),
-          0,
-        );
+        // Focus on the last user message — no fade-in animation for history loads.
+        const lastUserMsg = [...displayMessages].reverse().find((m) => m.role === 'user');
         setAnimateFromIdx(undefined);
-        focusScrollIdxRef.current = lastUserIdx;
+        focusMsgIdRef.current = lastUserMsg?.id ?? null;
+        msgYRef.current.clear();
         setMode(targetMode);
         setSidebarOpen(false);
-        setTimeout(() => scrollToFocus(lastUserIdx, false), 150);
+
+        // Scroll after layouts settle
+        if (lastUserMsg) {
+          setTimeout(() => scrollToMsg(lastUserMsg.id, false), 200);
+        }
       } catch {
         Alert.alert('Could not open chat', 'Please check your connection and try again.');
       }
     },
-    [chatSession, labSession, setAnimateFromIdx, scrollToFocus],
-  );
-
-  // ── renderItem ────────────────────────────────────────────────────────────
-  const renderItem = useCallback(
-    ({ item, index }: { item: DisplayMessage; index: number }) => {
-      // A message is "new" (and should animate in) only if it belongs to the
-      // current send — i.e. its index is at or after animateFromIdx.
-      const isNew = animateFromIdx !== undefined && index >= animateFromIdx;
-
-      const bubble =
-        item.pending && item.text.length === 0 ? (
-          item.imageGenerating ? (
-            <ImageGenIndicator />
-          ) : (
-            <TypingDots label={item.searchStatus} />
-          )
-        ) : (
-          <ChatBubble
-            message={item}
-            onRegenerate={item.role === 'assistant' ? regenerateMessage : undefined}
-          />
-        );
-
-      return <FocusBubble isNew={isNew}>{bubble}</FocusBubble>;
-    },
-    [animateFromIdx, regenerateMessage],
+    [chatSession, labSession, setAnimateFromIdx, scrollToMsg],
   );
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -277,18 +268,13 @@ export default function ChatScreen() {
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <Pressable
-          onPress={() => {
-            setSidebarOpen(true);
-            setRefreshToken((t) => t + 1);
-          }}
+          onPress={() => { setSidebarOpen(true); setRefreshToken((t) => t + 1); }}
           hitSlop={10}
           style={styles.headerBtn}
         >
           <Ionicons name="menu-outline" size={24} color={colors.foreground} />
         </Pressable>
-
         <ModeSwitch value={mode} onChange={setMode} />
-
         <Pressable onPress={handleNewChat} hitSlop={10} style={styles.headerBtn}>
           <Ionicons name="create-outline" size={22} color={colors.foreground} />
         </Pressable>
@@ -304,46 +290,51 @@ export default function ChatScreen() {
         <View style={styles.flex}>
           {messages.length === 0 ? (
             <View style={styles.empty}>
-              <View style={styles.emptyMark}>
-                <BrandMark size={48} />
-              </View>
+              <View style={styles.emptyMark}><BrandMark size={48} /></View>
               <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
-                {copy.emptyTitle}
+                {CHAT_COPY.emptyTitle}
               </Text>
               <Text style={[styles.emptyBody, { color: colors.mutedForeground }]}>
-                {copy.emptyBody}
+                {CHAT_COPY.emptyBody}
               </Text>
             </View>
           ) : (
-            <FlatList
-              ref={listRef}
-              data={messages}
-              keyExtractor={(item) => item.id}
-              renderItem={renderItem}
-              // extraData ensures renderItem re-evaluates when animateFromIdx changes
-              // (otherwise memoized items wouldn't pick up the new isNew values).
-              extraData={animateFromIdx}
+            // ScrollView instead of FlatList so we can use exact pixel y-offsets
+            // from onLayout to scroll precisely — FlatList's scrollToIndex is
+            // unreliable without fixed item heights.
+            <ScrollView
+              ref={scrollRef}
               contentContainerStyle={styles.listContent}
               keyboardDismissMode="interactive"
               keyboardShouldPersistTaps="handled"
-              // Keep a generous render window so history is immediately available
-              // when the user scrolls up, without virtualization gaps.
-              initialNumToRender={30}
-              windowSize={12}
-              onScrollToIndexFailed={({ index }) => {
-                // The item isn't in the render window yet — scroll to end to
-                // force it into view, then retry.
-                listRef.current?.scrollToEnd({ animated: false });
-                setTimeout(() => {
-                  listRef.current?.scrollToIndex({
-                    index,
-                    animated: true,
-                    viewPosition: 0,
-                    viewOffset: 4,
-                  });
-                }, 120);
-              }}
-            />
+              showsVerticalScrollIndicator={false}
+            >
+              {messages.map((item, index) => {
+                const isNew = animateFromIdx !== undefined && index >= animateFromIdx;
+                const inner =
+                  item.pending && item.text.length === 0 ? (
+                    item.imageGenerating ? (
+                      <ImageGenIndicator />
+                    ) : (
+                      <TypingDots label={item.searchStatus} />
+                    )
+                  ) : (
+                    <ChatBubble
+                      message={item}
+                      onRegenerate={item.role === 'assistant' ? regenerateMessage : undefined}
+                    />
+                  );
+
+                return (
+                  <View
+                    key={item.id}
+                    onLayout={(e) => handleMsgLayout(item.id, e)}
+                  >
+                    <FocusBubble isNew={isNew}>{inner}</FocusBubble>
+                  </View>
+                );
+              })}
+            </ScrollView>
           )}
 
           {/* paddingBottom expands when the keyboard is up to push the input
@@ -363,7 +354,7 @@ export default function ChatScreen() {
               onImagePicked={setPendingImage}
               busy={busy || lastIsPending}
               disabled={guestBlocked}
-              placeholder={guestBlocked ? 'Sign in to keep chatting…' : copy.placeholder}
+              placeholder={guestBlocked ? 'Sign in to keep chatting…' : CHAT_COPY.placeholder}
             />
           </View>
         </View>
@@ -384,7 +375,6 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   flex: { flex: 1 },
-  // Keeps a view mounted (state preserved) but completely invisible + layout-free
   hidden: { display: 'none' },
   header: {
     flexDirection: 'row',
@@ -407,20 +397,7 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 40,
   },
-  emptyMark: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 6,
-  },
-  emptyTitle: {
-    fontSize: 19,
-    fontFamily: 'SpaceGrotesk_600SemiBold',
-    letterSpacing: -0.2,
-  },
-  emptyBody: {
-    fontSize: 13,
-    fontFamily: 'Inter_400Regular',
-    textAlign: 'center',
-    lineHeight: 19,
-  },
+  emptyMark: { alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
+  emptyTitle: { fontSize: 19, fontFamily: 'SpaceGrotesk_600SemiBold', letterSpacing: -0.2 },
+  emptyBody: { fontSize: 13, fontFamily: 'Inter_400Regular', textAlign: 'center', lineHeight: 19 },
 });
