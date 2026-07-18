@@ -27,7 +27,18 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon-black.png",
         "backgroundColor": "#000000"
-      }
+      },
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": false,
+          "data": [
+            { "scheme": "https" },
+            { "scheme": "http" }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "web": {
       "favicon": "./assets/images/icon-black.png"

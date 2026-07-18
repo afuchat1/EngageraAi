@@ -4,9 +4,9 @@ import { Image } from 'expo-image';
 import { SvgXml } from 'react-native-svg';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
+import { useBrowser } from '@/contexts/BrowserContext';
 import { parseMarkdown, type InlineSegment, type MarkdownBlock } from '@/lib/markdown';
 import { faviconSrc } from '@/lib/favicon';
 
@@ -106,13 +106,12 @@ function SvgBlockView({ code }: { code: string }) {
  */
 function LinkFavicon({ url, color }: { url: string; color: string }) {
   const [failed, setFailed] = useState(false);
+  const { open } = useBrowser();
   const src = faviconSrc(url);
-  const open = () => {
-    WebBrowser.openBrowserAsync(url).catch(() => {});
-  };
+  const handlePress = () => open(url);
   if (failed || !src) {
     return (
-      <Text onPress={open} style={{ color }}>
+      <Text onPress={handlePress} style={{ color }}>
         {' '}
         <Ionicons name="link" size={13} color={color} />
         {' '}
@@ -120,7 +119,7 @@ function LinkFavicon({ url, color }: { url: string; color: string }) {
     );
   }
   return (
-    <Text onPress={open}>
+    <Text onPress={handlePress}>
       {' '}
       <RNImage source={{ uri: src }} style={styles.faviconInline} onError={() => setFailed(true)} />
       {' '}
@@ -141,6 +140,7 @@ function InlineText({
   codeBg: string;
   style?: object;
 }) {
+  const { open } = useBrowser();
   return (
     <Text style={style} selectable>
       {segments.map((seg, idx) => {
@@ -148,7 +148,7 @@ function InlineText({
           return (
             <Text key={idx}>
               {seg.text ? (
-                <Text onPress={() => WebBrowser.openBrowserAsync(seg.link!).catch(() => {})} style={[styles.linkLabel, { color }]}>
+                <Text onPress={() => open(seg.link!)} style={[styles.linkLabel, { color }]}>
                   {seg.text}
                 </Text>
               ) : null}

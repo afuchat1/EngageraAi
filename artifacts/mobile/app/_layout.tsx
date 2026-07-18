@@ -1,10 +1,12 @@
 import React, { useEffect } from 'react';
+import { Linking } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { BrowserProvider, useBrowser } from '@/contexts/BrowserContext';
 import {
   Inter_400Regular,
   Inter_500Medium,
@@ -27,31 +29,58 @@ SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
 
+/**
+ * Listens for URLs shared into the app from other apps (Android intent
+ * filters) and opens them immediately in the in-app browser.
+ */
+function IncomingUrlHandler() {
+  const { open } = useBrowser();
+
+  useEffect(() => {
+    // URL that launched the app cold (app was not running).
+    Linking.getInitialURL().then((url) => {
+      if (url && /^https?:\/\//i.test(url)) open(url);
+    });
+
+    // URL received while the app is already running (foreground / background).
+    const sub = Linking.addEventListener('url', ({ url }) => {
+      if (url && /^https?:\/\//i.test(url)) open(url);
+    });
+
+    return () => sub.remove();
+  }, [open]);
+
+  return null;
+}
+
 function RootLayoutNav() {
   return (
-    <Stack screenOptions={{ headerBackTitle: 'Back' }}>
-      <Stack.Screen name="index" options={{ headerShown: false }} />
-      <Stack.Screen
-        name="account"
-        options={{
-          presentation: 'formSheet',
-          sheetAllowedDetents: [0.6],
-          sheetGrabberVisible: true,
-          headerShown: false,
-          contentStyle: { backgroundColor: colors.light.background },
-        }}
-      />
-      <Stack.Screen
-        name="settings"
-        options={{
-          presentation: 'formSheet',
-          sheetAllowedDetents: [0.85],
-          sheetGrabberVisible: true,
-          headerShown: false,
-          contentStyle: { backgroundColor: colors.light.background },
-        }}
-      />
-    </Stack>
+    <>
+      <IncomingUrlHandler />
+      <Stack screenOptions={{ headerBackTitle: 'Back' }}>
+        <Stack.Screen name="index" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="account"
+          options={{
+            presentation: 'formSheet',
+            sheetAllowedDetents: [0.6],
+            sheetGrabberVisible: true,
+            headerShown: false,
+            contentStyle: { backgroundColor: colors.light.background },
+          }}
+        />
+        <Stack.Screen
+          name="settings"
+          options={{
+            presentation: 'formSheet',
+            sheetAllowedDetents: [0.85],
+            sheetGrabberVisible: true,
+            headerShown: false,
+            contentStyle: { backgroundColor: colors.light.background },
+          }}
+        />
+      </Stack>
+    </>
   );
 }
 
@@ -85,8 +114,10 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView>
             <KeyboardProvider>
-              <StatusBar style="light" />
-              <RootLayoutNav />
+              <BrowserProvider>
+                <StatusBar style="light" />
+                <RootLayoutNav />
+              </BrowserProvider>
             </KeyboardProvider>
           </GestureHandlerRootView>
         </QueryClientProvider>
