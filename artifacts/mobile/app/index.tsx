@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  Dimensions,
   Keyboard,
   LayoutChangeEvent,
   Pressable,
@@ -389,7 +390,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  listContent: { padding: 16, paddingBottom: 4 },
+  // Large paddingBottom = the full screen height. Without this, when chat
+  // content is shorter than the screen, scrollTo() has no room to move and the
+  // previous conversation stays visible. The padding is invisible whitespace —
+  // the user only sees it if they scroll all the way past the last message.
+  listContent: { padding: 16, paddingBottom: Dimensions.get('window').height },
   empty: {
     flex: 1,
     alignItems: 'center',
