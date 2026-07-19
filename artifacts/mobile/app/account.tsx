@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { useAuth } from '@/hooks/useAuth';
@@ -9,7 +9,10 @@ import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollV
 export default function AccountSheet() {
   const colors = useColors();
   const { user, displayName, signIn, signUp, signOut } = useAuth();
-  const [mode, setMode] = useState<'signIn' | 'signUp'>('signIn');
+  const params = useLocalSearchParams<{ mode?: string }>();
+  const [mode, setMode] = useState<'signIn' | 'signUp'>(
+    params.mode === 'signUp' ? 'signUp' : 'signIn',
+  );
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
