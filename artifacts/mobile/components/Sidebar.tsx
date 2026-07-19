@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Dimensions,
   FlatList,
   Platform,
@@ -26,6 +25,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { BrandMark, Wordmark } from '@/components/BrandMark';
 import { CHAT_MODEL, LAB_MODEL } from '@/lib/chat';
 import { ConversationSummary, deleteConversation, listConversations } from '@/lib/conversations';
+import { useDialog } from '@/contexts/DialogContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const PANEL_WIDTH = Math.min(320, SCREEN_WIDTH * 0.84);
@@ -57,6 +57,7 @@ function timeAgo(iso: string): string {
 
 export function Sidebar({ open, onClose, onNewChat, onSelectConversation, activeConversationId, refreshToken }: Props) {
   const colors = useColors();
+  const { show: showDialog } = useDialog();
   const insets = useSafeAreaInsets();
   const { user, displayName, signOut } = useAuth();
   const translateX = useSharedValue(-PANEL_WIDTH);
@@ -110,7 +111,7 @@ export function Sidebar({ open, onClose, onNewChat, onSelectConversation, active
   }, [conversations, query]);
 
   const confirmDelete = (conv: ConversationSummary) => {
-    Alert.alert('Delete chat?', `"${conv.title}" will be permanently deleted.`, [
+    showDialog('Delete chat?', `"${conv.title}" will be permanently deleted.`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',

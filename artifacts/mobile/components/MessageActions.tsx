@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Alert, Pressable, Share, StyleSheet, View } from 'react-native';
+import { Pressable, Share, StyleSheet, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
 import { Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
+import { useDialog } from '@/contexts/DialogContext';
 
 /**
  * Icon-only action row shown under a finished assistant message.
@@ -58,8 +59,10 @@ export function MessageActions({
     }
   };
 
+  const { show: showDialog } = useDialog();
+
   const handleMore = () => {
-    Alert.alert('Message options', undefined, [
+    showDialog('Message options', undefined, [
       ...(onRegenerate ? [{ text: 'Regenerate', onPress: onRegenerate }] : []),
       { text: 'Cancel', style: 'cancel' as const },
     ]);

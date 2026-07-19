@@ -7,6 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { BrowserProvider, useBrowser } from '@/contexts/BrowserContext';
+import { DialogProvider } from '@/contexts/DialogContext';
 import {
   Inter_400Regular,
   Inter_500Medium,
@@ -103,8 +104,10 @@ export default function RootLayout() {
           <GestureHandlerRootView>
             <KeyboardProvider>
               <BrowserProvider>
-                <StatusBar style="light" />
-                <RootLayoutNav />
+                <DialogProvider>
+                  <StatusBar style="light" />
+                  <RootLayoutNav />
+                </DialogProvider>
               </BrowserProvider>
             </KeyboardProvider>
           </GestureHandlerRootView>

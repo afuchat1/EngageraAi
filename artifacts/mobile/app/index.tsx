@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Alert,
   Dimensions,
   Keyboard,
   LayoutChangeEvent,
@@ -31,6 +30,7 @@ import { Sidebar } from '@/components/Sidebar';
 import { CHAT_MODEL, LAB_MODEL } from '@/lib/chat';
 import { fetchConversationMessages, type ConversationSummary } from '@/lib/conversations';
 import { SearchEngine } from '@/components/SearchEngine';
+import { useDialog } from '@/contexts/DialogContext';
 
 const CHAT_COPY = {
   placeholder: 'Message Engagera…',
@@ -65,6 +65,7 @@ function FocusBubble({ isNew, children }: { isNew: boolean; children: React.Reac
 // ─── ChatScreen ───────────────────────────────────────────────────────────────
 export default function ChatScreen() {
   const colors = useColors();
+  const { show: showDialog } = useDialog();
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
   const [mode, setMode] = useState<ChatMode>('chat');
@@ -118,7 +119,7 @@ export default function ChatScreen() {
   // Guest cap alert
   useEffect(() => {
     if (!guestBlocked) return;
-    Alert.alert(
+    showDialog(
       'Free messages used up',
       "You've used all your free guest messages. Create a free account to keep chatting, generate images, and unlock all models.",
       [
@@ -126,7 +127,7 @@ export default function ChatScreen() {
         { text: 'Maybe later', style: 'cancel' },
       ],
     );
-  }, [guestBlocked]);
+  }, [guestBlocked, showDialog]);
 
   // ── Scroll helpers ────────────────────────────────────────────────────────
   /**
@@ -257,7 +258,7 @@ export default function ChatScreen() {
           setTimeout(() => scrollToMsg(lastUserMsg.id, false), 200);
         }
       } catch {
-        Alert.alert('Could not open chat', 'Please check your connection and try again.');
+        showDialog('Could not open chat', 'Please check your connection and try again.');
       }
     },
     [chatSession, labSession, setAnimateFromIdx, scrollToMsg],

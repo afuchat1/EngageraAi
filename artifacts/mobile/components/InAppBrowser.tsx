@@ -16,7 +16,6 @@
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Alert,
   FlatList,
   Modal,
   Platform,
@@ -32,6 +31,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import WebView, { type WebViewNavigation } from 'react-native-webview';
 import { useColors } from '@/hooks/useColors';
+import { useDialog } from '@/contexts/DialogContext';
 import {
   addHistoryEntry,
   clearBrowserHistory,
@@ -256,8 +256,10 @@ export function InAppBrowser({ url, onClose, onSearchFallback }: Props) {
     setShowHistory(true);
   }, []);
 
+  const { show: showDialog } = useDialog();
+
   const handleClearHistory = useCallback(() => {
-    Alert.alert('Clear history', 'Remove all browsing history?', [
+    showDialog('Clear history', 'Remove all browsing history?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Clear',
@@ -265,7 +267,7 @@ export function InAppBrowser({ url, onClose, onSearchFallback }: Props) {
         onPress: async () => { await clearBrowserHistory(); setHistory([]); },
       },
     ]);
-  }, []);
+  }, [showDialog]);
 
   const openHistoryUrl = useCallback((entry: HistoryEntry) => {
     setShowHistory(false);

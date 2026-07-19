@@ -10,7 +10,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   Dimensions,
   FlatList,
@@ -29,6 +28,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useBrowser } from '@/contexts/BrowserContext';
+import { useDialog } from '@/contexts/DialogContext';
 import { Markdown } from '@/components/Markdown';
 import { streamChat, LAB_MODEL } from '@/lib/chat';
 import {
@@ -984,6 +984,7 @@ const land = StyleSheet.create({
 
 export function SearchEngine({ topPad }: { topPad: number }) {
   const colors  = useColors();
+  const { show: showDialog } = useDialog();
   const insets  = useSafeAreaInsets();
   const inputRef = useRef<TextInput>(null);
   const debRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1223,7 +1224,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
           history={history}
           onSearch={(q) => { setQuery(q); doSearch(q); }}
           onRemove={(q) => removeFromHistory(q).then(() => loadSearchHistory().then(setHistory))}
-          onClearHistory={() => Alert.alert('Clear history', 'Remove all recent searches?', [
+          onClearHistory={() => showDialog('Clear history', 'Remove all recent searches?', [
             { text: 'Cancel', style: 'cancel' },
             { text: 'Clear all', style: 'destructive', onPress: () => clearSearchHistory().then(() => setHistory([])) },
           ])} />

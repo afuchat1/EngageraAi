@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { useAuth } from '@/hooks/useAuth';
 import { deleteConversation, listConversations } from '@/lib/conversations';
+import { useDialog } from '@/contexts/DialogContext';
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   const colors = useColors();
@@ -59,10 +60,11 @@ function Row({
 export default function SettingsScreen() {
   const colors = useColors();
   const { user, displayName, signOut } = useAuth();
+  const { show: showDialog } = useDialog();
   const [clearing, setClearing] = useState(false);
 
   const clearHistory = () => {
-    Alert.alert('Clear all conversations?', 'This deletes every saved chat in Chat and Lab. This cannot be undone.', [
+    showDialog('Clear all conversations?', 'This deletes every saved chat in Chat and Lab. This cannot be undone.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Clear all',
@@ -72,9 +74,9 @@ export default function SettingsScreen() {
           try {
             const all = await listConversations();
             await Promise.all(all.map((c) => deleteConversation(c.id).catch(() => undefined)));
-            Alert.alert('Done', 'Your conversation history has been cleared.');
+            showDialog('Done', 'Your conversation history has been cleared.');
           } catch {
-            Alert.alert('Something went wrong', 'Could not clear history. Please try again.');
+            showDialog('Something went wrong', 'Could not clear history. Please try again.');
           } finally {
             setClearing(false);
           }
