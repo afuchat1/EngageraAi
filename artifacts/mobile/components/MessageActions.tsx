@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Alert, Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, Share, StyleSheet, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
@@ -7,9 +7,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 
 /**
- * Compact action row shown under a finished assistant message.
- * Actions: copy · thumbs up · thumbs down · listen · share · more (delete)
- * Mirrors the web app's MessageActions bar in capabilities and feel.
+ * Icon-only action row shown under a finished assistant message.
+ * Bold pill buttons — no text labels.
+ * Actions: copy · thumbs-up · thumbs-down · listen · share · retry
  */
 export function MessageActions({
   text,
@@ -50,16 +50,6 @@ export function MessageActions({
     });
   };
 
-  const handleDownload = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    try {
-      // Share as plain text so the native sheet offers "Save to Files" on Android/iOS.
-      await Share.share({ message: text, title: 'Save message' });
-    } catch {
-      // User cancelled — nothing to surface.
-    }
-  };
-
   const handleShare = async () => {
     try {
       await Share.share({ message: text });
@@ -80,58 +70,82 @@ export function MessageActions({
 
   return (
     <View style={styles.row}>
-      <ActionButton
+      <Btn
         icon={copied ? 'checkmark' : 'copy-outline'}
         color={copied ? activeColor : mutedColor}
-        label="Copy"
+        active={copied}
         onPress={handleCopy}
+        colors={colors}
       />
-      <ActionButton
+      <Btn
         icon="thumbs-up-outline"
         color={feedback === 'up' ? activeColor : mutedColor}
-        label="Good"
+        active={feedback === 'up'}
         onPress={() => handleFeedback('up')}
+        colors={colors}
       />
-      <ActionButton
+      <Btn
         icon="thumbs-down-outline"
         color={feedback === 'down' ? activeColor : mutedColor}
-        label="Bad"
+        active={feedback === 'down'}
         onPress={() => handleFeedback('down')}
+        colors={colors}
       />
-      <ActionButton
+      <Btn
         icon={speaking ? 'stop-circle-outline' : 'volume-medium-outline'}
         color={speaking ? activeColor : mutedColor}
-        label={speaking ? 'Stop' : 'Listen'}
+        active={speaking}
         onPress={handleSpeak}
+        colors={colors}
       />
-      <ActionButton icon="download-outline" color={mutedColor} label="Save" onPress={handleDownload} />
-      <ActionButton icon="share-outline" color={mutedColor} label="Share" onPress={handleShare} />
+      <Btn
+        icon="share-outline"
+        color={mutedColor}
+        onPress={handleShare}
+        colors={colors}
+      />
       {onRegenerate && (
-        <ActionButton icon="refresh-outline" color={mutedColor} label="Retry" onPress={handleMore} />
+        <Btn
+          icon="refresh-outline"
+          color={mutedColor}
+          onPress={handleMore}
+          colors={colors}
+        />
       )}
     </View>
   );
 }
 
-function ActionButton({
+function Btn({
   icon,
   color,
-  label,
+  active,
   onPress,
+  colors,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   color: string;
-  label: string;
+  active?: boolean;
   onPress: () => void;
+  colors: ReturnType<typeof useColors>;
 }) {
   return (
     <Pressable
       onPress={onPress}
       hitSlop={8}
-      style={({ pressed }) => [styles.btn, pressed && styles.btnPressed]}
+      style={({ pressed }) => [
+        styles.btn,
+        {
+          borderColor: active ? colors.foreground : 'rgba(255,255,255,0.13)',
+          backgroundColor: active
+            ? colors.foreground + '18'
+            : pressed
+            ? 'rgba(255,255,255,0.08)'
+            : 'transparent',
+        },
+      ]}
     >
-      <Ionicons name={icon} size={15} color={color} />
-      <Text style={[styles.btnLabel, { color }]}>{label}</Text>
+      <Ionicons name={icon} size={17} color={color} />
     </Pressable>
   );
 }
@@ -140,7 +154,6 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
     gap: 6,
     marginTop: 8,
     paddingTop: 8,
@@ -148,20 +161,11 @@ const styles = StyleSheet.create({
     borderTopColor: 'rgba(255,255,255,0.06)',
   },
   btn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    height: 30,
+    width: 34,
+    height: 34,
     borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.10)',
-  },
-  btnPressed: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
-  },
-  btnLabel: {
-    fontSize: 12,
-    fontFamily: 'Inter_700Bold',
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
