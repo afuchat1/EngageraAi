@@ -39,7 +39,7 @@ export function Wordmark({ size = 17 }: { size?: number }) {
 
 const styles = StyleSheet.create({
   word: {
-    fontFamily: 'SpaceGrotesk_700Bold',
+    fontFamily: 'Inter_700Bold',
     letterSpacing: -0.4,
   },
 });

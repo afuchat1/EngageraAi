@@ -144,7 +144,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 20,
   },
-  title: { fontSize: 22, fontFamily: 'SpaceGrotesk_700Bold', letterSpacing: -0.3 },
+  title: { fontSize: 22, fontFamily: 'Inter_700Bold', letterSpacing: -0.3 },
   section: { marginBottom: 22 },
   sectionTitle: {
     fontSize: 11,

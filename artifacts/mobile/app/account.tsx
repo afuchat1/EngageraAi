@@ -125,7 +125,7 @@ export default function AccountSheet() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { padding: 24, paddingTop: 32, gap: 12 },
-  title: { fontSize: 24, fontFamily: 'SpaceGrotesk_700Bold', letterSpacing: -0.3 },
+  title: { fontSize: 24, fontFamily: 'Inter_700Bold', letterSpacing: -0.3 },
   body: { fontSize: 13, lineHeight: 19, marginBottom: 8, fontFamily: 'Inter_400Regular' },
   input: {
     height: 52,
@@ -143,7 +143,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 4,
   },
-  primaryButtonText: { fontSize: 16, fontFamily: 'Inter_700Bold' },
+  primaryButtonText: { fontSize: 16, fontFamily: 'Inter_700Bold', letterSpacing: -0.1 },
   switchModeBtn: { alignItems: 'center', marginTop: 8 },
   continueGuestBtn: { alignItems: 'center', marginTop: 4 },
   switchModeText: { fontSize: 13, fontFamily: 'Inter_400Regular' },

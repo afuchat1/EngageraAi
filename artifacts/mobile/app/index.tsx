@@ -403,6 +403,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
   },
   emptyMark: { alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
-  emptyTitle: { fontSize: 19, fontFamily: 'SpaceGrotesk_600SemiBold', letterSpacing: -0.2 },
+  emptyTitle: { fontSize: 19, fontFamily: 'Inter_700Bold', letterSpacing: -0.2 },
   emptyBody: { fontSize: 13, fontFamily: 'Inter_400Regular', textAlign: 'center', lineHeight: 19 },
 });

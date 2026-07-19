@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Alert, Pressable, Share, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
@@ -50,6 +50,16 @@ export function MessageActions({
     });
   };
 
+  const handleDownload = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    try {
+      // Share as plain text so the native sheet offers "Save to Files" on Android/iOS.
+      await Share.share({ message: text, title: 'Save message' });
+    } catch {
+      // User cancelled — nothing to surface.
+    }
+  };
+
   const handleShare = async () => {
     try {
       await Share.share({ message: text });
@@ -73,26 +83,31 @@ export function MessageActions({
       <ActionButton
         icon={copied ? 'checkmark' : 'copy-outline'}
         color={copied ? activeColor : mutedColor}
+        label="Copy"
         onPress={handleCopy}
       />
       <ActionButton
         icon="thumbs-up-outline"
         color={feedback === 'up' ? activeColor : mutedColor}
+        label="Good"
         onPress={() => handleFeedback('up')}
       />
       <ActionButton
         icon="thumbs-down-outline"
         color={feedback === 'down' ? activeColor : mutedColor}
+        label="Bad"
         onPress={() => handleFeedback('down')}
       />
       <ActionButton
         icon={speaking ? 'stop-circle-outline' : 'volume-medium-outline'}
         color={speaking ? activeColor : mutedColor}
+        label={speaking ? 'Stop' : 'Listen'}
         onPress={handleSpeak}
       />
-      <ActionButton icon="share-outline" color={mutedColor} onPress={handleShare} />
+      <ActionButton icon="download-outline" color={mutedColor} label="Save" onPress={handleDownload} />
+      <ActionButton icon="share-outline" color={mutedColor} label="Share" onPress={handleShare} />
       {onRegenerate && (
-        <ActionButton icon="ellipsis-horizontal" color={mutedColor} onPress={handleMore} />
+        <ActionButton icon="refresh-outline" color={mutedColor} label="Retry" onPress={handleMore} />
       )}
     </View>
   );
@@ -101,10 +116,12 @@ export function MessageActions({
 function ActionButton({
   icon,
   color,
+  label,
   onPress,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   color: string;
+  label: string;
   onPress: () => void;
 }) {
   return (
@@ -113,7 +130,8 @@ function ActionButton({
       hitSlop={8}
       style={({ pressed }) => [styles.btn, pressed && styles.btnPressed]}
     >
-      <Ionicons name={icon} size={16} color={color} />
+      <Ionicons name={icon} size={15} color={color} />
+      <Text style={[styles.btnLabel, { color }]}>{label}</Text>
     </Pressable>
   );
 }
@@ -122,20 +140,28 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
-    marginTop: 6,
-    paddingTop: 6,
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 8,
+    paddingTop: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: 'rgba(255,255,255,0.06)',
   },
   btn: {
-    width: 32,
-    height: 32,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 8,
+    gap: 4,
+    paddingHorizontal: 10,
+    height: 30,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.10)',
   },
   btnPressed: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  btnLabel: {
+    fontSize: 12,
+    fontFamily: 'Inter_700Bold',
   },
 });

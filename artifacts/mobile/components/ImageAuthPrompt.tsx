@@ -6,7 +6,7 @@ import { useColors } from '@/hooks/useColors';
 
 /**
  * Shown in the chat when a guest tries to generate an image.
- * Clean card — no bubble chrome — with two CTA buttons.
+ * Clean card — no bubble chrome — with two CTA pill buttons.
  */
 export function ImageAuthPrompt() {
   const colors = useColors();
@@ -78,7 +78,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 15,
-    fontFamily: 'SpaceGrotesk_600SemiBold',
+    fontFamily: 'Inter_700Bold',
     letterSpacing: -0.1,
   },
   body: {
@@ -91,24 +91,24 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   primary: {
-    height: 42,
-    borderRadius: 12,
+    height: 44,
+    borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
   },
   primaryText: {
     fontSize: 14,
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: 'Inter_700Bold',
   },
   secondary: {
-    height: 42,
-    borderRadius: 12,
+    height: 44,
+    borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
   },
   secondaryText: {
     fontSize: 14,
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Inter_700Bold',
   },
 });

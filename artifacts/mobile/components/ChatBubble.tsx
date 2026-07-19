@@ -1,5 +1,6 @@
-import React, { memo, useEffect } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import React, { memo, useEffect, useState } from 'react';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ImageLightbox } from '@/components/ImageLightbox';
 import Animated, { useAnimatedStyle, useSharedValue, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
 import { useColors } from '@/hooks/useColors';
 import { SourceStrip } from '@/components/SourceStrip';
@@ -76,6 +77,8 @@ export const ChatBubble = memo(function ChatBubble({
     );
   }
 
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+
   const isUser = message.role === 'user';
   const isLive = !isUser && (message.streaming || message.pending);
   const plain = message.text.length > 0 ? toPlainText(message.text) : '';
@@ -89,7 +92,16 @@ export const ChatBubble = memo(function ChatBubble({
         {!isUser && message.weatherInfo ? <WeatherWidget /> : null}
 
         {message.imageUri ? (
-          <Image source={{ uri: message.imageUri }} style={styles.image} />
+          <>
+            <Pressable onPress={() => setLightboxOpen(true)} style={styles.imagePressable}>
+              <Image source={{ uri: message.imageUri }} style={styles.image} />
+            </Pressable>
+            <ImageLightbox
+              uri={message.imageUri}
+              visible={lightboxOpen}
+              onClose={() => setLightboxOpen(false)}
+            />
+          </>
         ) : null}
         {isUser ? (
           plain.length > 0 ? (
@@ -141,10 +153,13 @@ const styles = StyleSheet.create({
   assistantBody: {
     width: '100%',
   },
+  imagePressable: {
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
   image: {
     width: 200,
     height: 200,
-    borderRadius: 14,
   },
   text: {
     fontSize: 16,

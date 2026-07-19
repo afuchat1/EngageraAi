@@ -14,12 +14,6 @@ import {
   Inter_700Bold,
   useFonts,
 } from '@expo-google-fonts/inter';
-import {
-  SpaceGrotesk_500Medium,
-  SpaceGrotesk_600SemiBold,
-  SpaceGrotesk_700Bold,
-  useFonts as useDisplayFonts,
-} from '@expo-google-fonts/space-grotesk';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import colors from '@/constants/colors';
@@ -91,14 +85,8 @@ export default function RootLayout() {
     Inter_600SemiBold,
     Inter_700Bold,
   });
-  const [displayLoaded, displayError] = useDisplayFonts({
-    SpaceGrotesk_500Medium,
-    SpaceGrotesk_600SemiBold,
-    SpaceGrotesk_700Bold,
-  });
-
-  const fontsLoaded = interLoaded && displayLoaded;
-  const fontError = interError || displayError;
+  const fontsLoaded = interLoaded;
+  const fontError = interError;
 
   useEffect(() => {
     if (fontsLoaded || fontError) {
