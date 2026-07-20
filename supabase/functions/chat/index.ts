@@ -919,10 +919,19 @@ async function resolveAuth(
   db: ReturnType<typeof createClient>,
   requestId: string,
 ): Promise<AuthResult> {
-  const apiKeyHeader = req.headers.get("x-engagera-api-key");
-  if (apiKeyHeader?.startsWith("eng_")) {
+  // ── API key: dedicated header (SDK) ──────────────────────────────────────
+  // Also accept "Authorization: Bearer eng_xxx" so developers who call the
+  // REST API directly without the SDK don't have to learn a custom header.
+  const dedicated = req.headers.get("x-engagera-api-key");
+  const authHeader = req.headers.get("authorization");
+  const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
+  const rawApiKey = dedicated?.startsWith("eng_") ? dedicated
+    : bearerToken?.startsWith("eng_") ? bearerToken
+    : undefined;
+
+  if (rawApiKey) {
     const keyHash = Array.from(
-      new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(apiKeyHeader))),
+      new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(rawApiKey))),
     ).map((b) => b.toString(16).padStart(2, "0")).join("");
     const { data: keyRow, error: keyErr } = await db
       .from("engagera_api_keys")
@@ -944,16 +953,16 @@ async function resolveAuth(
     return { type: "invalid_key", reason: "revoked" };
   }
 
-  const auth = req.headers.get("authorization");
-  if (auth?.startsWith("Bearer ")) {
-    const token = auth.slice(7);
-    const { data } = await db.auth.getUser(token);
+  // ── Supabase JWT (logged-in user) ─────────────────────────────────────────
+  if (bearerToken) {
+    const { data } = await db.auth.getUser(bearerToken);
     if (data.user) {
       log("info", "auth.jwt", { requestId, userId: data.user.id });
       return { type: "user", userId: data.user.id };
     }
   }
 
+  // ── Guest session ─────────────────────────────────────────────────────────
   const guestId = req.headers.get("x-guest-session-id")?.trim();
   if (guestId) return { type: "guest", guestSessionId: guestId };
 
