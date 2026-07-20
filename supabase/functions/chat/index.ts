@@ -998,26 +998,51 @@ async function persistConversation(
   hadSearch: boolean,
   requestId: string,
 ): Promise<number | null> {
-  let convId: number | null = conversationId ? Number(conversationId) : null;
+  const convId: number | null = conversationId ? Number(conversationId) : null;
 
-  if (authResult.type !== "user" && authResult.type !== "api_key") return convId;
+  // ── API key path: completely separate from user accounts ──────────────────
+  // Conversations and messages are NOT stored server-side — the developer owns
+  // their own conversation state. Usage is recorded per key, not per user.
+  if (authResult.type === "api_key") {
+    try {
+      await db.from("engagera_usage_records").insert({
+        api_key_id: authResult.apiKeyId,
+        model: aiResult.model ?? model,
+        input_tokens: aiResult.inputTokens,
+        output_tokens: aiResult.outputTokens,
+        total_tokens: aiResult.inputTokens + aiResult.outputTokens,
+      });
+    } catch { /* non-fatal */ }
+    // Update last_used_at on the key row (non-fatal)
+    try {
+      await db
+        .from("engagera_api_keys")
+        .update({ last_used_at: new Date().toISOString() })
+        .eq("id", authResult.apiKeyId);
+    } catch { /* non-fatal */ }
+    return null; // no server-side conversation ID for API key requests
+  }
+
+  // ── User (JWT) path: save conversation + messages to the user's account ───
+  if (authResult.type !== "user") return convId;
   const userId = authResult.userId;
+  let userConvId = convId;
 
   try {
-    if (!convId) {
+    if (!userConvId) {
       const title = userText.slice(0, 60) || "New conversation";
       const { data: newConv } = await db
         .from("engagera_conversations")
         .insert({ user_id: userId, title, model })
         .select("id")
         .single();
-      convId = newConv?.id ?? null;
+      userConvId = newConv?.id ?? null;
     }
-    if (convId) {
+    if (userConvId) {
       await db.from("engagera_messages").insert([
-        { conversation_id: convId, role: "user", content: userText, token_count: 0 },
+        { conversation_id: userConvId, role: "user", content: userText, token_count: 0 },
         {
-          conversation_id: convId,
+          conversation_id: userConvId,
           role: "assistant",
           content: aiResult.content,
           token_count: aiResult.outputTokens,
@@ -1039,7 +1064,7 @@ async function persistConversation(
     });
   } catch { /* non-fatal */ }
 
-  return convId;
+  return userConvId;
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -1184,12 +1209,32 @@ Deno.serve(async (req: Request) => {
 
     // ── Builder helper ────────────────────────────────────────────────────────
     function buildMessages(searchCtx: string, urlCtx: string, weatherCtx: string): ChatMessage[] {
+      const nonSystemMsgs = toChat(incomingMessages.filter((m) => m.role !== "system"));
+
+      // API key requests: honour the developer's own system prompt without
+      // overriding it. Only append live context (search/URL/weather) when data
+      // was actually fetched — never inject Engagera's branding or rules.
+      if (authResult.type === "api_key") {
+        const devSystem = incomingMessages.find((m) => m.role === "system");
+        let sysContent = devSystem ? getTextContent(devSystem.content) : "";
+        const liveCtx = [
+          urlCtx    && `Page content from URL the user shared:\n${urlCtx}`,
+          searchCtx && `Live web search results:\n${searchCtx}`,
+          weatherCtx && `Current weather data:\n${weatherCtx}`,
+        ].filter(Boolean).join("\n\n");
+        if (liveCtx) sysContent += (sysContent ? "\n\n" : "") + liveCtx;
+        return sysContent
+          ? [{ role: "system", content: sysContent }, ...nonSystemMsgs]
+          : nonSystemMsgs;
+      }
+
+      // User / guest sessions: inject Engagera's system prompt as normal.
       const hint = typeof contextHint === "string" ? contextHint : "";
       let systemPrompt = buildSystemPrompt(isDevMode ? "dev" : "default", searchCtx, urlCtx, weatherCtx);
       if (hint) systemPrompt += `\n\nContext: ${hint}`;
       return [
         { role: "system", content: systemPrompt },
-        ...toChat(incomingMessages.filter((m) => m.role !== "system")),
+        ...nonSystemMsgs,
       ];
     }
 
