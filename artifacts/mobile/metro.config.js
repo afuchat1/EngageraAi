@@ -24,6 +24,8 @@ config.resolver.blockList = [
   /artifacts\/(?!mobile)[^/]+\/node_modules\/.vite\/.*/,
   // node_modules inside individual artifact dirs (they're hoisted to workspace root)
   /artifacts\/(?!mobile)[^/]+\/node_modules\/.*/,
+  // Dotslash temp cache — these dirs can disappear mid-watch and crash Metro
+  /\.cache\/dotslash\/.*/,
 ];
 
 module.exports = config;
