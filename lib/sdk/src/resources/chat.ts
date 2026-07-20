@@ -65,11 +65,9 @@ export class Chat {
         : undefined,
       timeInfo: raw.timeInfo,
       usage: {
-        promptTokens: raw.usage?.prompt_tokens ?? 0,
-        completionTokens: raw.usage?.completion_tokens ?? 0,
-        totalTokens:
-          (raw.usage?.prompt_tokens ?? 0) +
-          (raw.usage?.completion_tokens ?? 0),
+        promptTokens: raw.usage?.inputTokens ?? raw.usage?.prompt_tokens ?? 0,
+        completionTokens: raw.usage?.outputTokens ?? raw.usage?.completion_tokens ?? 0,
+        totalTokens: raw.usage?.totalTokens ?? raw.usage?.total_tokens ?? 0,
       },
     };
   }
@@ -114,6 +112,8 @@ export class Chat {
           };
           break;
         }
+        // The edge function emits "token" events for text chunks
+        case "token":
         case "text": {
           const chunk = (event.data.text ?? event.data.content ?? "") as string;
           fullContent += chunk;
@@ -128,6 +128,8 @@ export class Chat {
           ).map(normaliseSource);
           if (rawSources.length) finalSources = rawSources;
 
+          // Usage is not included in the streaming done event — emit zeros.
+          // Full token counts are available in the non-streaming (create) path.
           yield {
             type: "done",
             content: fullContent,
@@ -135,13 +137,7 @@ export class Chat {
             conversationId: event.data.conversationId,
             sources: finalSources,
             timeInfo: event.data.timeInfo,
-            usage: {
-              promptTokens: event.data.usage?.prompt_tokens ?? 0,
-              completionTokens: event.data.usage?.completion_tokens ?? 0,
-              totalTokens:
-                (event.data.usage?.prompt_tokens ?? 0) +
-                (event.data.usage?.completion_tokens ?? 0),
-            },
+            usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
           };
           return;
         }

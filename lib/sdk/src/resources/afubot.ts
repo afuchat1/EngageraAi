@@ -81,10 +81,9 @@ export class AfuBot {
       conversationId: raw.conversationId,
       timeInfo: raw.timeInfo,
       usage: {
-        promptTokens: raw.usage?.prompt_tokens ?? 0,
-        completionTokens: raw.usage?.completion_tokens ?? 0,
-        totalTokens:
-          (raw.usage?.prompt_tokens ?? 0) + (raw.usage?.completion_tokens ?? 0),
+        promptTokens: raw.usage?.inputTokens ?? raw.usage?.prompt_tokens ?? 0,
+        completionTokens: raw.usage?.outputTokens ?? raw.usage?.completion_tokens ?? 0,
+        totalTokens: raw.usage?.totalTokens ?? raw.usage?.total_tokens ?? 0,
       },
     };
   }
