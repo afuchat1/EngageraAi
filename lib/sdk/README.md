@@ -1,9 +1,9 @@
-# @afuchat1/sdk
+# @afuchat1/engagera
 
 The official TypeScript SDK for [Engagera](https://engagera.com) — powered by **AfuBot**, our live web crawler and search AI.
 
-[![npm version](https://img.shields.io/npm/v/@afuchat1/sdk)](https://www.npmjs.com/package/@afuchat1/sdk)
-[![license](https://img.shields.io/npm/l/@afuchat1/sdk)](LICENSE)
+[![npm version](https://img.shields.io/npm/v/@afuchat1/engagera)](https://www.npmjs.com/package/@afuchat1/engagera)
+[![license](https://img.shields.io/npm/l/@afuchat1/engagera)](LICENSE)
 
 Two building blocks:
 
@@ -17,17 +17,17 @@ Two building blocks:
 ## Installation
 
 ```bash
-npm install @afuchat1/sdk
+npm install @afuchat1/engagera
 # or
-pnpm add @afuchat1/sdk
+pnpm add @afuchat1/engagera
 # or
-yarn add @afuchat1/sdk
+yarn add @afuchat1/engagera
 ```
 
 ## Quick start
 
 ```ts
-import Engagera from "@afuchat1/sdk";
+import Engagera from "@afuchat1/engagera";
 
 const client = new Engagera({ apiKey: "eng_..." });
 ```
@@ -175,7 +175,7 @@ import Engagera, {
   EngageraAuthError,
   EngageraRateLimitError,
   EngageraStreamError,
-} from "@afuchat1/sdk";
+} from "@afuchat1/engagera";
 
 try {
   const result = await client.afubot.search("...");
@@ -216,7 +216,7 @@ import type {
   ChatResponse,
   Message,
   Usage,
-} from "@afuchat1/sdk";
+} from "@afuchat1/engagera";
 ```
 
 ---

@@ -225,7 +225,7 @@ export default function Docs() {
     { href: "#api-keys-endpoint", label: "API Keys" },
     { href: "#usage-endpoint", label: "Usage" },
     { href: "#errors", label: "Errors" },
-    { href: "#sdks", label: "SDK (@afuchat1/sdk)" },
+    { href: "#sdks", label: "SDK (@afuchat1/engagera)" },
   ];
 
   return (
@@ -275,7 +275,7 @@ export default function Docs() {
               <TocLink href="#api-keys-endpoint">API Keys</TocLink>
               <TocLink href="#usage-endpoint">Usage</TocLink>
               <TocLink href="#errors">Error Codes</TocLink>
-              <TocLink href="#sdks">SDK · @afuchat1/sdk</TocLink>
+              <TocLink href="#sdks">SDK · @afuchat1/engagera</TocLink>
               <TocLink href="#sdk-install" sub>Installation</TocLink>
               <TocLink href="#sdk-afubot" sub>AfuBot</TocLink>
               <TocLink href="#sdk-chat" sub>Chat</TocLink>
@@ -671,8 +671,8 @@ print(data["message"]["content"])`} />
                   },
                   {
                     label: "TypeScript",
-                    content: <CodeBlock language="typescript" code={`// Using @afuchat1/sdk (recommended)
-import Engagera from "@afuchat1/sdk";
+                    content: <CodeBlock language="typescript" code={`// Using @afuchat1/engagera (recommended)
+import Engagera from "@afuchat1/engagera";
 const client = new Engagera({ apiKey: "eng_..." });
 
 const result = await client.afubot.search("Latest SpaceX launch results");
@@ -748,8 +748,8 @@ for source in data.get("crawledSources", []):
                 <Tabs tabs={[
                   {
                     label: "TypeScript",
-                    content: <CodeBlock language="typescript" code={`// Using @afuchat1/sdk (recommended)
-import Engagera from "@afuchat1/sdk";
+                    content: <CodeBlock language="typescript" code={`// Using @afuchat1/engagera (recommended)
+import Engagera from "@afuchat1/engagera";
 const client = new Engagera({ apiKey: "eng_..." });
 
 for await (const event of client.chat.stream({
@@ -814,19 +814,19 @@ while (true) {
             </Section>
 
             {/* SDKs */}
-            <Section id="sdks" title="SDK · @afuchat1/sdk" icon={BookOpen}>
+            <Section id="sdks" title="SDK · @afuchat1/engagera" icon={BookOpen}>
               <div id="sdk-install" className="scroll-mt-20">
                 <div className="flex items-center gap-3 mb-4">
                   <span className="text-xs font-mono text-white/30 border border-white/10 rounded px-2 py-0.5">npm</span>
-                  <code className="text-sm font-mono text-white/70">@afuchat1/sdk</code>
+                  <code className="text-sm font-mono text-white/70">@afuchat1/engagera</code>
                   <span className="text-xs text-white/30 border border-white/10 rounded px-1.5 py-0.5">v0.1.0</span>
                 </div>
                 <p className="text-white/60 text-sm leading-relaxed mb-4">
                   The official TypeScript SDK. Zero dependencies — uses native <code className="font-mono text-xs bg-white/10 px-1 py-0.5 rounded">fetch</code>. Works in Node.js 18+, browsers, Cloudflare Workers, Deno, and Bun.
                 </p>
-                <CodeBlock language="bash" code={`npm install @afuchat1/sdk
+                <CodeBlock language="bash" code={`npm install @afuchat1/engagera
 # or
-pnpm add @afuchat1/sdk`} />
+pnpm add @afuchat1/engagera`} />
 
                 <div className="grid sm:grid-cols-2 gap-3 my-5">
                   {[
@@ -846,7 +846,7 @@ pnpm add @afuchat1/sdk`} />
               <div id="sdk-afubot" className="scroll-mt-20 mt-8">
                 <h3 className="text-sm font-semibold mb-1 text-white/80">AfuBot — crawler</h3>
                 <p className="text-white/50 text-xs mb-3">Synchronous. Use this to build search engines.</p>
-                <CodeBlock language="typescript" code={`import Engagera from "@afuchat1/sdk";
+                <CodeBlock language="typescript" code={`import Engagera from "@afuchat1/engagera";
 
 const client = new Engagera({ apiKey: "eng_..." });
 
@@ -932,7 +932,7 @@ await ask("And the one before that?");  // context maintained`} />
   EngageraAuthError,
   EngageraRateLimitError,
   EngageraStreamError,
-} from "@afuchat1/sdk";
+} from "@afuchat1/engagera";
 
 try {
   const result = await client.afubot.search("...");
@@ -970,7 +970,7 @@ try {
               <div className="flex gap-4 text-xs text-white/30">
                 <a href="/" className="hover:text-white transition-colors">Chat</a>
                 <a href="/dashboard" className="hover:text-white transition-colors">Dashboard</a>
-                <a href="https://www.npmjs.com/package/@afuchat1/sdk" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">npm</a>
+                <a href="https://www.npmjs.com/package/@afuchat1/engagera" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">npm</a>
                 <a href="mailto:dev@afuchat.com" className="hover:text-white transition-colors">Support</a>
               </div>
             </div>
