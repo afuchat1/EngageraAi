@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// @afuchat/sdk — Main Client
+// @afuchat1/sdk — Main Client
 // ---------------------------------------------------------------------------
 
 import { HttpClient } from "./http.js";
@@ -12,7 +12,7 @@ import type { EngageraClientOptions } from "./types.js";
  *
  * @example
  * ```ts
- * import Engagera from "@afuchat/sdk";
+ * import Engagera from "@afuchat1/sdk";
  *
  * const client = new Engagera({ apiKey: "eng_..." });
  *
