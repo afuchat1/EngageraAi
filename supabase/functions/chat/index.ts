@@ -911,6 +911,7 @@ type AuthResult =
   | { type: "api_key"; userId?: string; apiKeyId: number }
   | { type: "user"; userId: string }
   | { type: "guest"; guestSessionId: string }
+  | { type: "invalid_key"; reason: "not_found" | "revoked" | "lookup_error" }
   | { type: "none" };
 
 async function resolveAuth(
@@ -928,12 +929,19 @@ async function resolveAuth(
       .select("id, user_id, is_active")
       .eq("key_hash", keyHash)
       .single();
-    if (keyErr) log("warn", "auth.api_key_lookup_error", { requestId, err: keyErr.message });
+    if (keyErr) {
+      log("warn", "auth.api_key_lookup_error", { requestId, err: keyErr.message });
+      // PGRST116 = no rows found; any other error is a DB problem
+      const reason = keyErr.code === "PGRST116" ? "not_found" : "lookup_error";
+      return { type: "invalid_key", reason };
+    }
     if (keyRow?.is_active) {
       log("info", "auth.api_key", { requestId, keyId: keyRow.id });
       return { type: "api_key", userId: keyRow.user_id, apiKeyId: keyRow.id };
     }
-    return { type: "none" };
+    // Key exists but has been revoked
+    log("info", "auth.api_key_revoked", { requestId });
+    return { type: "invalid_key", reason: "revoked" };
   }
 
   const auth = req.headers.get("authorization");
@@ -1112,6 +1120,12 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    if (authResult.type === "invalid_key") {
+      const msg = authResult.reason === "revoked"
+        ? "Engagera authentication failed. Your API key has been revoked — generate a new one in the Dashboard."
+        : "Engagera authentication failed. Please check the API key.";
+      return json({ error: msg, code: "invalid_api_key" }, 401);
+    }
     if (authResult.type === "none") return json({ error: "Authentication required" }, 401);
 
     const lastUserMsg = incomingMessages.filter((m) => m.role === "user").at(-1);
