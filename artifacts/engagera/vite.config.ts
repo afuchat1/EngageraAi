@@ -56,11 +56,6 @@ export default defineConfig({
         'attached_assets',
       ),
     },
-    // Force a single copy of these packages across the monorepo.
-    // Without dedupe, pnpm can hoist separate instances of react-query
-    // (one for the app, one inside @workspace/api-client-react), which
-    // causes "No QueryClient set" at runtime because the hooks look up
-    // the QueryClient via a module-level context that differs per instance.
     dedupe: ['react', 'react-dom', '@tanstack/react-query'],
   },
   root: path.resolve(import.meta.dirname),
