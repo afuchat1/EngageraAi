@@ -252,11 +252,15 @@ Deno.serve(async (req: Request) => {
     since30d.setDate(since30d.getDate() - 30);
     const now = new Date();
 
-    const usageByUser: Record<string, { lifetime: number; last30d: number }> = {};
+    const usageByUser: Record<string, { lifetime: number; last30d: number; requestsLifetime: number; requests30d: number }> = {};
     for (const r of (allUsage ?? []) as { user_id: string; total_tokens: number; created_at: string }[]) {
-      const bucket = (usageByUser[r.user_id] ??= { lifetime: 0, last30d: 0 });
+      const bucket = (usageByUser[r.user_id] ??= { lifetime: 0, last30d: 0, requestsLifetime: 0, requests30d: 0 });
       bucket.lifetime += r.total_tokens ?? 0;
-      if (new Date(r.created_at) >= since30d) bucket.last30d += r.total_tokens ?? 0;
+      bucket.requestsLifetime++;
+      if (new Date(r.created_at) >= since30d) {
+        bucket.last30d += r.total_tokens ?? 0;
+        bucket.requests30d++;
+      }
     }
 
     const byUser: Record<string, { totalKeys: number; activeKeys: number; pausedKeys: number; oldestKeyAt: string }> = {};
@@ -278,7 +282,9 @@ Deno.serve(async (req: Request) => {
         ...byUser[id],
         tokensLifetime: usageByUser[id]?.lifetime ?? 0,
         tokens30d: usageByUser[id]?.last30d ?? 0,
-      })).sort((a, b) => b.tokensLifetime - a.tokensLifetime),
+        requestsLifetime: usageByUser[id]?.requestsLifetime ?? 0,
+        requests30d: usageByUser[id]?.requests30d ?? 0,
+      })).sort((a, b) => b.requestsLifetime - a.requestsLifetime),
     });
   }
 

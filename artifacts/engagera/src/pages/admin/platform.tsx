@@ -8,6 +8,7 @@ import {
   usePauseApiKey,
   useUnpauseApiKey,
   useSetApiKeyActive,
+  useAdminRealtimeSync,
   type PlatformApiKey,
   type PlatformUser,
   type PlatformUsageDay,
@@ -101,7 +102,7 @@ function ApiKeyRow({ k }: { k: PlatformApiKey }) {
     : { label: "Active", color: "text-emerald-400 bg-emerald-400/10" };
 
   return (
-    <div className="grid grid-cols-[1.4fr_1fr_0.7fr_0.8fr_0.8fr_0.8fr_auto] gap-x-4 items-center px-5 py-3.5 relative">
+    <div className="grid grid-cols-[1.4fr_0.9fr_0.65fr_0.75fr_0.75fr_0.75fr_0.75fr_auto] gap-x-4 items-center px-5 py-3.5 relative">
       <div className="min-w-0">
         <p className="text-sm font-medium truncate">{k.name}</p>
         <p className="text-xs text-white/35 truncate">{k.ownerEmail}</p>
@@ -110,8 +111,16 @@ function ApiKeyRow({ k }: { k: PlatformApiKey }) {
       <span className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-md w-fit ${status.color}`}>
         {status.label}
       </span>
-      <p className="text-sm text-white/60">{formatTokens(k.tokens30d)} <span className="text-white/25 text-xs">/30d</span></p>
-      <p className="text-sm text-white/60">{formatTokens(k.tokensLifetime)} <span className="text-white/25 text-xs">life</span></p>
+      {/* Requests columns */}
+      <div className="min-w-0">
+        <p className="text-sm text-white/80 font-medium">{(k.requests30d ?? 0).toLocaleString()}</p>
+        <p className="text-[10px] text-white/25">{(k.totalRequests ?? 0).toLocaleString()} life</p>
+      </div>
+      {/* Token columns */}
+      <div className="min-w-0">
+        <p className="text-sm text-white/60">{formatTokens(k.tokens30d)}</p>
+        <p className="text-[10px] text-white/25">{formatTokens(k.tokensLifetime)} life</p>
+      </div>
       <p className="text-xs text-white/35">{timeAgo(k.lastUsedAt)}</p>
 
       <div className="flex items-center gap-1.5 justify-end relative">
@@ -174,6 +183,7 @@ function UsageChartTooltip({ active, payload, label }: any) {
 }
 
 export default function AdminPlatform() {
+  useAdminRealtimeSync();
   const { data: keysData, isLoading: keysLoading } = usePlatformApiKeys();
   const { data: usersData, isLoading: usersLoading } = usePlatformUsers();
   const [usageDays, setUsageDays] = useState(30);
@@ -293,12 +303,12 @@ export default function AdminPlatform() {
 
       {tab === "keys" ? (
         <div className="rounded-2xl bg-white/[0.03] overflow-hidden">
-          <div className="grid grid-cols-[1.4fr_1fr_0.7fr_0.8fr_0.8fr_0.8fr_auto] gap-x-4 px-5 py-3 text-[10px] font-mono uppercase tracking-widest text-white/25">
+          <div className="grid grid-cols-[1.4fr_0.9fr_0.65fr_0.75fr_0.75fr_0.75fr_0.75fr_auto] gap-x-4 px-5 py-3 text-[10px] font-mono uppercase tracking-widest text-white/25">
             <span>Key / Owner</span>
             <span>Prefix</span>
             <span>Status</span>
+            <span>Requests</span>
             <span>Tokens</span>
-            <span>Lifetime</span>
             <span>Last Used</span>
             <span />
           </div>
@@ -314,13 +324,14 @@ export default function AdminPlatform() {
         </div>
       ) : (
         <div className="rounded-2xl bg-white/[0.03] overflow-hidden">
-          <div className="grid grid-cols-[1.4fr_0.7fr_0.7fr_0.8fr_0.8fr_1fr] gap-x-4 px-5 py-3 text-[10px] font-mono uppercase tracking-widest text-white/25">
+          <div className="grid grid-cols-[1.5fr_0.5fr_0.5fr_0.75fr_0.75fr_0.75fr_0.75fr] gap-x-4 px-5 py-3 text-[10px] font-mono uppercase tracking-widest text-white/25">
             <span>Developer</span>
             <span>Keys</span>
             <span>Active</span>
-            <span>Tokens (30d)</span>
-            <span>Lifetime</span>
-            <span>First Key</span>
+            <span>Requests</span>
+            <span>Tokens</span>
+            <span>Req (life)</span>
+            <span>Tok (life)</span>
           </div>
           <div className="divide-y divide-white/[0.06]">
             {usersLoading ? (
@@ -329,13 +340,19 @@ export default function AdminPlatform() {
               <div className="px-5 py-12 text-center text-sm text-white/40">No developers found.</div>
             ) : (
               filteredUsers.map((u: PlatformUser) => (
-                <div key={u.userId} className="grid grid-cols-[1.4fr_0.7fr_0.7fr_0.8fr_0.8fr_1fr] gap-x-4 items-center px-5 py-3.5">
+                <div key={u.userId} className="grid grid-cols-[1.5fr_0.5fr_0.5fr_0.75fr_0.75fr_0.75fr_0.75fr] gap-x-4 items-center px-5 py-3.5">
                   <p className="text-sm truncate">{u.email}</p>
                   <p className="text-sm text-white/60">{u.totalKeys}</p>
-                  <p className="text-sm text-white/60">{u.activeKeys}{u.pausedKeys > 0 && <span className="text-amber-400 ml-1 text-xs">({u.pausedKeys} paused)</span>}</p>
+                  <p className="text-sm text-white/60">
+                    {u.activeKeys}
+                    {u.pausedKeys > 0 && <span className="text-amber-400 ml-1 text-xs">({u.pausedKeys} paused)</span>}
+                  </p>
+                  {/* 30-day columns */}
+                  <p className="text-sm text-white/80 font-medium">{(u.requests30d ?? 0).toLocaleString()}</p>
                   <p className="text-sm text-white/60">{formatTokens(u.tokens30d)}</p>
-                  <p className="text-sm text-white/60">{formatTokens(u.tokensLifetime)}</p>
-                  <p className="text-xs text-white/35">{new Date(u.oldestKeyAt).toLocaleDateString()}</p>
+                  {/* Lifetime columns */}
+                  <p className="text-sm text-white/40">{(u.requestsLifetime ?? 0).toLocaleString()}</p>
+                  <p className="text-sm text-white/40">{formatTokens(u.tokensLifetime)}</p>
                 </div>
               ))
             )}

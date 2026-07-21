@@ -1,5 +1,7 @@
+import { useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { customFetch } from "@workspace/api-client-react";
+import { supabase } from "@/lib/supabase";
 
 // Thin hand-written client for the Admin API — kept separate from the
 // generated api-client-react surface since these endpoints are read-only
@@ -201,6 +203,8 @@ export interface PlatformUser {
   oldestKeyAt: string;
   tokensLifetime: number;
   tokens30d: number;
+  requestsLifetime: number;
+  requests30d: number;
 }
 
 export function usePlatformApiKeys() {
@@ -235,6 +239,45 @@ export function usePlatformUsers() {
     queryFn: () => customFetch<{ users: PlatformUser[] }>("/api/admin/platform-users"),
     retry: false,
   });
+}
+
+// ── Real-time sync ────────────────────────────────────────────────────────────
+// Subscribes to Supabase Realtime on engagera_usage_records and
+// engagera_api_keys so admin tables update the moment a developer makes a
+// request — no manual refresh required.
+export function useAdminRealtimeSync() {
+  const qc = useQueryClient();
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("admin-usage-realtime")
+      // New usage record → refresh all usage-related queries immediately
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "engagera_usage_records" },
+        () => {
+          qc.invalidateQueries({ queryKey: ["admin", "platform-api-keys"] });
+          qc.invalidateQueries({ queryKey: ["admin", "platform-users"] });
+          qc.invalidateQueries({ queryKey: ["admin", "platform-usage-daily"] });
+          qc.invalidateQueries({ queryKey: ["admin", "system-health"] });
+          qc.invalidateQueries({ queryKey: ["admin", "overview"] });
+        },
+      )
+      // Key updated (pause / revoke / total_requests bump) → refresh key list
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "engagera_api_keys" },
+        () => {
+          qc.invalidateQueries({ queryKey: ["admin", "platform-api-keys"] });
+          qc.invalidateQueries({ queryKey: ["admin", "platform-users"] });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [qc]);
 }
 
 export function usePauseApiKey() {
