@@ -58,7 +58,7 @@ Deno.serve(async (req: Request) => {
   try {
     const res = await fetch(
       "https://text.pollinations.ai/openai/v1/audio/transcriptions",
-      { method: "POST", headers: { ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) }, body: form },
+      { method: "POST", body: form },
     );
 
     if (!res.ok) {

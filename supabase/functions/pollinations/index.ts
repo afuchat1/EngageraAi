@@ -93,10 +93,7 @@ async function handleText(params: Record<string, unknown>, apiKey: string): Prom
 
   const upRes = await fetch(`${TEXT_BASE}/chat/completions`, {
     method: "POST",
-    headers: {
-      ...(apiKey ? { "Authorization": `Bearer ${apiKey}` } : {}),
-      "Content-Type":  "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ model, messages: allMessages, stream, max_tokens: maxTokens }),
   });
 
@@ -156,10 +153,7 @@ async function handleAudio(params: Record<string, unknown>, apiKey: string): Pro
 
   const upRes = await fetch(`${TEXT_BASE}/audio/speech`, {
     method: "POST",
-    headers: {
-      ...(apiKey ? { "Authorization": `Bearer ${apiKey}` } : {}),
-      "Content-Type":  "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model:           "openai-audio",
       input:           text,
@@ -187,11 +181,8 @@ async function handleVideo(params: Record<string, unknown>, apiKey: string): Pro
 
   const upRes = await fetch(`${VIDEO_BASE}/`, {
     method: "POST",
-    headers: {
-      ...(apiKey ? { "Authorization": `Bearer ${apiKey}` } : {}),
-      "Content-Type":  "application/json",
-    },
-    body: JSON.stringify({ prompt, ...(apiKey ? { token: apiKey } : {}) }),
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt }),
   });
 
   if (!upRes.ok) {
