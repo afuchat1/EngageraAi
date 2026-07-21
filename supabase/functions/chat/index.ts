@@ -975,7 +975,7 @@ async function checkGuestLimit(
 ): Promise<{ allowed: boolean; count: number }> {
   const windowStart = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const { data, error } = await db
-    .from("guest_usage_tracking")
+    .from("engagera_guest_sessions")
     .select("message_count, window_start")
     .eq("session_id", guestSessionId)
     .single();
