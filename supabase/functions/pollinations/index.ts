@@ -58,8 +58,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (req.method !== "POST")   return jsonRes({ error: "Method not allowed" }, 405);
 
-  const apiKey = Deno.env.get("POLLINATIONS_API_KEY");
-  if (!apiKey) return jsonRes({ error: "Pollinations not configured" }, 503);
+  const apiKey = Deno.env.get("POLLINATIONS_API_KEY") ?? "";
 
   let body: Record<string, unknown>;
   try { body = await req.json(); }
@@ -95,7 +94,7 @@ async function handleText(params: Record<string, unknown>, apiKey: string): Prom
   const upRes = await fetch(`${TEXT_BASE}/chat/completions`, {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${apiKey}`,
+      ...(apiKey ? { "Authorization": `Bearer ${apiKey}` } : {}),
       "Content-Type":  "application/json",
     },
     body: JSON.stringify({ model, messages: allMessages, stream, max_tokens: maxTokens }),
@@ -138,9 +137,8 @@ async function handleImage(params: Record<string, unknown>, apiKey: string): Pro
     width:   String(width),
     height:  String(height),
     nologo:  "true",
-    private: "true",
     enhance: String(enhance),
-    token:   apiKey,
+    ...(apiKey ? { token: apiKey, private: "true" } : {}),
   });
   if (seed != null)      qs.set("seed",             String(seed));
   if (negPrompt?.trim()) qs.set("negative_prompt",  negPrompt.trim());
@@ -159,7 +157,7 @@ async function handleAudio(params: Record<string, unknown>, apiKey: string): Pro
   const upRes = await fetch(`${TEXT_BASE}/audio/speech`, {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${apiKey}`,
+      ...(apiKey ? { "Authorization": `Bearer ${apiKey}` } : {}),
       "Content-Type":  "application/json",
     },
     body: JSON.stringify({
@@ -190,10 +188,10 @@ async function handleVideo(params: Record<string, unknown>, apiKey: string): Pro
   const upRes = await fetch(`${VIDEO_BASE}/`, {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${apiKey}`,
+      ...(apiKey ? { "Authorization": `Bearer ${apiKey}` } : {}),
       "Content-Type":  "application/json",
     },
-    body: JSON.stringify({ prompt, token: apiKey }),
+    body: JSON.stringify({ prompt, ...(apiKey ? { token: apiKey } : {}) }),
   });
 
   if (!upRes.ok) {

@@ -38,8 +38,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
   if (req.method !== "POST")   return jsonRes({ error: "Method not allowed" }, 405);
 
-  const apiKey = Deno.env.get("POLLINATIONS_API_KEY");
-  if (!apiKey) return jsonRes({ error: "STT service not configured (missing POLLINATIONS_API_KEY)" }, 503);
+  const apiKey = Deno.env.get("POLLINATIONS_API_KEY") ?? "";
 
   const audioBytes = await req.arrayBuffer();
   if (audioBytes.byteLength < 100) return jsonRes({ error: "No audio data provided" }, 400);
@@ -59,7 +58,7 @@ Deno.serve(async (req: Request) => {
   try {
     const res = await fetch(
       "https://text.pollinations.ai/openai/v1/audio/transcriptions",
-      { method: "POST", headers: { Authorization: `Bearer ${apiKey}` }, body: form },
+      { method: "POST", headers: { ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) }, body: form },
     );
 
     if (!res.ok) {
