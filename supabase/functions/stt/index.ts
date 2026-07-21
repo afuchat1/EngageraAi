@@ -41,7 +41,8 @@ Deno.serve(async (req: Request) => {
   if (!groqKey) return jsonRes({ error: "STT service not configured (missing GROQ_API_KEY)" }, 503);
 
   const audioBytes = await req.arrayBuffer();
-  if (audioBytes.byteLength < 100) return jsonRes({ error: "No audio data provided" }, 400);
+  // Too small to contain any speech — return empty transcript silently (not an error)
+  if (audioBytes.byteLength < 200) return jsonRes({ text: "" });
 
   const contentType = req.headers.get("content-type") ?? "audio/mp4";
   const ext      = audioExt(contentType);
