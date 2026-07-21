@@ -26,6 +26,7 @@ import AdminReviewer from "./pages/admin/reviewer";
 import AdminModels from "./pages/admin/models";
 import AdminAnalytics from "./pages/admin/analytics";
 import AdminStorage from "./pages/admin/storage";
+import Generate from "./pages/generate";
 import NotFound from "@/pages/not-found";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 
@@ -116,6 +117,7 @@ function Router() {
       <Route path="/admin/models"><AdminRoute component={AdminModels} /></Route>
       <Route path="/admin/analytics"><AdminRoute component={AdminAnalytics} /></Route>
       <Route path="/admin/storage"><AdminRoute component={AdminStorage} /></Route>
+      <Route path="/generate" component={Generate} />
       <Route component={NotFound} />
     </Switch>
   );

@@ -43,6 +43,9 @@ export function Navbar() {
           <Link href="/docs" className="text-muted-foreground hover:text-foreground transition-colors">
             Docs
           </Link>
+          <Link href="/generate" className="text-muted-foreground hover:text-foreground transition-colors">
+            Generate
+          </Link>
           {user && (
             <Link href="/usage" className="text-muted-foreground hover:text-foreground transition-colors">
               Usage
@@ -127,11 +130,12 @@ export function Navbar() {
       {/* Mobile menu */}
       {mobileOpen && (
         <div className="md:hidden border-t border-border bg-background px-4 py-4 space-y-1">
-          <MobileNavLink href="/docs" onClick={() => setMobileOpen(false)}>Docs</MobileNavLink>
+          <MobileNavLink href="/docs"      onClick={() => setMobileOpen(false)}>Docs</MobileNavLink>
+          <MobileNavLink href="/generate" onClick={() => setMobileOpen(false)}>Generate</MobileNavLink>
           {user && (
             <>
               <MobileNavLink href="/dashboard" onClick={() => setMobileOpen(false)}>Dashboard</MobileNavLink>
-              <MobileNavLink href="/usage" onClick={() => setMobileOpen(false)}>Usage</MobileNavLink>
+              <MobileNavLink href="/usage"     onClick={() => setMobileOpen(false)}>Usage</MobileNavLink>
             </>
           )}
           <div className="pt-3 mt-3 border-t border-border space-y-2">
