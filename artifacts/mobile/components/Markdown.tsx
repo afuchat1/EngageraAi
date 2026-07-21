@@ -1,10 +1,20 @@
 import React, { memo, useState } from 'react';
 import { Image as RNImage, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
-import { SvgXml } from 'react-native-svg';
-import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from 'expo-sharing';
 import { Ionicons } from '@expo/vector-icons';
+
+// react-native-svg works on web but SvgXml may not; guard it
+let SvgXml: React.ComponentType<{ xml: string; width?: any; height?: any; style?: any }>;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  SvgXml = require('react-native-svg').SvgXml;
+} catch {
+  SvgXml = ({ style }: any) => <View style={style} />;
+}
+
+// Native-only modules
+const FileSystem = Platform.OS !== 'web' ? require('expo-file-system/legacy') : null;
+const Sharing = Platform.OS !== 'web' ? require('expo-sharing') : null;
 import { useColors } from '@/hooks/useColors';
 import { useBrowser } from '@/contexts/BrowserContext';
 import { parseMarkdown, type InlineSegment, type MarkdownBlock } from '@/lib/markdown';
@@ -20,15 +30,27 @@ const MONOSPACE = Platform.select({ ios: 'Courier', android: 'monospace', defaul
  */
 async function downloadToShareSheet(source: string, filename: string) {
   try {
+    if (Platform.OS === 'web') {
+      // On web: for data URIs create a download link; for URLs open in new tab
+      const dataMatch = source.match(/^data:([^;]+);base64,(.+)$/);
+      if (dataMatch) {
+        const a = document.createElement('a');
+        a.href = source;
+        a.download = filename;
+        a.click();
+      } else if (/^https?:\/\//i.test(source)) {
+        window.open(source, '_blank');
+      }
+      return;
+    }
     let fileUri = `${FileSystem.cacheDirectory}${filename}`;
     const dataMatch = source.match(/^data:([^;]+);base64,(.+)$/);
     if (dataMatch) {
-      await FileSystem.writeAsStringAsync(fileUri, dataMatch[2], { encoding: 'base64' as FileSystem.EncodingType });
+      await FileSystem.writeAsStringAsync(fileUri, dataMatch[2], { encoding: 'base64' as any });
     } else if (/^https?:\/\//i.test(source)) {
       const result = await FileSystem.downloadAsync(source, fileUri);
       fileUri = result.uri;
     } else {
-      // Raw text content (e.g. SVG markup) — write directly.
       await FileSystem.writeAsStringAsync(fileUri, source);
     }
     if (await Sharing.isAvailableAsync()) {

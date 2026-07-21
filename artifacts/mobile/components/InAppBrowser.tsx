@@ -29,7 +29,6 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import WebView, { type WebViewNavigation } from 'react-native-webview';
 import { useColors } from '@/hooks/useColors';
 import { useDialog } from '@/contexts/DialogContext';
 import {
@@ -40,6 +39,24 @@ import {
   loadBrowserHistory,
   type HistoryEntry,
 } from '@/lib/browserStorage';
+
+// WebView is native-only — on web we use an iframe fallback
+type WebViewNavigation = any;
+const WebView: React.ComponentType<any> = Platform.OS === 'web'
+  ? ({ source }: any) => {
+      const src = typeof source === 'string' ? source : source?.uri ?? '';
+      // Use plain CSS strings — RN StyleSheet objects cannot be spread onto DOM elements
+      return (
+        <iframe
+          src={src}
+          style={{ border: 'none', width: '100%', height: '100%', display: 'block' } as React.CSSProperties}
+          title="browser"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+        />
+      );
+    }
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  : require('react-native-webview').default;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

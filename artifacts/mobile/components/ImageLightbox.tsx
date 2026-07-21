@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Dimensions,
   Modal,
+  Platform,
   Pressable,
   Share,
   StyleSheet,
@@ -10,12 +11,15 @@ import {
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { File, Paths } from 'expo-file-system';
-import * as MediaLibrary from 'expo-media-library';
-import * as Sharing from 'expo-sharing';
-import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+// Native-only modules — guarded by Platform checks at call sites
+const File = Platform.OS !== 'web' ? require('expo-file-system').File : null;
+const Paths = Platform.OS !== 'web' ? require('expo-file-system').Paths : null;
+const MediaLibrary = Platform.OS !== 'web' ? require('expo-media-library') : null;
+const Sharing = Platform.OS !== 'web' ? require('expo-sharing') : null;
+const Haptics = Platform.OS !== 'web' ? require('expo-haptics') : null;
 
 const { width: W, height: H } = Dimensions.get('window');
 
@@ -42,8 +46,14 @@ export function ImageLightbox({ uri, visible, onClose }: Props) {
   const handleDownload = async () => {
     if (downloading || sharing) return;
     setDownloading(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    Haptics?.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     try {
+      if (Platform.OS === 'web') {
+        // Web: open in new tab so user can long-press / right-click to save
+        window.open(uri, '_blank');
+        showToast('Opened in new tab');
+        return;
+      }
       const { status } = await MediaLibrary.requestPermissionsAsync();
       if (status !== 'granted') {
         showToast('Gallery permission denied');
@@ -64,8 +74,16 @@ export function ImageLightbox({ uri, visible, onClose }: Props) {
   const handleShare = async () => {
     if (downloading || sharing) return;
     setSharing(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    Haptics?.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     try {
+      if (Platform.OS === 'web') {
+        if (navigator.share) {
+          await navigator.share({ url: uri });
+        } else {
+          await Share.share({ message: uri });
+        }
+        return;
+      }
       const dest = new File(Paths.cache, `engagera_sh_${Date.now()}.${ext}`);
       const downloaded = await File.downloadFileAsync(uri, dest);
       const available = await Sharing.isAvailableAsync();

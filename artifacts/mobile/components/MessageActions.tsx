@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { Pressable, Share, StyleSheet, View } from 'react-native';
-import * as Clipboard from 'expo-clipboard';
-import * as Haptics from 'expo-haptics';
-import * as Speech from 'expo-speech';
+import { Platform, Pressable, Share, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+
+// Native-only modules with web fallbacks
+const Clipboard = Platform.OS !== 'web' ? require('expo-clipboard') : null;
+const Haptics   = Platform.OS !== 'web' ? require('expo-haptics')   : null;
+const Speech    = Platform.OS !== 'web' ? require('expo-speech')    : null;
 import { useColors } from '@/hooks/useColors';
 import { useDialog } from '@/contexts/DialogContext';
 
@@ -25,8 +27,12 @@ export function MessageActions({
   const [speaking, setSpeaking] = useState(false);
 
   const handleCopy = async () => {
-    await Clipboard.setStringAsync(text);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    if (Platform.OS === 'web') {
+      await navigator.clipboard.writeText(text).catch(() => {});
+    } else {
+      await Clipboard.setStringAsync(text);
+      Haptics?.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
@@ -34,10 +40,23 @@ export function MessageActions({
   const handleFeedback = (direction: 'up' | 'down') => {
     const next = feedback === direction ? null : direction;
     setFeedback(next);
-    if (next) Haptics.selectionAsync().catch(() => {});
+    if (next) Haptics?.selectionAsync().catch(() => {});
   };
 
   const handleSpeak = async () => {
+    if (Platform.OS === 'web') {
+      if (speaking) {
+        window.speechSynthesis.cancel();
+        setSpeaking(false);
+      } else {
+        setSpeaking(true);
+        const utt = new SpeechSynthesisUtterance(text);
+        utt.onend = () => setSpeaking(false);
+        utt.onerror = () => setSpeaking(false);
+        window.speechSynthesis.speak(utt);
+      }
+      return;
+    }
     if (speaking) {
       Speech.stop();
       setSpeaking(false);

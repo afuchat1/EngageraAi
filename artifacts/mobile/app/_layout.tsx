@@ -1,8 +1,7 @@
 import React, { useEffect } from 'react';
-import { Linking } from 'react-native';
+import { Linking, Platform } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -19,6 +18,15 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import colors from '@/constants/colors';
 
+// KeyboardProvider is native-only — on web it's a no-op wrapper
+let KeyboardProvider: React.FC<{ children: React.ReactNode }>;
+if (Platform.OS !== 'web') {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  KeyboardProvider = require('react-native-keyboard-controller').KeyboardProvider;
+} else {
+  KeyboardProvider = ({ children }) => <>{children}</>;
+}
+
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
@@ -32,6 +40,10 @@ function IncomingUrlHandler() {
   const { open } = useBrowser();
 
   useEffect(() => {
+    // On web, Linking.getInitialURL() returns the page URL itself — skip to
+    // avoid auto-opening the in-app browser with the dev server URL.
+    if (Platform.OS === 'web') return;
+
     // URL that launched the app cold (app was not running).
     Linking.getInitialURL().then((url) => {
       if (url && /^https?:\/\//i.test(url)) open(url);
@@ -90,12 +102,15 @@ export default function RootLayout() {
   const fontError = interError;
 
   useEffect(() => {
+    // Hide splash as soon as fonts resolve, or after a 2 s safety timeout
+    // so the web preview never shows a blank white screen.
+    const timer = setTimeout(() => SplashScreen.hideAsync().catch(() => {}), 2000);
     if (fontsLoaded || fontError) {
-      SplashScreen.hideAsync();
+      SplashScreen.hideAsync().catch(() => {});
+      clearTimeout(timer);
     }
+    return () => clearTimeout(timer);
   }, [fontsLoaded, fontError]);
-
-  if (!fontsLoaded && !fontError) return null;
 
   return (
     <SafeAreaProvider>
