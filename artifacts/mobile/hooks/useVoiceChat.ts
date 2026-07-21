@@ -2,7 +2,7 @@
  * useVoiceChat — Live voice conversation pipeline for React Native.
  *
  * Pipeline:
- *   1. expo-av records microphone audio with metering-based VAD
+ *   1. expo-audio records microphone audio with metering-based VAD
  *   2. Supabase STT edge function (Groq Whisper) transcribes speech → text
  *   3. Pollinations text model generates a reply (full conversation context)
  *   4. expo-speech speaks the reply aloud (native TTS, no binary file handling)
@@ -10,7 +10,13 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Audio } from 'expo-av';
+import {
+  useAudioRecorder,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  AudioQuality,
+  IOSOutputFormat,
+} from 'expo-audio';
 import {
   uploadAsync,
   deleteAsync,
@@ -24,9 +30,9 @@ const STT_URL      = `${SUPABASE_URL}/functions/v1/stt`;
 const POLLINATIONS = `${SUPABASE_URL}/functions/v1/pollinations`;
 const GUEST_ID_KEY = 'engagera_guest_session_id';
 
-// Metering thresholds (dBFS from expo-av; negative values, closer to 0 = louder)
-const SPEECH_THRESHOLD_DB = -40;   // above this level = speech detected
-const SILENCE_DELAY_MS    = 1400;  // commit after this ms of silence post-speech
+// Metering thresholds (dBFS; negative values, closer to 0 = louder)
+const SPEECH_THRESHOLD_DB = -40;  // above this = speech detected
+const SILENCE_DELAY_MS    = 1400; // commit after this ms of silence
 
 export type VoiceState =
   | 'idle'
@@ -59,6 +65,26 @@ async function buildHeaders(): Promise<Record<string, string>> {
   };
 }
 
+// Recording options optimised for Whisper STT (16 kHz mono AAC)
+const RECORDING_OPTIONS = {
+  extension:        '.m4a',
+  sampleRate:       16000,
+  numberOfChannels: 1,
+  bitRate:          64000,
+  android: {
+    outputFormat: 'mpeg4' as const,
+    audioEncoder: 'aac'  as const,
+  },
+  ios: {
+    outputFormat:         IOSOutputFormat.MPEG4AAC,
+    audioQuality:         AudioQuality.MAX,
+    linearPCMBitDepth:    16 as const,
+    linearPCMIsBigEndian: false,
+    linearPCMIsFloat:     false,
+  },
+  web: {} as never,
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 export function useVoiceChat(options: UseVoiceChatOptions = {}) {
   const { model = 'openai', system } = options;
@@ -72,7 +98,6 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
 
   const stateRef        = useRef<VoiceState>('idle');
   const activeRef       = useRef(false);
-  const recordingRef    = useRef<Audio.Recording | null>(null);
   const timerRef        = useRef<ReturnType<typeof setInterval> | null>(null);
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout>  | null>(null);
   const speechSeenRef   = useRef(false);
@@ -80,6 +105,31 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
 
   // Forward refs so mutually-recursive callbacks stay fresh without stale closures
   const fnsRef = useRef({ startListening: async () => {}, commitRecording: async () => {} });
+
+  // ── expo-audio recorder (single instance per hook mount) ──────────────────
+  // The status listener drives VAD: it fires on every metering update while
+  // recording so we can detect speech start/end without polling.
+  const recorder = useAudioRecorder(RECORDING_OPTIONS, (status) => {
+    if (!activeRef.current || stateRef.current !== 'listening') return;
+    // expo-audio status includes a `metering` field (dBFS, negative)
+    const db = (status as Record<string, unknown>).metering as number | undefined ?? -160;
+
+    if (db > SPEECH_THRESHOLD_DB) {
+      // Speech detected — cancel any pending silence commit
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = null;
+      }
+      speechSeenRef.current = true;
+    } else if (speechSeenRef.current && !silenceTimerRef.current) {
+      // Post-speech silence — start the commit timer
+      silenceTimerRef.current = setTimeout(() => {
+        if (activeRef.current && stateRef.current === 'listening') {
+          fnsRef.current.commitRecording();
+        }
+      }, SILENCE_DELAY_MS);
+    }
+  });
 
   const setS = useCallback((s: VoiceState) => {
     stateRef.current = s;
@@ -121,10 +171,10 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
 
     await new Promise<void>((resolve) => {
       Speech.speak(text.slice(0, 800), {
-        onDone:  resolve,
-        onError: () => resolve(),
+        onDone:    resolve,
+        onError:   () => resolve(),
         onStopped: resolve,
-        rate: 1.0,
+        rate:  1.0,
         pitch: 1.0,
       });
     });
@@ -134,7 +184,7 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
     }
   }, [setS]);
 
-  // ── Pollinations text reply ─────────────────────────────────────────────────
+  // ── Text reply via streaming ────────────────────────────────────────────────
   const getReply = useCallback(async (userText: string): Promise<void> => {
     if (!activeRef.current) return;
     setS('thinking');
@@ -199,14 +249,11 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
   const commitRecording = useCallback(async () => {
     if (!activeRef.current || stateRef.current !== 'listening') return;
     clearSilenceTimer();
-
-    const recording = recordingRef.current;
-    if (!recording) return;
-    recordingRef.current = null;
+    speechSeenRef.current = false;
 
     try {
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
+      await recorder.stop();
+      const uri = recorder.uri;
       if (!uri || !activeRef.current) return;
 
       setS('processing');
@@ -218,13 +265,13 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
         setTranscript(text);
         await getReply(text);
       } else {
-        // Nothing usable heard — restart listening
+        // Nothing heard — restart listening
         fnsRef.current.startListening();
       }
     } catch {
       if (activeRef.current) fnsRef.current.startListening();
     }
-  }, [clearSilenceTimer, transcribe, getReply, setS]);
+  }, [recorder, clearSilenceTimer, transcribe, getReply, setS]);
 
   // ── startListening ──────────────────────────────────────────────────────────
   const startListening = useCallback(async () => {
@@ -234,60 +281,14 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
     speechSeenRef.current = false;
 
     try {
-      const recording = new Audio.Recording();
-      await recording.prepareToRecordAsync({
-        isMeteringEnabled: true,
-        android: {
-          extension:        '.m4a',
-          outputFormat:     2,   // MPEG_4
-          audioEncoder:     3,   // AAC
-          sampleRate:       16000,
-          numberOfChannels: 1,
-          bitRate:          64000,
-        },
-        ios: {
-          extension:            '.m4a',
-          outputFormat:         'aac ' as unknown as number,
-          audioQuality:         0x7F, // MAX
-          sampleRate:           16000,
-          numberOfChannels:     1,
-          bitRate:              64000,
-          linearPCMBitDepth:    16,
-          linearPCMIsBigEndian: false,
-          linearPCMIsFloat:     false,
-        },
-        web: {} as never,
-      });
-
-      recording.setOnRecordingStatusUpdate((status) => {
-        if (!activeRef.current || stateRef.current !== 'listening') return;
-        if (!status.isRecording) return;
-
-        const db = status.metering ?? -160;
-
-        if (db > SPEECH_THRESHOLD_DB) {
-          if (silenceTimerRef.current) {
-            clearTimeout(silenceTimerRef.current);
-            silenceTimerRef.current = null;
-          }
-          speechSeenRef.current = true;
-        } else if (speechSeenRef.current && !silenceTimerRef.current) {
-          silenceTimerRef.current = setTimeout(() => {
-            if (activeRef.current && stateRef.current === 'listening') {
-              fnsRef.current.commitRecording();
-            }
-          }, SILENCE_DELAY_MS);
-        }
-      });
-
-      recordingRef.current = recording;
-      await recording.startAsync();
+      await recorder.prepareToRecordAsync();
+      recorder.record();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Recording failed');
       setS('idle');
       activeRef.current = false;
     }
-  }, [clearSilenceTimer, setS]);
+  }, [recorder, clearSilenceTimer, setS]);
 
   useEffect(() => {
     fnsRef.current = { startListening, commitRecording };
@@ -305,12 +306,12 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
     activeRef.current  = true;
 
     try {
-      const { granted } = await Audio.requestPermissionsAsync();
+      const { granted } = await requestRecordingPermissionsAsync();
       if (!granted) throw new Error('Microphone permission denied. Please allow microphone access in Settings.');
 
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS:   true,
-        playsInSilentModeIOS: true,
+      await setAudioModeAsync({
+        allowsRecording:   true,
+        playsInSilentMode: true,
       });
 
       timerRef.current = setInterval(() => setCallDuration(d => d + 1), 1000);
@@ -323,8 +324,7 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
   }, [setS]);
 
   // ── interruptSpeaking ────────────────────────────────────────────────────────
-  // Stops TTS mid-sentence and immediately returns to listening.
-  // The speakText promise resolves via onStopped → startListening is called automatically.
+  // Stops TTS mid-sentence; speakText's onStopped callback then calls startListening.
   const interruptSpeaking = useCallback(() => {
     if (stateRef.current === 'speaking' && activeRef.current) {
       Speech.stop();
@@ -338,9 +338,7 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
 
     Speech.stop();
-
-    try { await recordingRef.current?.stopAndUnloadAsync(); } catch {}
-    recordingRef.current = null;
+    try { await recorder.stop(); } catch {}
 
     historyRef.current = [];
     setS('idle');
@@ -349,8 +347,8 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
     setCallDuration(0);
     setConversationHistory([]);
 
-    try { await Audio.setAudioModeAsync({ allowsRecordingIOS: false }); } catch {}
-  }, [clearSilenceTimer, setS]);
+    try { await setAudioModeAsync({ allowsRecording: false }); } catch {}
+  }, [recorder, clearSilenceTimer, setS]);
 
   // Cleanup on unmount
   // eslint-disable-next-line react-hooks/exhaustive-deps

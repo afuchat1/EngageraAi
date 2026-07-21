@@ -656,7 +656,7 @@ export default function Generate() {
         </div>
 
         <p className="text-[11px] text-white/20 text-center">
-          Engagera Generate Studio · Pollinations.AI integration · All generations are private
+          Engagera Generate Studio · All generations are private
         </p>
       </div>
     </AppLayout>
