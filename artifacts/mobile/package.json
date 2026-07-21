@@ -58,6 +58,8 @@
   },
   "dependencies": {
     "@expo-google-fonts/space-grotesk": "^0.4.1",
+    "expo-audio": "^57.0.2",
+    "expo-av": "^16.0.8",
     "expo-clipboard": "^55.0.15",
     "expo-file-system": "~55.0.24",
     "expo-haptics": "^55.0.16",

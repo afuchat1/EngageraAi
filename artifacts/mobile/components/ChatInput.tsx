@@ -16,6 +16,7 @@ interface Props {
   onSend: () => void;
   image: PendingImage | null;
   onImagePicked: (image: PendingImage | null) => void;
+  onAudioChat?: () => void;
   disabled?: boolean;
   busy?: boolean;
   placeholder?: string;
@@ -29,10 +30,10 @@ interface AttachOption {
 }
 
 const ATTACH_OPTIONS: AttachOption[] = [
-  { key: 'photo', label: 'Photo', icon: 'image-outline' },
-  { key: 'document', label: 'Document', icon: 'document-text-outline', comingSoon: true },
-  { key: 'camera', label: 'Camera', icon: 'camera-outline', comingSoon: true },
-  { key: 'audio', label: 'Audio', icon: 'mic-outline', comingSoon: true },
+  { key: 'photo',    label: 'Photo',      icon: 'image-outline'         },
+  { key: 'voice',    label: 'Voice chat', icon: 'mic-outline'           },
+  { key: 'document', label: 'Document',   icon: 'document-text-outline', comingSoon: true },
+  { key: 'camera',   label: 'Camera',     icon: 'camera-outline',        comingSoon: true },
 ];
 
 /**
@@ -47,6 +48,7 @@ export function ChatInput({
   onSend,
   image,
   onImagePicked,
+  onAudioChat,
   disabled,
   busy,
   placeholder = 'Message Engagera…',
@@ -95,6 +97,7 @@ export function ChatInput({
   const handleOptionPress = (option: AttachOption) => {
     if (option.comingSoon) return;
     if (option.key === 'photo') pickImage();
+    if (option.key === 'voice') { setMenuOpen(false); onAudioChat?.(); }
   };
 
   return (

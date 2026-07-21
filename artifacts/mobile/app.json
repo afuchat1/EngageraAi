@@ -60,7 +60,13 @@
           "microphonePermission": false
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Engagera needs microphone access for live voice chat."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

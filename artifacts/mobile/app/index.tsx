@@ -31,6 +31,7 @@ import { CHAT_MODEL, LAB_MODEL } from '@/lib/chat';
 import { fetchConversationMessages, type ConversationSummary } from '@/lib/conversations';
 import { SearchEngine } from '@/components/SearchEngine';
 import { useDialog } from '@/contexts/DialogContext';
+import { AudioChatModal } from '@/components/AudioChatModal';
 
 const CHAT_COPY = {
   placeholder: 'Message Engagera…',
@@ -72,6 +73,7 @@ export default function ChatScreen() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
   const [kbHeight, setKbHeight] = useState(0);
+  const [audioChatOpen, setAudioChatOpen] = useState(false);
 
   // ── Focus-mode tracking ──────────────────────────────────────────────────
   // animateFromIdx: items at this index and above slide+fade in on mount.
@@ -354,6 +356,7 @@ export default function ChatScreen() {
               onSend={handleSend}
               image={pendingImage}
               onImagePicked={setPendingImage}
+              onAudioChat={() => setAudioChatOpen(true)}
               busy={busy || lastIsPending}
               disabled={guestBlocked}
               placeholder={guestBlocked ? 'Sign in to keep chatting…' : CHAT_COPY.placeholder}
@@ -369,6 +372,11 @@ export default function ChatScreen() {
         onSelectConversation={handleSelectConversation}
         activeConversationId={conversationId}
         refreshToken={refreshToken}
+      />
+
+      <AudioChatModal
+        visible={audioChatOpen}
+        onClose={() => setAudioChatOpen(false)}
       />
     </View>
   );
