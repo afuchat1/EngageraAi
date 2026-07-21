@@ -16,9 +16,24 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const TEXT_BASE  = "https://text.pollinations.ai/openai/v1";
+const GROQ_BASE  = "https://api.groq.com/openai/v1";
 const IMAGE_BASE = "https://image.pollinations.ai";
 const VIDEO_BASE = "https://video.pollinations.ai";
+
+// Map Pollinations model aliases → Groq model IDs
+const GROQ_MODEL: Record<string, string> = {
+  "openai":           "llama-3.3-70b-versatile",
+  "openai-large":     "llama-3.3-70b-versatile",
+  "openai-reasoning": "deepseek-r1-distill-llama-70b",
+  "claude":           "llama-3.3-70b-versatile",
+  "claude-thinking":  "deepseek-r1-distill-llama-70b",
+  "gemini":           "llama-3.1-8b-instant",
+  "gemini-thinking":  "deepseek-r1-distill-llama-70b",
+  "mistral":          "llama-3.3-70b-versatile",
+  "llama":            "llama-3.3-70b-versatile",
+  "qwen-coder":       "llama-3.3-70b-versatile",
+  "deepseek":         "llama-3.3-70b-versatile",
+};
 
 const TEXT_MODELS = [
   { id: "openai",            name: "GPT-4o",              provider: "OpenAI",     category: "pro"    },
@@ -58,7 +73,8 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (req.method !== "POST")   return jsonRes({ error: "Method not allowed" }, 405);
 
-  const apiKey = Deno.env.get("POLLINATIONS_API_KEY") ?? "";
+  const groqKey = Deno.env.get("GROQ_API_KEY") ?? "";
+  const polKey  = Deno.env.get("POLLINATIONS_API_KEY") ?? "";
 
   let body: Record<string, unknown>;
   try { body = await req.json(); }
@@ -68,21 +84,23 @@ Deno.serve(async (req: Request) => {
 
   switch (type) {
     case "models": return jsonRes({ text: TEXT_MODELS, image: IMAGE_MODELS, voices: VOICES });
-    case "text":   return handleText(params, apiKey);
-    case "image":  return handleImage(params, apiKey);
-    case "audio":  return handleAudio(params, apiKey);
-    case "video":  return handleVideo(params, apiKey);
+    case "text":   return handleText(params, groqKey);
+    case "image":  return handleImage(params, polKey);
+    case "audio":  return handleAudio(params, groqKey);
+    case "video":  return handleVideo(params, polKey);
     default:
       return jsonRes({ error: `Unknown type "${type}". Use: text, image, audio, video, models` }, 400);
   }
 });
 
-// ── Text ─────────────────────────────────────────────────────────────────────
-async function handleText(params: Record<string, unknown>, apiKey: string): Promise<Response> {
+// ── Text (via Groq) ───────────────────────────────────────────────────────────
+async function handleText(params: Record<string, unknown>, groqKey: string): Promise<Response> {
   const messages = params.messages as Array<{ role: string; content: string }> | undefined;
   if (!messages?.length) return jsonRes({ error: "messages is required" }, 400);
+  if (!groqKey) return jsonRes({ error: "Text generation not configured" }, 503);
 
-  const model     = (params.model as string) || "openai";
+  const polModel  = (params.model as string) || "openai";
+  const groqModel = GROQ_MODEL[polModel] ?? "llama-3.3-70b-versatile";
   const stream    = params.stream === true;
   const maxTokens = (params.max_tokens as number) || 4096;
   const systemMsg = params.system as string | undefined;
@@ -91,15 +109,15 @@ async function handleText(params: Record<string, unknown>, apiKey: string): Prom
     ? [{ role: "system", content: systemMsg }, ...messages]
     : messages;
 
-  const upRes = await fetch(`${TEXT_BASE}/chat/completions`, {
+  const upRes = await fetch(`${GROQ_BASE}/chat/completions`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model, messages: allMessages, stream, max_tokens: maxTokens }),
+    headers: { "Authorization": `Bearer ${groqKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: groqModel, messages: allMessages, stream, max_tokens: maxTokens }),
   });
 
   if (!upRes.ok) {
     const errText = await upRes.text().catch(() => "");
-    console.error("Pollinations text error:", upRes.status, errText.slice(0, 300));
+    console.error("Groq text error:", upRes.status, errText.slice(0, 300));
     return jsonRes({ error: `Text generation failed (${upRes.status})` }, 502);
   }
 
@@ -144,16 +162,17 @@ async function handleImage(params: Record<string, unknown>, apiKey: string): Pro
   return jsonRes({ url, prompt, model, width, height, seed });
 }
 
-// ── Audio TTS ─────────────────────────────────────────────────────────────────
-async function handleAudio(params: Record<string, unknown>, apiKey: string): Promise<Response> {
+// ── Audio TTS (via Groq) ──────────────────────────────────────────────────────
+async function handleAudio(params: Record<string, unknown>, groqKey: string): Promise<Response> {
   const text = (params.text as string | undefined)?.trim();
   if (!text) return jsonRes({ error: "text is required" }, 400);
+  if (!groqKey) return jsonRes({ error: "TTS not configured" }, 503);
 
   const voice = (params.voice as string) || "nova";
 
-  const upRes = await fetch(`${TEXT_BASE}/audio/speech`, {
+  const upRes = await fetch(`${GROQ_BASE}/audio/speech`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Authorization": `Bearer ${groqKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model:           "openai-audio",
       input:           text,
