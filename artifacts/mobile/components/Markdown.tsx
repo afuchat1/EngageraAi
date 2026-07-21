@@ -113,6 +113,7 @@ function SvgBlockView({ code }: { code: string }) {
   return (
     <View style={styles.imageWrap}>
       <View style={styles.svgBox} onLayout={() => {}}>
+        {/* @ts-ignore — onError not in @types/react-native-svg but supported at runtime */}
         <SvgXml xml={code} width="100%" height={220} onError={() => setFailed(true)} />
       </View>
       <DownloadButton onPress={() => downloadToShareSheet(code, `image-${Date.now()}.svg`)} color="#fff" bg="rgba(0,0,0,0.55)" />

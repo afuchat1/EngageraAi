@@ -14,7 +14,7 @@ import {
   Inter_700Bold,
   useFonts,
 } from '@expo-google-fonts/inter';
-import { Stack } from 'expo-router';
+import { Stack, router } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import colors from '@/constants/colors';
 
@@ -61,10 +61,19 @@ function IncomingUrlHandler() {
 }
 
 function RootLayoutNav() {
+  // Always reset to the home (chat) screen on every cold start.
+  // Expo Router / React Navigation persists navigation state across sessions,
+  // so if the account or settings sheet was open when the app was closed,
+  // it would restore to that state on next open. We always want to land on
+  // the chat screen, not a modal sheet.
+  useEffect(() => {
+    router.replace('/');
+  }, []);
+
   return (
     <>
       <IncomingUrlHandler />
-      <Stack screenOptions={{ headerBackTitle: 'Back' }}>
+      <Stack initialRouteName="index" screenOptions={{ headerBackTitle: 'Back' }}>
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen
           name="account"

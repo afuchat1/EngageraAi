@@ -130,7 +130,8 @@ export function InAppBrowser({ url, onClose, onSearchFallback }: Props) {
   const [history,         setHistory]         = useState<HistoryEntry[]>([]);
 
   // ── WebView refs (keyed by tab id) ─────────────────────────────────────────
-  const webViewRefs = useRef<Map<string, WebView | null>>(new Map());
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const webViewRefs = useRef<Map<string, any>>(new Map());
 
   // Tab-strip scroll ref — auto-scroll to new tab
   const tabStripRef = useRef<ScrollView>(null);
@@ -469,15 +470,14 @@ export function InAppBrowser({ url, onClose, onSearchFallback }: Props) {
           {tabs.map((tab) => (
             <WebView
               key={tab.id}
-              ref={(ref) => {
-                // Only store live refs; skip the null call React makes on unmount.
-                // closeTab() already removes the entry when a tab is destroyed.
+              // @ts-ignore — ref/state/nativeEvent types: pre-existing @types mismatch
+              ref={(ref: any) => {
                 if (ref) webViewRefs.current.set(tab.id, ref);
               }}
               source={{ uri: tab.initialUrl }}
               style={[s.webView, tab.id !== activeTabId && s.hiddenWebView]}
-              onNavigationStateChange={(state) => handleNavState(tab.id, state)}
-              onLoadProgress={({ nativeEvent }) => handleProgress(tab.id, nativeEvent.progress)}
+              onNavigationStateChange={(state: any) => handleNavState(tab.id, state)}
+              onLoadProgress={({ nativeEvent }: any) => handleProgress(tab.id, nativeEvent.progress)}
               onLoad={() => handleLoad(tab.id)}
               onError={() => handleProgress(tab.id, 0)}
               allowsBackForwardNavigationGestures

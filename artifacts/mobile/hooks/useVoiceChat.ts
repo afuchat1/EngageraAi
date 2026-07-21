@@ -32,7 +32,7 @@ const GUEST_ID_KEY = 'engagera_guest_session_id';
 
 // Metering thresholds (dBFS; negative values, closer to 0 = louder)
 const SPEECH_THRESHOLD_DB = -40;  // above this = speech detected
-const SILENCE_DELAY_MS    = 1400; // commit after this ms of silence
+const SILENCE_DELAY_MS    = 900;  // commit after this ms of silence (faster feel)
 
 export type VoiceState =
   | 'idle'
@@ -65,12 +65,18 @@ async function buildHeaders(): Promise<Record<string, string>> {
   };
 }
 
-// Recording options optimised for Whisper STT (16 kHz mono AAC)
+// Recording options optimised for Whisper STT (16 kHz mono AAC).
+// isMeteringEnabled MUST be here (RecordingOptions), not in record() start
+// options — expo-audio only reads metering config at recorder construction
+// time. Without it the status callback never receives dBFS data, so the VAD
+// never detects speech, the silence timer never fires, and commitRecording()
+// is never called.
 const RECORDING_OPTIONS = {
-  extension:        '.m4a',
-  sampleRate:       16000,
-  numberOfChannels: 1,
-  bitRate:          64000,
+  extension:          '.m4a',
+  sampleRate:         16000,
+  numberOfChannels:   1,
+  bitRate:            64000,
+  isMeteringEnabled:  true,
   android: {
     outputFormat: 'mpeg4' as const,
     audioEncoder: 'aac'  as const,
@@ -149,11 +155,15 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
       const { data: sess } = await supabase.auth.getSession();
       const token = sess.session?.access_token ?? SUPABASE_ANON_KEY;
 
+      // M4A files are MPEG-4 audio — the correct MIME type is audio/mp4.
+      // The STT edge function maps content-type to a Groq Whisper file extension;
+      // audio/m4a is not in its mapping so it falls back to "webm" which causes
+      // Groq to reject or misprocess the file. audio/mp4 → "mp4" is correct.
       const result = await uploadAsync(STT_URL, uri, {
         httpMethod:  'POST',
         uploadType:  FileSystemUploadType.BINARY_CONTENT,
         headers: {
-          'Content-Type': 'audio/m4a',
+          'Content-Type': 'audio/mp4',
           Authorization:  `Bearer ${token}`,
         },
       });
