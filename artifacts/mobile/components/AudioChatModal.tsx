@@ -20,6 +20,7 @@ import Animated, {
   Easing,
   useAnimatedStyle,
   useSharedValue,
+  withDelay,
   withRepeat,
   withSequence,
   withTiming,
@@ -138,30 +139,26 @@ function VoiceOrb({ state }: { state: VoiceState }) {
       );
     }
     if (cfg.rings >= 2) {
-      ring2Scale.value = withRepeat(
+      // Ring 2 starts 667 ms after ring 1 for a cascading ripple effect
+      ring2Scale.value = withDelay(667, withRepeat(
         withTiming(2.4, { duration: ringDuration, easing: Easing.out(Easing.ease) }),
         -1, false,
-      );
-      ring2Opacity.value = withRepeat(
+      ));
+      ring2Opacity.value = withDelay(667, withRepeat(
         withTiming(0, { duration: ringDuration, easing: Easing.out(Easing.ease) }),
         -1, false,
-      );
-      // Staggered start — kick off after delay
-      setTimeout(() => {
-        if (cfg.rings >= 2) {
-          // Already running from above, no restart needed — initial offset handled by initial value
-        }
-      }, 667);
+      ));
     }
     if (cfg.rings >= 3) {
-      ring3Scale.value = withRepeat(
+      // Ring 3 starts 1333 ms after ring 1 (2/3 of period) for even spread
+      ring3Scale.value = withDelay(1333, withRepeat(
         withTiming(2.4, { duration: ringDuration, easing: Easing.out(Easing.ease) }),
         -1, false,
-      );
-      ring3Opacity.value = withRepeat(
+      ));
+      ring3Opacity.value = withDelay(1333, withRepeat(
         withTiming(0, { duration: ringDuration, easing: Easing.out(Easing.ease) }),
         -1, false,
-      );
+      ));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
@@ -374,6 +371,7 @@ export function AudioChatModal({ visible, onClose }: AudioChatModalProps) {
     conversationHistory,
     beginCall,
     endCall,
+    interruptSpeaking,
   } = useVoiceChat({});
 
   const isActive = state !== 'idle';
@@ -444,6 +442,17 @@ export function AudioChatModal({ visible, onClose }: AudioChatModalProps) {
 
         {/* Controls */}
         <View style={[styles.controls, { paddingBottom: insets.bottom + 24 }]}>
+          {/* Interrupt button — appears only while the AI is speaking */}
+          {state === 'speaking' && (
+            <Pressable
+              onPress={interruptSpeaking}
+              style={({ pressed }) => [styles.interruptBtn, pressed && { opacity: 0.7 }]}
+            >
+              <Ionicons name="mic-outline" size={18} color="#ffffff" />
+              <Text style={styles.interruptBtnText}>Interrupt</Text>
+            </Pressable>
+          )}
+
           <Pressable
             onPress={handleToggle}
             style={({ pressed }) => [
@@ -461,7 +470,6 @@ export function AudioChatModal({ visible, onClose }: AudioChatModalProps) {
               {isActive ? 'End call' : 'Start voice chat'}
             </Text>
           </Pressable>
-
         </View>
       </View>
     </Modal>
@@ -600,6 +608,22 @@ const styles = StyleSheet.create({
   callBtnText: {
     fontSize:   15,
     fontFamily: 'Inter_600SemiBold',
+  },
+  interruptBtn: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               8,
+    paddingHorizontal: 22,
+    paddingVertical:   11,
+    borderRadius:      999,
+    backgroundColor:   'rgba(255,255,255,0.08)',
+    borderWidth:       StyleSheet.hairlineWidth,
+    borderColor:       'rgba(255,255,255,0.18)',
+  },
+  interruptBtnText: {
+    color:      '#ffffff',
+    fontSize:   14,
+    fontFamily: 'Inter_500Medium',
   },
   voiceHint: {
     color:      'rgba(255,255,255,0.2)',

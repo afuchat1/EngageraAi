@@ -605,7 +605,7 @@ function VoiceTab() {
 
       {!active && (
         <p className="text-xs text-white/25 text-center">
-          Powered by Pollinations.AI · Speech-to-text · {TEXT_MODELS.find(m => m.id === voiceModel)?.label} · Neural TTS
+          Speech-to-text · {TEXT_MODELS.find(m => m.id === voiceModel)?.label} · Neural TTS
         </p>
       )}
     </div>
@@ -623,7 +623,7 @@ export default function Generate() {
         <div>
           <h1 className="text-3xl font-light tracking-tight">Generate Studio</h1>
           <p className="text-sm text-white/40 mt-1.5">
-            Powered by Pollinations.AI — text, image, audio, video &amp; real-time voice.
+            Text, image, audio, video &amp; real-time voice generation.
           </p>
         </div>
 

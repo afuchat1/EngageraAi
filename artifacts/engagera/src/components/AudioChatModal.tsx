@@ -363,7 +363,6 @@ export function AudioChatModal({ open, onClose }: AudioChatModalProps) {
         <div className="flex items-center justify-between px-5 pt-5 pb-3 shrink-0">
           <div>
             <h2 className="text-sm font-semibold text-white">Live Voice Chat</h2>
-            <p className="text-[10px] text-white/30 font-mono mt-0.5">Powered by Pollinations.AI</p>
           </div>
           <div className="flex items-center gap-2">
             {isActive && (

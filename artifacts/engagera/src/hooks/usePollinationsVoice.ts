@@ -1,5 +1,5 @@
 /**
- * usePollinationsVoice — Real-time voice conversation powered by Pollinations.AI
+ * usePollinationsVoice — Real-time voice conversation
  *
  * Pipeline:
  *   1. MediaRecorder captures microphone audio (VAD-triggered)

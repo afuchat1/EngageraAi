@@ -322,6 +322,15 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
     }
   }, [setS]);
 
+  // ── interruptSpeaking ────────────────────────────────────────────────────────
+  // Stops TTS mid-sentence and immediately returns to listening.
+  // The speakText promise resolves via onStopped → startListening is called automatically.
+  const interruptSpeaking = useCallback(() => {
+    if (stateRef.current === 'speaking' && activeRef.current) {
+      Speech.stop();
+    }
+  }, []);
+
   // ── endCall ─────────────────────────────────────────────────────────────────
   const endCall = useCallback(async () => {
     activeRef.current = false;
@@ -356,5 +365,6 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
     conversationHistory,
     beginCall,
     endCall,
+    interruptSpeaking,
   };
 }
