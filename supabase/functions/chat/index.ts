@@ -1013,22 +1013,33 @@ async function persistConversation(
   // Conversations and messages are NOT stored server-side — the developer owns
   // their own conversation state. Usage is recorded per key, not per user.
   if (authResult.type === "api_key") {
+    // Record usage — include user_id so the developer can see it in their dashboard.
+    // Without user_id the record is invisible: every consumer-facing query filters by user_id.
     try {
       await db.from("engagera_usage_records").insert({
         api_key_id: authResult.apiKeyId,
-        model: aiResult.model ?? model,
+        user_id:    authResult.userId,          // ← was missing; fixes invisible API-key usage
+        model:        aiResult.model ?? model,
         input_tokens: aiResult.inputTokens,
         output_tokens: aiResult.outputTokens,
-        total_tokens: aiResult.inputTokens + aiResult.outputTokens,
+        total_tokens:  aiResult.inputTokens + aiResult.outputTokens,
       });
     } catch { /* non-fatal */ }
-    // Update last_used_at on the key row (non-fatal)
+    // Atomically bump total_requests + last_used_at via a single Postgres UPDATE.
+    // The RPC (defined in supabase/migrations/20260721000000_fix_api_key_usage_increment.sql)
+    // does: UPDATE … SET total_requests = COALESCE(total_requests, 0) + 1, last_used_at = NOW()
+    // Falls back to a last_used_at-only update until the migration is deployed.
     try {
-      await db
-        .from("engagera_api_keys")
-        .update({ last_used_at: new Date().toISOString() })
-        .eq("id", authResult.apiKeyId);
-    } catch { /* non-fatal */ }
+      await db.rpc("engagera_increment_api_key_usage", { p_key_id: authResult.apiKeyId });
+    } catch {
+      // RPC not yet deployed — update last_used_at only (non-fatal)
+      try {
+        await db
+          .from("engagera_api_keys")
+          .update({ last_used_at: new Date().toISOString() })
+          .eq("id", authResult.apiKeyId);
+      } catch { /* non-fatal */ }
+    }
     return null; // no server-side conversation ID for API key requests
   }
 

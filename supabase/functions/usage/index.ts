@@ -23,15 +23,21 @@ Deno.serve(async (req: Request) => {
 
     if (error) return json({ error: error.message }, 500);
 
-    type Row = { model: string; input_tokens: number; output_tokens: number; total_tokens: number; created_at: string };
+    type Row = {
+      model: string;
+      input_tokens: number;
+      output_tokens: number;
+      total_tokens: number;
+      created_at: string;
+    };
     const records = (data ?? []) as Row[];
-    const totalRequests = records.length;
-    const totalTokens = records.reduce((s, r) => s + r.total_tokens, 0);
-    const totalInputTokens = records.reduce((s, r) => s + r.input_tokens, 0);
+    const totalRequests    = records.length;
+    const totalTokens      = records.reduce((s, r) => s + r.total_tokens,      0);
+    const totalInputTokens = records.reduce((s, r) => s + r.input_tokens,  0);
     const totalOutputTokens = records.reduce((s, r) => s + r.output_tokens, 0);
 
     const byModelMap: Record<string, { requests: number; tokens: number }> = {};
-    const dailyMap: Record<string, { requests: number; tokens: number }> = {};
+    const dailyMap:   Record<string, { requests: number; tokens: number }> = {};
 
     for (const r of records) {
       if (!byModelMap[r.model]) byModelMap[r.model] = { requests: 0, tokens: 0 };
@@ -45,7 +51,10 @@ Deno.serve(async (req: Request) => {
     }
 
     return json({
-      totalRequests, totalTokens, totalInputTokens, totalOutputTokens,
+      totalRequests,
+      totalTokens,
+      totalInputTokens,
+      totalOutputTokens,
       byModel: Object.entries(byModelMap).map(([model, v]) => ({ model, ...v })),
       dailyUsage: Object.entries(dailyMap)
         .sort(([a], [b]) => a.localeCompare(b))
@@ -53,7 +62,8 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  const days = parseInt(url.searchParams.get("days") ?? "30", 10);
+  // ── Detailed records list ──────────────────────────────────────────────────
+  const days  = parseInt(url.searchParams.get("days") ?? "30", 10);
   const since = new Date();
   since.setDate(since.getDate() - days);
 
@@ -67,12 +77,44 @@ Deno.serve(async (req: Request) => {
 
   if (error) return json({ error: error.message }, 500);
 
-  type Row = { id: number; model: string; input_tokens: number; output_tokens: number; total_tokens: number; created_at: string };
+  type Row = {
+    id: number;
+    model: string;
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
+    created_at: string;
+    api_key_id: number | null;
+  };
+
+  const rows = (data ?? []) as Row[];
+
+  // Resolve API key names for records that came from a key, not a JWT session.
+  const keyIds = [...new Set(rows.map(r => r.api_key_id).filter((id): id is number => id != null))];
+  let keyNameById: Record<number, string> = {};
+
+  if (keyIds.length > 0) {
+    const { data: keys } = await db
+      .from("engagera_api_keys")
+      .select("id, name, prefix")
+      .in("id", keyIds);
+
+    for (const k of (keys ?? []) as Array<{ id: number; name: string; prefix: string }>) {
+      // Display as "Name (eng_xxxx...)" so users can identify which key
+      keyNameById[k.id] = k.name ? `${k.name} (${k.prefix}…)` : k.prefix;
+    }
+  }
+
   return json(
-    (data ?? []).map((r: Row) => ({
-      id: r.id, model: r.model, inputTokens: r.input_tokens,
-      outputTokens: r.output_tokens, totalTokens: r.total_tokens,
-      createdAt: r.created_at, apiKeyName: null,
+    rows.map(r => ({
+      id:           r.id,
+      model:        r.model,
+      inputTokens:  r.input_tokens,
+      outputTokens: r.output_tokens,
+      totalTokens:  r.total_tokens,
+      createdAt:    r.created_at,
+      apiKeyId:     r.api_key_id,
+      apiKeyName:   r.api_key_id != null ? (keyNameById[r.api_key_id] ?? `key #${r.api_key_id}`) : null,
     })),
   );
 });
