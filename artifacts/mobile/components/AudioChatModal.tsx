@@ -372,6 +372,7 @@ export function AudioChatModal({ visible, onClose }: AudioChatModalProps) {
     beginCall,
     endCall,
     interruptSpeaking,
+    sendNow,
   } = useVoiceChat({});
 
   const isActive = state !== 'idle';
@@ -442,6 +443,17 @@ export function AudioChatModal({ visible, onClose }: AudioChatModalProps) {
 
         {/* Controls */}
         <View style={[styles.controls, { paddingBottom: insets.bottom + 24 }]}>
+          {/* Send now — visible while listening so user can force-commit without VAD */}
+          {state === 'listening' && (
+            <Pressable
+              onPress={sendNow}
+              style={({ pressed }) => [styles.interruptBtn, pressed && { opacity: 0.7 }]}
+            >
+              <Ionicons name="send" size={16} color="#ffffff" />
+              <Text style={styles.interruptBtnText}>Send</Text>
+            </Pressable>
+          )}
+
           {/* Interrupt button — appears only while the AI is speaking */}
           {state === 'speaking' && (
             <Pressable

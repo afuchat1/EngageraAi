@@ -2,11 +2,17 @@
  * useVoiceChat — Live voice conversation pipeline for React Native.
  *
  * Pipeline:
- *   1. expo-audio records microphone audio with metering-based VAD
- *   2. Supabase STT edge function (Groq Whisper) transcribes speech → text
- *   3. Pollinations text model generates a reply (full conversation context)
- *   4. expo-speech speaks the reply aloud (native TTS, no binary file handling)
- *   5. Loop restarts automatically after speech ends
+ *   1. expo-audio records microphone audio
+ *   2. VAD (metering) OR manual tap OR 10-second safety timer commits the recording
+ *   3. Supabase STT edge function (Pollinations Whisper) transcribes speech → text
+ *   4. Pollinations text model generates a reply (full conversation context)
+ *   5. expo-speech speaks the reply aloud (native TTS)
+ *   6. Loop restarts automatically after speech ends
+ *
+ * Three ways a recording is committed:
+ *   A. VAD: silence detected via metering after speech was seen
+ *   B. Manual: user taps "Send" button (calls sendNow())
+ *   C. Safety: 10-second max-recording timeout — always commits regardless of VAD
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -30,9 +36,10 @@ const STT_URL      = `${SUPABASE_URL}/functions/v1/stt`;
 const POLLINATIONS = `${SUPABASE_URL}/functions/v1/pollinations`;
 const GUEST_ID_KEY = 'engagera_guest_session_id';
 
-// Metering thresholds (dBFS; negative values, closer to 0 = louder)
-const SPEECH_THRESHOLD_DB = -40;  // above this = speech detected
-const SILENCE_DELAY_MS    = 900;  // commit after this ms of silence (faster feel)
+// VAD thresholds
+const SPEECH_THRESHOLD_DB = -40;  // dBFS above this = speech
+const SILENCE_DELAY_MS    = 900;  // ms of post-speech silence before auto-commit
+const MAX_RECORD_MS       = 10_000; // always commit after 10 s regardless of VAD
 
 export type VoiceState =
   | 'idle'
@@ -65,12 +72,8 @@ async function buildHeaders(): Promise<Record<string, string>> {
   };
 }
 
-// Recording options optimised for Whisper STT (16 kHz mono AAC).
-// isMeteringEnabled MUST be here (RecordingOptions), not in record() start
-// options — expo-audio only reads metering config at recorder construction
-// time. Without it the status callback never receives dBFS data, so the VAD
-// never detects speech, the silence timer never fires, and commitRecording()
-// is never called.
+// Recording options for Whisper STT.
+// isMeteringEnabled at the top level enables the dBFS metering callback.
 const RECORDING_OPTIONS = {
   extension:          '.m4a',
   sampleRate:         16000,
@@ -106,19 +109,26 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
   const activeRef       = useRef(false);
   const timerRef        = useRef<ReturnType<typeof setInterval> | null>(null);
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout>  | null>(null);
+  const maxDurTimerRef  = useRef<ReturnType<typeof setTimeout>  | null>(null);
   const speechSeenRef   = useRef(false);
   const historyRef      = useRef<ConversationTurn[]>([]);
 
-  // Forward refs so mutually-recursive callbacks stay fresh without stale closures
-  const fnsRef = useRef({ startListening: async () => {}, commitRecording: async () => {} });
+  // Forward refs so mutually-recursive callbacks stay fresh
+  const fnsRef = useRef({
+    startListening:  async () => {},
+    commitRecording: async () => {},
+  });
 
-  // ── expo-audio recorder (single instance per hook mount) ──────────────────
-  // The status listener drives VAD: it fires on every metering update while
-  // recording so we can detect speech start/end without polling.
+  // ── expo-audio recorder ────────────────────────────────────────────────────
+  // The status callback drives VAD: fires on every metering update while
+  // recording. Metering only arrives when isMeteringEnabled is true in options.
   const recorder = useAudioRecorder(RECORDING_OPTIONS, (status) => {
     if (!activeRef.current || stateRef.current !== 'listening') return;
-    // expo-audio status includes a `metering` field (dBFS, negative)
-    const db = (status as Record<string, unknown>).metering as number | undefined ?? -160;
+
+    // expo-audio puts the dBFS value in status.metering (negative float).
+    // Cast via unknown because the RecordingStatus typedef may lag behind the
+    // runtime — the field is always present when isMeteringEnabled is set.
+    const db = (status as unknown as { metering?: number }).metering ?? -160;
 
     if (db > SPEECH_THRESHOLD_DB) {
       // Speech detected — cancel any pending silence commit
@@ -128,7 +138,7 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
       }
       speechSeenRef.current = true;
     } else if (speechSeenRef.current && !silenceTimerRef.current) {
-      // Post-speech silence — start the commit timer
+      // Post-speech silence window — start the commit countdown
       silenceTimerRef.current = setTimeout(() => {
         if (activeRef.current && stateRef.current === 'listening') {
           fnsRef.current.commitRecording();
@@ -142,23 +152,19 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
     setState(s);
   }, []);
 
-  const clearSilenceTimer = useCallback(() => {
-    if (silenceTimerRef.current) {
-      clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = null;
-    }
+  const clearTimers = useCallback(() => {
+    if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
+    if (maxDurTimerRef.current)  { clearTimeout(maxDurTimerRef.current);  maxDurTimerRef.current  = null; }
   }, []);
 
-  // ── STT via Groq Whisper edge function ─────────────────────────────────────
+  // ── STT via Pollinations Whisper ───────────────────────────────────────────
   const transcribe = useCallback(async (uri: string): Promise<string | null> => {
     try {
       const { data: sess } = await supabase.auth.getSession();
       const token = sess.session?.access_token ?? SUPABASE_ANON_KEY;
 
-      // M4A files are MPEG-4 audio — the correct MIME type is audio/mp4.
-      // The STT edge function maps content-type to a Groq Whisper file extension;
-      // audio/m4a is not in its mapping so it falls back to "webm" which causes
-      // Groq to reject or misprocess the file. audio/mp4 → "mp4" is correct.
+      // audio/mp4 is the correct MIME for .m4a (MPEG-4 audio container).
+      // The STT edge function maps this to the "mp4" extension for Whisper.
       const result = await uploadAsync(STT_URL, uri, {
         httpMethod:  'POST',
         uploadType:  FileSystemUploadType.BINARY_CONTENT,
@@ -168,13 +174,27 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
         },
       });
 
-      if (result.status !== 200) return null;
+      if (result.status !== 200) {
+        // Surface the actual error so it shows in the UI
+        try {
+          const body = JSON.parse(result.body) as { error?: string; detail?: string };
+          const msg  = body.detail || body.error || `STT error ${result.status}`;
+          setError(msg);
+        } catch {
+          setError(`STT error ${result.status}`);
+        }
+        return null;
+      }
+
       const d = JSON.parse(result.body) as { text?: string };
       return (typeof d.text === 'string' ? d.text.trim() : '') || null;
-    } catch { return null; }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Transcription failed');
+      return null;
+    }
   }, []);
 
-  // ── TTS via expo-speech (native, reliable, no binary file handling) ─────────
+  // ── TTS via expo-speech ────────────────────────────────────────────────────
   const speakText = useCallback(async (text: string): Promise<void> => {
     if (!text.trim() || !activeRef.current) return;
     setS('speaking');
@@ -194,7 +214,7 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
     }
   }, [setS]);
 
-  // ── Text reply via streaming ────────────────────────────────────────────────
+  // ── Text reply via streaming ───────────────────────────────────────────────
   const getReply = useCallback(async (userText: string): Promise<void> => {
     if (!activeRef.current) return;
     setS('thinking');
@@ -213,7 +233,7 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
         headers,
         body:    JSON.stringify({ type: 'text', model, messages, system, stream: true }),
       });
-      if (!response.ok || !response.body) throw new Error('LLM request failed');
+      if (!response.ok || !response.body) throw new Error(`LLM error ${response.status}`);
 
       const reader  = response.body.getReader();
       const decoder = new TextDecoder();
@@ -236,7 +256,9 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
           } catch { /* skip malformed SSE frames */ }
         }
       }
-    } catch { /* network issues — fall through */ }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Reply failed');
+    }
 
     if (full) {
       const next: ConversationTurn[] = [
@@ -255,10 +277,10 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
     }
   }, [model, system, speakText, setS]);
 
-  // ── commitRecording ─────────────────────────────────────────────────────────
+  // ── commitRecording ────────────────────────────────────────────────────────
   const commitRecording = useCallback(async () => {
     if (!activeRef.current || stateRef.current !== 'listening') return;
-    clearSilenceTimer();
+    clearTimers();
     speechSeenRef.current = false;
 
     try {
@@ -266,6 +288,7 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
       const uri = recorder.uri;
       if (!uri || !activeRef.current) return;
 
+      setError(null);
       setS('processing');
       const text = await transcribe(uri);
       try { await deleteAsync(uri, { idempotent: true }); } catch {}
@@ -275,36 +298,53 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
         setTranscript(text);
         await getReply(text);
       } else {
-        // Nothing heard — restart listening
-        fnsRef.current.startListening();
+        // transcribe() already called setError if something went wrong
+        // Wait a moment then restart so user can try again
+        setTimeout(() => { if (activeRef.current) fnsRef.current.startListening(); }, 1500);
       }
     } catch {
       if (activeRef.current) fnsRef.current.startListening();
     }
-  }, [recorder, clearSilenceTimer, transcribe, getReply, setS]);
+  }, [recorder, clearTimers, transcribe, getReply, setS]);
 
-  // ── startListening ──────────────────────────────────────────────────────────
+  // ── startListening ─────────────────────────────────────────────────────────
   const startListening = useCallback(async () => {
     if (!activeRef.current) return;
     setS('listening');
-    clearSilenceTimer();
+    clearTimers();
     speechSeenRef.current = false;
 
     try {
       await recorder.prepareToRecordAsync();
       recorder.record();
+
+      // Safety: always commit after MAX_RECORD_MS even if VAD never fires.
+      // This covers devices where metering doesn't work or the threshold is off.
+      maxDurTimerRef.current = setTimeout(() => {
+        if (activeRef.current && stateRef.current === 'listening') {
+          fnsRef.current.commitRecording();
+        }
+      }, MAX_RECORD_MS);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Recording failed');
       setS('idle');
       activeRef.current = false;
     }
-  }, [recorder, clearSilenceTimer, setS]);
+  }, [recorder, clearTimers, setS]);
 
   useEffect(() => {
     fnsRef.current = { startListening, commitRecording };
   }, [startListening, commitRecording]);
 
-  // ── beginCall ───────────────────────────────────────────────────────────────
+  // ── sendNow — manual commit triggered by "Send" button ────────────────────
+  // Lets the user force-send even if VAD hasn't triggered yet.
+  const sendNow = useCallback(() => {
+    if (activeRef.current && stateRef.current === 'listening') {
+      fnsRef.current.commitRecording();
+    }
+  }, []);
+
+  // ── beginCall ─────────────────────────────────────────────────────────────
   const beginCall = useCallback(async () => {
     setError(null);
     setS('connecting');
@@ -333,18 +373,17 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
     }
   }, [setS]);
 
-  // ── interruptSpeaking ────────────────────────────────────────────────────────
-  // Stops TTS mid-sentence; speakText's onStopped callback then calls startListening.
+  // ── interruptSpeaking ─────────────────────────────────────────────────────
   const interruptSpeaking = useCallback(() => {
     if (stateRef.current === 'speaking' && activeRef.current) {
       Speech.stop();
     }
   }, []);
 
-  // ── endCall ─────────────────────────────────────────────────────────────────
+  // ── endCall ───────────────────────────────────────────────────────────────
   const endCall = useCallback(async () => {
     activeRef.current = false;
-    clearSilenceTimer();
+    clearTimers();
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
 
     Speech.stop();
@@ -358,7 +397,7 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
     setConversationHistory([]);
 
     try { await setAudioModeAsync({ allowsRecording: false }); } catch {}
-  }, [recorder, clearSilenceTimer, setS]);
+  }, [recorder, clearTimers, setS]);
 
   // Cleanup on unmount
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -374,5 +413,6 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
     beginCall,
     endCall,
     interruptSpeaking,
+    sendNow,
   };
 }
