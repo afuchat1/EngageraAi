@@ -214,7 +214,10 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
     }
   }, [setS]);
 
-  // ── Text reply via streaming ───────────────────────────────────────────────
+  // ── Text reply (non-streaming, with one retry) ────────────────────────────
+  // Voice chat doesn't need streaming — we speak the full reply anyway.
+  // Non-streaming is simpler, faster end-to-end, and avoids SSE proxy issues
+  // that can cause 502s from Supabase edge functions.
   const getReply = useCallback(async (userText: string): Promise<void> => {
     if (!activeRef.current) return;
     setS('thinking');
@@ -226,39 +229,40 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
     ];
 
     let full = '';
-    try {
+
+    // Helper: one attempt at the Pollinations text API
+    const attempt = async (): Promise<string | null> => {
       const headers  = await buildHeaders();
       const response = await fetch(POLLINATIONS, {
         method:  'POST',
         headers,
-        body:    JSON.stringify({ type: 'text', model, messages, system, stream: true }),
+        body:    JSON.stringify({ type: 'text', model, messages, system, stream: false }),
       });
-      if (!response.ok || !response.body) throw new Error(`LLM error ${response.status}`);
-
-      const reader  = response.body.getReader();
-      const decoder = new TextDecoder();
-      let   buf     = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split('\n');
-        buf = lines.pop() ?? '';
-        for (const line of lines) {
-          if (!line.startsWith('data:')) continue;
-          const payload = line.slice(5).trim();
-          if (payload === '[DONE]') continue;
-          try {
-            const chunk   = JSON.parse(payload) as { choices?: Array<{ delta?: { content?: string } }> };
-            const content = chunk.choices?.[0]?.delta?.content ?? '';
-            if (content) { full += content; setAiReply(prev => prev + content); }
-          } catch { /* skip malformed SSE frames */ }
-        }
+      if (!response.ok) {
+        const body = await response.text().catch(() => '');
+        throw new Error(`LLM error ${response.status}: ${body.slice(0, 120)}`);
       }
+      const data = await response.json() as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+      return data.choices?.[0]?.message?.content?.trim() ?? null;
+    };
+
+    try {
+      // First attempt
+      full = (await attempt()) ?? '';
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Reply failed');
+      // One retry after 1 s — covers transient 502/503 from Pollinations
+      try {
+        await new Promise(r => setTimeout(r, 1000));
+        if (!activeRef.current) return;
+        full = (await attempt()) ?? '';
+      } catch (e2) {
+        setError(e2 instanceof Error ? e2.message : 'Reply failed');
+      }
     }
+
+    if (full) setAiReply(full);
 
     if (full) {
       const next: ConversationTurn[] = [
