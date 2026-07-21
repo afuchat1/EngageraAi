@@ -4,7 +4,7 @@
  * Pipeline:
  *   1. MediaRecorder captures microphone audio (VAD-triggered)
  *   2. Groq Whisper edge function transcribes speech → text
- *   3. Pollinations text model generates a reply (streaming)
+ *   3. Pollinations text model generates a reply (full conversation context)
  *   4. Pollinations TTS converts reply → MP3 → plays back
  *   5. Loop restarts after playback ends
  */
@@ -20,6 +20,11 @@ export type VoiceState =
   | "processing"
   | "thinking"
   | "speaking";
+
+export interface ConversationTurn {
+  role: "user" | "assistant";
+  content: string;
+}
 
 export interface UsePollinationsVoiceOptions {
   model?:  string;  // Pollinations text model (default: "openai")
@@ -43,11 +48,12 @@ function bestMime(): string {
 export function usePollinationsVoice(options: UsePollinationsVoiceOptions = {}) {
   const { model = "openai", voice = "nova", system } = options;
 
-  const [state,        setState]        = useState<VoiceState>("idle");
-  const [transcript,   setTranscript]   = useState("");
-  const [aiReply,      setAiReply]      = useState("");
-  const [callDuration, setCallDuration] = useState(0);
-  const [error,        setError]        = useState<string | null>(null);
+  const [state,               setState]               = useState<VoiceState>("idle");
+  const [transcript,          setTranscript]          = useState("");
+  const [aiReply,             setAiReply]             = useState("");
+  const [callDuration,        setCallDuration]        = useState(0);
+  const [error,               setError]               = useState<string | null>(null);
+  const [conversationHistory, setConversationHistory] = useState<ConversationTurn[]>([]);
 
   const activeRef      = useRef(false);
   const stateRef       = useRef<VoiceState>("idle");
@@ -62,6 +68,8 @@ export function usePollinationsVoice(options: UsePollinationsVoiceOptions = {}) 
   const audioElRef     = useRef<HTMLAudioElement | null>(null);
   const speechSeen     = useRef(false);
   const hasAudio       = useRef(false);
+  // Full multi-turn conversation history kept in a ref for synchronous access
+  const historyRef     = useRef<ConversationTurn[]>([]);
 
   // Forward refs so mutually-recursive callbacks stay fresh
   const fnsRef = useRef({ startRec: () => {}, commitRec: () => {} });
@@ -129,13 +137,18 @@ export function usePollinationsVoice(options: UsePollinationsVoiceOptions = {}) 
     }
   }, [voice, setS]);
 
-  // ── Pollinations text reply ──────────────────────────────────────────────────
+  // ── Pollinations text reply (full conversation context) ─────────────────────
   const getReply = useCallback(async (userText: string): Promise<void> => {
     if (!activeRef.current) return;
     setS("thinking");
     setAiReply("");
 
-    const messages = [{ role: "user", content: userText }];
+    // Build messages including full history so the AI has context
+    const messages: ConversationTurn[] = [
+      ...historyRef.current,
+      { role: "user", content: userText },
+    ];
+
     let full = "";
     try {
       const headers = await buildPollinationsHeaders();
@@ -168,6 +181,17 @@ export function usePollinationsVoice(options: UsePollinationsVoiceOptions = {}) 
         }
       }
     } catch { /* network issues */ }
+
+    // Commit this turn to history
+    if (full) {
+      const nextHistory: ConversationTurn[] = [
+        ...historyRef.current,
+        { role: "user",      content: userText },
+        { role: "assistant", content: full      },
+      ];
+      historyRef.current = nextHistory;
+      setConversationHistory(nextHistory);
+    }
 
     if (full && activeRef.current) {
       await speakText(full, () => {});
@@ -250,6 +274,8 @@ export function usePollinationsVoice(options: UsePollinationsVoiceOptions = {}) 
     setTranscript("");
     setAiReply("");
     setCallDuration(0);
+    setConversationHistory([]);
+    historyRef.current = [];
     activeRef.current = true;
 
     try {
@@ -291,10 +317,12 @@ export function usePollinationsVoice(options: UsePollinationsVoiceOptions = {}) 
     audioCtxRef.current?.close().catch(() => {});
     audioCtxRef.current = null;
     analyserRef.current = null;
+    historyRef.current = [];
     setS("idle");
     setTranscript("");
     setAiReply("");
     setCallDuration(0);
+    setConversationHistory([]);
   }, [clearVAD, setS]);
 
   useEffect(() => () => { activeRef.current = false; endCall(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -304,5 +332,15 @@ export function usePollinationsVoice(options: UsePollinationsVoiceOptions = {}) 
     "mediaDevices" in navigator &&
     "getUserMedia" in navigator.mediaDevices;
 
-  return { state, transcript, aiReply, callDuration, error, beginCall, endCall, supported };
+  return {
+    state,
+    transcript,
+    aiReply,
+    callDuration,
+    error,
+    conversationHistory,
+    beginCall,
+    endCall,
+    supported,
+  };
 }

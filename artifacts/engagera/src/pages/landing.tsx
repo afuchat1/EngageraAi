@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
-import { Menu, Plus, MessageSquare, Send, Trash2, Cpu, Image as ImageIcon } from "lucide-react";
+import { Menu, Plus, MessageSquare, Send, Trash2, Cpu, Image as ImageIcon, Mic } from "lucide-react";
+import { AudioChatModal } from "@/components/AudioChatModal";
 import {
   useListConversations,
   useGetConversationMessages,
@@ -34,6 +35,7 @@ export default function Landing() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [guestLimitReached, setGuestLimitReached] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [audioModalOpen, setAudioModalOpen] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
@@ -467,29 +469,40 @@ export default function Landing() {
 
           {/* Input footer */}
           <div className="shrink-0 p-3 md:p-4 bg-black border-t border-white/10">
-            <div className="max-w-3xl mx-auto relative flex items-end">
-              <textarea
-                ref={chatInputRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={guestLimitReached ? "Sign up to continue..." : "Message Engagera..."}
-                disabled={guestLimitReached}
-                className="w-full bg-transparent border border-white/20 focus:border-white/50 outline-none resize-none py-3 pl-4 pr-12 text-sm max-h-48 scrollbar-thin min-h-[50px] transition-colors disabled:opacity-40 rounded-2xl"
-                rows={1}
-                onInput={(e) => {
-                  const t = e.target as HTMLTextAreaElement;
-                  t.style.height = "auto";
-                  t.style.height = `${Math.min(t.scrollHeight, 200)}px`;
-                }}
-              />
+            <div className="max-w-3xl mx-auto relative flex items-end gap-2">
+              {/* Mic / voice chat button */}
               <button
-                onClick={handleSend}
-                disabled={!input.trim() || isLoading || guestLimitReached}
-                className="absolute right-2 bottom-2 p-1.5 text-white/40 hover:text-white disabled:opacity-20 transition-colors"
+                onClick={() => setAudioModalOpen(true)}
+                title="Live voice chat"
+                className="shrink-0 mb-1.5 p-2.5 rounded-xl border border-white/15 text-white/40 hover:text-white hover:border-white/35 hover:bg-white/[0.06] transition-all"
               >
-                <Send className="w-4 h-4" />
+                <Mic className="w-4 h-4" />
               </button>
+
+              <div className="flex-1 relative flex items-end">
+                <textarea
+                  ref={chatInputRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={guestLimitReached ? "Sign up to continue..." : "Message Engagera..."}
+                  disabled={guestLimitReached}
+                  className="w-full bg-transparent border border-white/20 focus:border-white/50 outline-none resize-none py-3 pl-4 pr-12 text-sm max-h-48 scrollbar-thin min-h-[50px] transition-colors disabled:opacity-40 rounded-2xl"
+                  rows={1}
+                  onInput={(e) => {
+                    const t = e.target as HTMLTextAreaElement;
+                    t.style.height = "auto";
+                    t.style.height = `${Math.min(t.scrollHeight, 200)}px`;
+                  }}
+                />
+                <button
+                  onClick={handleSend}
+                  disabled={!input.trim() || isLoading || guestLimitReached}
+                  className="absolute right-2 bottom-2 p-1.5 text-white/40 hover:text-white disabled:opacity-20 transition-colors"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </div>
             </div>
             <p className="text-center mt-2 text-[10px] text-white/20">
               Engagera AI can make mistakes. Verify important information.
@@ -497,6 +510,9 @@ export default function Landing() {
           </div>
         </div>
       </div>
+
+      {/* Live Audio Chat Modal */}
+      <AudioChatModal open={audioModalOpen} onClose={() => setAudioModalOpen(false)} />
 
       {/* Guest Limit Modal */}
       {guestLimitReached && !user && (
