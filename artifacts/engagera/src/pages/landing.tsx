@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
-import { Menu, Plus, MessageSquare, Send, Trash2, Cpu, Image as ImageIcon, Mic } from "lucide-react";
+import { Menu, Plus, MessageSquare, Send, Trash2, Image as ImageIcon, Mic } from "lucide-react";
+import { logoSrc } from "@/lib/assets";
 import { AudioChatModal } from "@/components/AudioChatModal";
 import {
   useListConversations,
@@ -303,6 +304,11 @@ export default function Landing() {
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full bg-[#080808] w-full">
+      {/* Brand */}
+      <div className="flex items-center gap-2.5 px-4 pt-5 pb-3">
+        <img src={logoSrc} alt="Engagera" className="w-6 h-6 rounded-md shrink-0" />
+        <span className="font-bold text-sm tracking-tight">Engagera</span>
+      </div>
       <div className="p-3">
         <button
           onClick={handleNewChat}
@@ -355,27 +361,21 @@ export default function Landing() {
         {/* Chat Area */}
         <div className="flex-1 flex flex-col h-full min-w-0 bg-black overflow-hidden">
 
-          {/* Top bar */}
-          <div className="shrink-0 flex items-center px-3 py-2 border-b border-white/10 bg-black gap-2">
-            {user && (
+          {/* Top bar — mobile sidebar trigger only */}
+          {user && (
+            <div className="shrink-0 flex items-center px-3 py-2 bg-black">
               <Sheet open={isMobileSidebarOpen} onOpenChange={setIsMobileSidebarOpen}>
                 <SheetTrigger asChild>
-                  <button className="md:hidden p-2 rounded-full border border-white/20 hover:bg-white/10 transition-colors">
+                  <button className="md:hidden p-2 rounded-xl text-white/40 hover:text-white hover:bg-white/[0.07] transition-colors">
                     <Menu className="w-4 h-4" />
                   </button>
                 </SheetTrigger>
-                <SheetContent side="left" className="p-0 bg-black border-r border-white/15 w-72 rounded-none sm:max-w-none">
+                <SheetContent side="left" className="p-0 bg-[#080808] border-0 w-72 rounded-none sm:max-w-none">
                   <SidebarContent />
                 </SheetContent>
               </Sheet>
-            )}
-            <div className="flex-1" />
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-white/10 bg-white/[0.03] text-white/45 text-xs">
-              <Cpu className="w-3 h-3 shrink-0" />
-              <span>{MODEL_LABELS[autoModel] ?? autoModel}</span>
-              <span className="text-white/20 ml-0.5">· auto</span>
             </div>
-          </div>
+          )}
 
           {/* Messages area */}
           <div className="flex-1 overflow-y-auto scrollbar-thin">
@@ -468,7 +468,7 @@ export default function Landing() {
           </div>
 
           {/* Input footer */}
-          <div className="shrink-0 p-3 md:p-4 bg-black border-t border-white/10">
+          <div className="shrink-0 p-3 md:p-4 bg-black">
             <div className="max-w-3xl mx-auto relative flex items-end gap-2">
               {/* Mic / voice chat button */}
               <button
@@ -517,7 +517,7 @@ export default function Landing() {
       {/* Guest Limit Modal */}
       {guestLimitReached && !user && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-black border border-white/15 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+          <div className="bg-[#0a0a0a] rounded-2xl p-6 max-w-sm w-full shadow-2xl">
             <div className="w-10 h-10 rounded-full border border-white/15 flex items-center justify-center mb-4 mx-auto">
               <MessageSquare className="w-5 h-5 text-white/50" />
             </div>

@@ -80,7 +80,7 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
 
       {/* ── Desktop Sidebar ─────────────────────────────── */}
       <aside
-        className={`hidden md:flex flex-col shrink-0 transition-all duration-200 ease-in-out bg-[#080808] border-r border-white/[0.07] ${
+        className={`hidden md:flex flex-col shrink-0 transition-all duration-200 ease-in-out bg-[#080808] ${
           collapsed ? "w-[60px]" : "w-[220px]"
         }`}
       >
@@ -105,7 +105,7 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
         </nav>
 
         {/* Bottom nav */}
-        <div className="px-2 pb-2 space-y-0.5 border-t border-white/[0.07] pt-2">
+        <div className="px-2 pb-2 space-y-0.5 pt-2">
           {BOTTOM_ITEMS.map((item) => (
             <NavLink
               key={item.href}
@@ -117,7 +117,7 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
         </div>
 
         {/* Collapse toggle */}
-        <div className={`p-2 border-t border-white/[0.07] flex ${collapsed ? "justify-center" : "justify-end"}`}>
+        <div className={`p-2 flex ${collapsed ? "justify-center" : "justify-end"}`}>
           <button
             onClick={() => setCollapsed((v) => !v)}
             className="p-1.5 text-white/30 hover:text-white hover:bg-white/[0.07] rounded-lg transition-colors"
@@ -132,7 +132,7 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
       <div className="flex flex-col flex-1 min-w-0">
 
         {/* Mobile header */}
-        <header className="md:hidden flex items-center justify-between px-4 py-3 border-b border-white/[0.07] bg-[#080808] shrink-0">
+        <header className="md:hidden flex items-center justify-between px-4 py-3 bg-[#080808] shrink-0">
           <div className="flex items-center gap-2">
             <img src={logoSrc} alt="Engagera" className="w-6 h-6 rounded-md" />
             <span className="font-bold text-sm tracking-tight">Engagera</span>
@@ -143,7 +143,7 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
                 {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
               </button>
             </SheetTrigger>
-            <SheetContent side="right" className="w-64 bg-[#080808] border-l border-white/[0.07] p-0">
+            <SheetContent side="right" className="w-64 bg-[#080808] border-0 p-0">
               <div className="flex flex-col h-full p-4">
                 <div className="flex items-center gap-2 mb-6">
                   <img src={logoSrc} alt="Engagera" className="w-7 h-7 rounded-lg" />
@@ -161,7 +161,7 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
                     </Link>
                   ))}
                 </nav>
-                <div className="border-t border-white/[0.07] pt-3 space-y-0.5">
+                <div className="pt-3 space-y-0.5">
                   {BOTTOM_ITEMS.map((item) => (
                     <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)}>
                       <div className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${
