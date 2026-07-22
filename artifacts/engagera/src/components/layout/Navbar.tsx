@@ -108,11 +108,6 @@ export function Navbar() {
                   Sign in
                 </Button>
               </Link>
-              <Link href="/sign-up">
-                <Button size="sm" className="font-semibold">
-                  Get API Key
-                </Button>
-              </Link>
             </>
           )}
         </div>
@@ -168,9 +163,6 @@ export function Navbar() {
               <>
                 <Link href="/sign-in" onClick={() => setMobileOpen(false)}>
                   <Button variant="outline" size="sm" className="w-full">Sign in</Button>
-                </Link>
-                <Link href="/sign-up" onClick={() => setMobileOpen(false)}>
-                  <Button size="sm" className="w-full font-semibold">Get API Key</Button>
                 </Link>
               </>
             )}

@@ -73,16 +73,19 @@ export function UpgradeModal({ open, onClose, countdown, reason = "limit" }: Upg
 
           {/* CTAs */}
           <div className="flex flex-col gap-2">
-            <Link href="/sign-up">
-              <Button className="w-full font-semibold text-sm h-10 bg-primary hover:bg-primary/90">
-                Create free account
-              </Button>
-            </Link>
             <Link href="/sign-in">
-              <Button variant="ghost" className="w-full text-sm h-9 text-muted-foreground hover:text-foreground">
-                Sign in to existing account
+              <Button className="w-full font-semibold text-sm h-10 bg-primary hover:bg-primary/90">
+                Sign in to your account
               </Button>
             </Link>
+            <a
+              href="https://web.afuchat.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full text-sm h-9 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Create account at web.afuchat.com
+            </a>
           </div>
         </div>
       </div>

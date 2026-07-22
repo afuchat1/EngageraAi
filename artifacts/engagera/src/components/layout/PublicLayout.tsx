@@ -54,12 +54,6 @@ export default function PublicLayout({ children }: PublicLayoutProps) {
               >
                 Sign in
               </Link>
-              <Link
-                href="/sign-up"
-                className="px-3.5 py-1.5 rounded-full bg-white text-black font-medium hover:bg-white/90 transition-colors text-sm"
-              >
-                Sign up
-              </Link>
             </>
           )}
         </div>

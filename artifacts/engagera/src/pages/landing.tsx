@@ -523,21 +523,23 @@ export default function Landing() {
             </div>
             <h3 className="text-lg font-semibold text-center mb-1">Free messages used up</h3>
             <p className="text-white/45 text-sm text-center mb-6">
-              You've used all 5 guest messages. Create a free account to keep chatting, access the API, and unlock all models.
+              You've used all 5 guest messages. Sign in to your account to keep chatting, access the API, and unlock all models.
             </p>
             <div className="flex flex-col gap-3">
               <button
-                onClick={() => setLocation("/sign-up")}
-                className="w-full py-2.5 bg-white text-black font-semibold text-sm rounded-full hover:bg-white/90 transition-colors"
-              >
-                Create free account
-              </button>
-              <button
                 onClick={() => setLocation("/sign-in")}
-                className="w-full py-2.5 border border-white/20 text-sm rounded-full hover:bg-white/5 transition-colors"
+                className="w-full py-2.5 bg-white text-black font-semibold text-sm rounded-full hover:bg-white/90 transition-colors"
               >
                 Sign in
               </button>
+              <a
+                href="https://web.afuchat.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-2.5 border border-white/20 text-sm rounded-full hover:bg-white/5 transition-colors text-center"
+              >
+                Create account at web.afuchat.com
+              </a>
             </div>
           </div>
         </div>

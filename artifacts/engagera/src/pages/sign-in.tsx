@@ -96,9 +96,14 @@ export default function SignIn() {
 
           <p className="text-center text-sm text-white/40 mt-5">
             Don't have an account?{" "}
-            <Link href="/sign-up" className="text-white hover:underline underline-offset-4 transition-colors">
-              Sign up
-            </Link>
+            <a
+              href="https://web.afuchat.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-white hover:underline underline-offset-4 transition-colors"
+            >
+              Create one at web.afuchat.com
+            </a>
           </p>
         </div>
       </div>
