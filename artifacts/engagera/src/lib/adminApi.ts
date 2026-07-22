@@ -42,10 +42,29 @@ export interface ReviewerLog {
   created_at: string;
 }
 
+export interface ApiAnalyticsModelStat {
+  requests: number;
+  tokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  apiKeyRequests: number;
+}
+
+export interface ApiAnalyticsDay {
+  date: string;
+  tokens: number;
+  requests: number;
+}
+
 export interface ApiAnalytics {
   totalRequests: number;
-  avgLatencyMs: number;
-  byModel: Record<string, { requests: number; tokens: number; errors: number }>;
+  totalTokens: number;
+  avgTokensPerRequest: number;
+  webRequests: number;
+  apiKeyRequests: number;
+  byModel: Record<string, ApiAnalyticsModelStat>;
+  series: ApiAnalyticsDay[];
+  days: number;
 }
 
 export interface ModelRegistryEntry {
@@ -151,11 +170,13 @@ export function useReviewerLogs() {
   });
 }
 
-export function useApiAnalytics() {
+export function useApiAnalytics(days = 30) {
   return useQuery({
-    queryKey: ["admin", "api-analytics"],
-    queryFn: () => customFetch<ApiAnalytics>("/api/admin/api-analytics"),
+    queryKey: ["admin", "api-analytics", days],
+    queryFn: () => customFetch<ApiAnalytics>(`/api/admin/api-analytics?days=${days}`),
     retry: false,
+    refetchInterval: 30_000,
+    staleTime: 20_000,
   });
 }
 
@@ -230,6 +251,8 @@ export function usePlatformUsageDaily(days = 30) {
         `/api/admin/platform-usage-daily?days=${days}`,
       ),
     retry: false,
+    refetchInterval: 60_000,
+    staleTime: 50_000,
   });
 }
 
@@ -238,6 +261,8 @@ export function usePlatformUsers() {
     queryKey: ["admin", "platform-users"],
     queryFn: () => customFetch<{ users: PlatformUser[] }>("/api/admin/platform-users"),
     retry: false,
+    refetchInterval: 30_000,
+    staleTime: 20_000,
   });
 }
 
