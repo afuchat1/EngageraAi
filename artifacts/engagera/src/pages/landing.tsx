@@ -522,15 +522,20 @@ export default function Landing() {
               <MessageSquare className="w-5 h-5 text-white/50" />
             </div>
             <h3 className="text-lg font-semibold text-center mb-1">Free messages used up</h3>
-            <p className="text-white/45 text-sm text-center mb-6">
-              You've used all 5 guest messages. Sign in to your account to keep chatting, access the API, and unlock all models.
+            <p className="text-white/45 text-sm text-center mb-3">
+              You've used all 5 guest messages. Sign in to keep chatting, access the API, and unlock all models.
+            </p>
+            <p className="text-white/30 text-xs text-center mb-6 leading-relaxed">
+              Engagera is exclusive to{" "}
+              <a href="https://web.afuchat.com" target="_blank" rel="noopener noreferrer" className="text-white/50 underline underline-offset-2">AfuChat</a>
+              {" "}members. No separate sign-up exists here — use your AfuChat account credentials to sign in.
             </p>
             <div className="flex flex-col gap-3">
               <button
                 onClick={() => setLocation("/sign-in")}
                 className="w-full py-2.5 bg-white text-black font-semibold text-sm rounded-full hover:bg-white/90 transition-colors"
               >
-                Sign in
+                Sign in with AfuChat account
               </button>
               <a
                 href="https://web.afuchat.com"
@@ -538,7 +543,7 @@ export default function Landing() {
                 rel="noopener noreferrer"
                 className="w-full py-2.5 border border-white/20 text-sm rounded-full hover:bg-white/5 transition-colors text-center"
               >
-                Create account at web.afuchat.com
+                Don't have an AfuChat account? Join here →
               </a>
             </div>
           </div>

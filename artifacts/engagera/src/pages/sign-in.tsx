@@ -38,7 +38,22 @@ export default function SignIn() {
           <div className="flex flex-col items-center mb-8">
             <img src={logoSrc} alt="Engagera" className="w-10 h-10 rounded-xl mb-4" />
             <h1 className="text-xl font-semibold tracking-tight">Welcome back</h1>
-            <p className="text-sm text-white/40 mt-1">Sign in to your account</p>
+            <p className="text-sm text-white/40 mt-1">Sign in with your AfuChat account</p>
+          </div>
+
+          {/* AfuChat-only notice */}
+          <div className="rounded-2xl bg-blue-500/10 border border-blue-500/20 px-4 py-3.5 mb-5 text-sm text-white/70 leading-relaxed">
+            <span className="text-blue-400 font-medium">AfuChat members only.</span>{" "}
+            Engagera is exclusive to AfuChat users. Use the same email and password you registered with on{" "}
+            <a
+              href="https://web.afuchat.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-400 hover:text-blue-300 underline underline-offset-2 transition-colors"
+            >
+              web.afuchat.com
+            </a>
+            . No separate sign-up is needed — and no separate sign-up exists here.
           </div>
 
           <div className="rounded-2xl bg-white/[0.04] p-6">

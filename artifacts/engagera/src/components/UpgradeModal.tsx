@@ -71,11 +71,20 @@ export function UpgradeModal({ open, onClose, countdown, reason = "limit" }: Upg
             ))}
           </ul>
 
+          {/* AfuChat notice */}
+          <p className="text-xs text-muted-foreground/70 leading-relaxed text-center">
+            Engagera is exclusive to{" "}
+            <a href="https://web.afuchat.com" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-foreground transition-colors">
+              AfuChat
+            </a>{" "}
+            members. Sign in with your AfuChat credentials — no separate registration exists here.
+          </p>
+
           {/* CTAs */}
           <div className="flex flex-col gap-2">
             <Link href="/sign-in">
               <Button className="w-full font-semibold text-sm h-10 bg-primary hover:bg-primary/90">
-                Sign in to your account
+                Sign in with AfuChat account
               </Button>
             </Link>
             <a
@@ -84,7 +93,7 @@ export function UpgradeModal({ open, onClose, countdown, reason = "limit" }: Upg
               rel="noopener noreferrer"
               className="w-full text-sm h-9 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
             >
-              Create account at web.afuchat.com
+              Not on AfuChat yet? Create a free account →
             </a>
           </div>
         </div>
