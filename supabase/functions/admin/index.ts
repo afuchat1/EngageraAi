@@ -190,7 +190,7 @@ Deno.serve(async (req: Request) => {
   if (path === "platform-api-keys") {
     const [{ data: keys, error: keysErr }, { data: allUsage }] = await Promise.all([
       db.from("engagera_api_keys")
-        .select("id, user_id, name, prefix, is_active, paused_until, total_requests, last_used_at, created_at")
+        .select("id, user_id, name, prefix, is_active, paused_until, total_requests, total_tokens, last_used_at, created_at")
         .order("created_at", { ascending: false }),
       db.from("engagera_usage_records").select("api_key_id, total_tokens, created_at"),
     ]);
@@ -230,7 +230,7 @@ Deno.serve(async (req: Request) => {
           pausedUntil: isPaused ? pausedUntil : null,
           totalRequests: k.total_requests,
           requests30d: usage.requests30d,
-          tokensLifetime: usage.lifetime,
+          tokensLifetime: (k.total_tokens as number) ?? usage.lifetime,
           tokens30d: usage.last30d,
           lastUsedAt: k.last_used_at,
           createdAt: k.created_at,

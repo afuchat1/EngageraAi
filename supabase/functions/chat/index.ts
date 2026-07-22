@@ -1025,14 +1025,15 @@ async function persistConversation(
         total_tokens:  aiResult.inputTokens + aiResult.outputTokens,
       });
     } catch { /* non-fatal */ }
-    // Atomically bump total_requests + last_used_at via a single Postgres UPDATE.
-    // The RPC (defined in supabase/migrations/20260721000000_fix_api_key_usage_increment.sql)
-    // does: UPDATE … SET total_requests = COALESCE(total_requests, 0) + 1, last_used_at = NOW()
-    // Falls back to a last_used_at-only update until the migration is deployed.
+    // Atomically bump total_requests + total_tokens + last_used_at in one UPDATE.
+    // p_tokens defaults to 0 so the old single-arg signature still works on older deploys.
     try {
-      await db.rpc("engagera_increment_api_key_usage", { p_key_id: authResult.apiKeyId });
+      await db.rpc("engagera_increment_api_key_usage", {
+        p_key_id: authResult.apiKeyId,
+        p_tokens:  aiResult.inputTokens + aiResult.outputTokens,
+      });
     } catch {
-      // RPC not yet deployed — update last_used_at only (non-fatal)
+      // Fallback: at minimum keep last_used_at current (non-fatal)
       try {
         await db
           .from("engagera_api_keys")
