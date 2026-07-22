@@ -1,6 +1,6 @@
 # @afuchat1/engagera
 
-The official TypeScript SDK for [Engagera](https://engagera.com) — powered by **AfuBot**, our live web crawler and search AI.
+The official TypeScript SDK for [Engagera](https://engagera.afuchat.com) — powered by **AfuBot**, our live web crawler and search AI.
 
 [![npm version](https://img.shields.io/npm/v/@afuchat1/engagera)](https://www.npmjs.com/package/@afuchat1/engagera)
 [![license](https://img.shields.io/npm/l/@afuchat1/engagera)](LICENSE)
