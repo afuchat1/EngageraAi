@@ -111,10 +111,12 @@ function ApiKeyRow({ k }: { k: PlatformApiKey }) {
       <span className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-md w-fit ${status.color}`}>
         {status.label}
       </span>
-      {/* Requests columns */}
+      {/* Requests — totalRequests is the authoritative counter (from atomic RPC on each call) */}
       <div className="min-w-0">
-        <p className="text-sm text-white/80 font-medium">{(k.requests30d ?? 0).toLocaleString()}</p>
-        <p className="text-[10px] text-white/25">{(k.totalRequests ?? 0).toLocaleString()} life</p>
+        <p className="text-sm text-white/80 font-semibold">{(k.totalRequests ?? 0).toLocaleString()}</p>
+        {(k.requests30d ?? 0) > 0 && (
+          <p className="text-[10px] text-white/25">{k.requests30d.toLocaleString()} last 30d</p>
+        )}
       </div>
       {/* Token columns */}
       <div className="min-w-0">
@@ -171,13 +173,14 @@ const USAGE_RANGES = [
   { label: "90d", days: 90 },
 ];
 
-function UsageChartTooltip({ active, payload, label }: any) {
+function UsageChartTooltip({ active, payload, label, metric }: any) {
   if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
   return (
-    <div className="bg-[#111] rounded-xl px-3 py-2.5 shadow-2xl text-xs">
+    <div className="bg-[#111] rounded-xl px-3 py-2.5 shadow-2xl text-xs border border-white/[0.06]">
       <p className="text-white/40 font-mono mb-1.5 uppercase tracking-wider text-[10px]">{label}</p>
-      <p className="text-white font-medium">{payload[0].value.toLocaleString()} tokens</p>
-      <p className="text-white/40 mt-0.5">{payload[0].payload.requests.toLocaleString()} requests · all developers combined</p>
+      <p className="text-white font-medium">{d.requests.toLocaleString()} requests</p>
+      <p className="text-white/40 mt-0.5">{(d.tokens / 1000).toFixed(1)}K tokens · all developers</p>
     </div>
   );
 }
@@ -187,6 +190,7 @@ export default function AdminPlatform() {
   const { data: keysData, isLoading: keysLoading } = usePlatformApiKeys();
   const { data: usersData, isLoading: usersLoading } = usePlatformUsers();
   const [usageDays, setUsageDays] = useState(30);
+  const [chartMetric, setChartMetric] = useState<"requests" | "tokens">("requests");
   const { data: usageDaily, isLoading: usageLoading } = usePlatformUsageDaily(usageDays);
   const [tab, setTab] = useState<"keys" | "users">("keys");
   const [search, setSearch] = useState("");
@@ -202,7 +206,7 @@ export default function AdminPlatform() {
     .filter(
       (k: PlatformApiKey) => !search || k.name.toLowerCase().includes(search.toLowerCase()) || k.ownerEmail.toLowerCase().includes(search.toLowerCase()),
     )
-    .sort((a: PlatformApiKey, b: PlatformApiKey) => b.tokens30d - a.tokens30d);
+    .sort((a: PlatformApiKey, b: PlatformApiKey) => (b.totalRequests ?? 0) - (a.totalRequests ?? 0));
   const filteredUsers = users.filter((u: PlatformUser) => !search || u.email.toLowerCase().includes(search.toLowerCase()));
 
   const activeCount = keys.filter((k: PlatformApiKey) => k.isActive && !k.isPaused).length;
@@ -223,52 +227,95 @@ export default function AdminPlatform() {
         <div className="flex items-center justify-between mb-1 flex-wrap gap-3">
           <div>
             <p className="text-[10px] font-mono uppercase tracking-widest text-white/35 mb-2">
-              Combined Token Usage — every developer, all keys
+              {chartMetric === "requests" ? "Total Requests" : "Total Tokens"} — every developer, all keys
             </p>
             <p className="text-3xl font-light">
-              {usageLoading ? "—" : (usageDaily?.totalTokens ?? 0).toLocaleString()}
+              {usageLoading ? "—" : chartMetric === "requests"
+                ? (usageDaily?.totalRequests ?? 0).toLocaleString()
+                : (usageDaily?.totalTokens ?? 0).toLocaleString()}
               <span className="text-sm text-white/30 font-mono ml-2">/ {usageDays}d</span>
             </p>
           </div>
-          <div className="flex items-center gap-1 rounded-xl bg-white/[0.04] p-1">
-            {USAGE_RANGES.map((r) => (
-              <button
-                key={r.days}
-                onClick={() => setUsageDays(r.days)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${usageDays === r.days ? "bg-white text-black" : "text-white/50 hover:text-white"}`}
-              >
-                {r.label}
-              </button>
-            ))}
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Metric toggle */}
+            <div className="flex items-center gap-1 rounded-xl bg-white/[0.04] p-1">
+              {(["requests", "tokens"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setChartMetric(m)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors capitalize ${chartMetric === m ? "bg-white text-black" : "text-white/50 hover:text-white"}`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+            {/* Time range toggle */}
+            <div className="flex items-center gap-1 rounded-xl bg-white/[0.04] p-1">
+              {USAGE_RANGES.map((r) => (
+                <button
+                  key={r.days}
+                  onClick={() => setUsageDays(r.days)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${usageDays === r.days ? "bg-white text-black" : "text-white/50 hover:text-white"}`}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
         <div className="h-56 w-full mt-4">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
-              <defs>
-                <linearGradient id="platformTokGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#fff" stopOpacity={0.15} />
-                  <stop offset="95%" stopColor="#fff" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-              <XAxis
-                dataKey="date" stroke="rgba(255,255,255,0.3)" fontSize={10}
-                tickLine={false} axisLine={false} dy={8}
-                interval="preserveStartEnd"
-              />
-              <YAxis
-                stroke="rgba(255,255,255,0.3)" fontSize={10} tickLine={false} axisLine={false}
-                tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v)}
-              />
-              <Tooltip content={<UsageChartTooltip />} />
-              <Area
-                type="monotone" dataKey="tokens" stroke="#ffffff" strokeWidth={1.5}
-                fillOpacity={1} fill="url(#platformTokGrad)" animationDuration={500}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+          {chartData.length === 0 && !usageLoading ? (
+            <div className="h-full flex items-center justify-center text-sm text-white/25">No usage data for this period</div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="platformGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#fff" stopOpacity={0.15} />
+                    <stop offset="95%" stopColor="#fff" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                <XAxis
+                  dataKey="date" stroke="rgba(255,255,255,0.3)" fontSize={10}
+                  tickLine={false} axisLine={false} dy={8}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  stroke="rgba(255,255,255,0.3)" fontSize={10} tickLine={false} axisLine={false}
+                  tickFormatter={(v) =>
+                    chartMetric === "tokens"
+                      ? v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)
+                      : String(v)
+                  }
+                />
+                <Tooltip content={<UsageChartTooltip metric={chartMetric} />} />
+                <Area
+                  type="monotone"
+                  dataKey={chartMetric}
+                  stroke="#ffffff"
+                  strokeWidth={1.5}
+                  fillOpacity={1}
+                  fill="url(#platformGrad)"
+                  animationDuration={400}
+                  dot={false}
+                  activeDot={{ r: 4, fill: "#fff" }}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
         </div>
+        {/* Today's snapshot */}
+        {!usageLoading && chartData.length > 0 && (() => {
+          const today = chartData[chartData.length - 1];
+          return (
+            <div className="flex items-center gap-4 mt-3 pt-3 border-t border-white/[0.05] text-xs text-white/30">
+              <span>Today: <span className="text-white/60 font-medium">{today?.requests ?? 0} requests</span></span>
+              <span>·</span>
+              <span><span className="text-white/60 font-medium">{((today?.tokens ?? 0) / 1000).toFixed(1)}K tokens</span></span>
+            </div>
+          );
+        })()}
       </div>
 
       <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">

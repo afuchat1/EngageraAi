@@ -102,7 +102,7 @@ export function useAdminSystemHealth() {
     queryKey: ["admin", "system-health"],
     queryFn: () => customFetch<SystemHealth>("/api/admin/system-health"),
     retry: false,
-    refetchInterval: 30_000,
+    refetchInterval: 10_000,
   });
 }
 
@@ -212,7 +212,7 @@ export function usePlatformApiKeys() {
     queryKey: ["admin", "platform-api-keys"],
     queryFn: () => customFetch<{ keys: PlatformApiKey[] }>("/api/admin/platform-api-keys"),
     retry: false,
-    refetchInterval: 30_000,
+    refetchInterval: 10_000,
   });
 }
 
