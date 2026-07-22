@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
-import { Menu, Plus, MessageSquare, Send, Trash2, Image as ImageIcon, Mic } from "lucide-react";
+import { Menu, Plus, MessageSquare, Send, Trash2, Image as ImageIcon } from "lucide-react";
 import { logoSrc } from "@/lib/assets";
-import { AudioChatModal } from "@/components/AudioChatModal";
 import {
   useListConversations,
   useGetConversationMessages,
@@ -36,7 +35,6 @@ export default function Landing() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [guestLimitReached, setGuestLimitReached] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [audioModalOpen, setAudioModalOpen] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
@@ -470,15 +468,6 @@ export default function Landing() {
           {/* Input footer */}
           <div className="shrink-0 p-3 md:p-4 bg-black">
             <div className="max-w-3xl mx-auto relative flex items-end gap-2">
-              {/* Mic / voice chat button */}
-              <button
-                onClick={() => setAudioModalOpen(true)}
-                title="Live voice chat"
-                className="shrink-0 mb-1.5 p-2.5 rounded-xl border border-white/15 text-white/40 hover:text-white hover:border-white/35 hover:bg-white/[0.06] transition-all"
-              >
-                <Mic className="w-4 h-4" />
-              </button>
-
               <div className="flex-1 relative flex items-end">
                 <textarea
                   ref={chatInputRef}
@@ -510,9 +499,6 @@ export default function Landing() {
           </div>
         </div>
       </div>
-
-      {/* Live Audio Chat Modal */}
-      <AudioChatModal open={audioModalOpen} onClose={() => setAudioModalOpen(false)} />
 
       {/* Guest Limit Modal */}
       {guestLimitReached && !user && (

@@ -8,10 +8,9 @@ import {
   VOICE_OPTIONS,
   type Voice,
 } from "@/hooks/usePollinations";
-import { usePollinationsVoice, type VoiceState } from "@/hooks/usePollinationsVoice";
 import {
-  Wand2, Image as ImageIcon, Volume2, Video, Mic, MicOff,
-  StopCircle, Send, Download, RefreshCw, Copy, Check, Phone, PhoneOff,
+  Wand2, Image as ImageIcon, Volume2, Video,
+  StopCircle, Send, Download, RefreshCw, Copy, Check,
   ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -111,7 +110,6 @@ const TABS = [
   { id: "image", label: "Image", icon: ImageIcon },
   { id: "audio", label: "Audio", icon: Volume2   },
   { id: "video", label: "Video", icon: Video     },
-  { id: "voice", label: "Voice", icon: Mic       },
 ] as const;
 
 type Tab = (typeof TABS)[number]["id"];
@@ -500,118 +498,6 @@ function VideoTab() {
   );
 }
 
-// ── Voice tab ─────────────────────────────────────────────────────────────────
-const STATE_LABELS: Record<VoiceState, string> = {
-  idle:       "Ready to talk",
-  connecting: "Connecting…",
-  listening:  "Listening…",
-  processing: "Transcribing…",
-  thinking:   "Thinking…",
-  speaking:   "Speaking…",
-};
-
-const STATE_COLORS: Record<VoiceState, string> = {
-  idle:       "text-white/30",
-  connecting: "text-amber-400",
-  listening:  "text-green-400",
-  processing: "text-blue-400",
-  thinking:   "text-purple-400",
-  speaking:   "text-cyan-400",
-};
-
-function VoiceTab() {
-  const [voiceModel, setVoiceModel] = useState("openai");
-  const [ttsVoice,   setTtsVoice]  = useState<Voice>("nova");
-  const { state, transcript, aiReply, callDuration, error, beginCall, endCall, supported } =
-    usePollinationsVoice({ model: voiceModel, voice: ttsVoice });
-
-  const active = state !== "idle";
-
-  const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
-
-  if (!supported) {
-    return (
-      <div className="rounded-2xl bg-white/[0.04] border border-white/[0.07] p-10 text-center">
-        <MicOff className="h-10 w-10 text-white/20 mx-auto mb-3" />
-        <p className="text-white/50 text-sm">Microphone access is not available in this browser.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-5">
-      {!active && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <Label>AI Model</Label>
-            <Select value={voiceModel} onChange={setVoiceModel} options={TEXT_MODELS.map(m => ({ value: m.id, label: m.label }))} />
-          </div>
-          <div>
-            <Label>Voice</Label>
-            <Select
-              value={ttsVoice}
-              onChange={v => setTtsVoice(v as Voice)}
-              options={VOICE_OPTIONS.map(v => ({ value: v, label: v.charAt(0).toUpperCase() + v.slice(1) }))}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Call button */}
-      <div className="flex flex-col items-center gap-6 py-8">
-        <button
-          onClick={active ? endCall : beginCall}
-          className={cn(
-            "w-24 h-24 rounded-full flex items-center justify-center transition-all shadow-2xl",
-            active
-              ? "bg-red-500 hover:bg-red-600 shadow-red-500/30"
-              : "bg-white hover:bg-white/90 shadow-white/10",
-          )}
-        >
-          {active
-            ? <PhoneOff className="h-9 w-9 text-white" />
-            : <Phone     className="h-9 w-9 text-black" />}
-        </button>
-
-        <div className="text-center">
-          <p className={cn("text-sm font-medium transition-colors", STATE_COLORS[state])}>
-            {STATE_LABELS[state]}
-          </p>
-          {active && (
-            <p className="text-xs text-white/25 mt-1 font-mono">{fmt(callDuration)}</p>
-          )}
-        </div>
-      </div>
-
-      {error && <p className="text-sm text-red-400 text-center">{error}</p>}
-
-      {/* Live transcript + reply */}
-      {active && (transcript || aiReply) && (
-        <div className="space-y-3">
-          {transcript && (
-            <div className="rounded-2xl bg-white/[0.04] border border-white/[0.07] px-5 py-4">
-              <Label>You said</Label>
-              <p className="text-sm text-white/80">{transcript}</p>
-            </div>
-          )}
-          {aiReply && (
-            <div className="rounded-2xl bg-white/[0.06] border border-white/[0.07] px-5 py-4">
-              <Label>AI reply</Label>
-              <p className="text-sm text-white/85 whitespace-pre-wrap">{aiReply}</p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {!active && (
-        <p className="text-xs text-white/25 text-center">
-          Speech-to-text · {TEXT_MODELS.find(m => m.id === voiceModel)?.label} · Neural TTS
-        </p>
-      )}
-    </div>
-  );
-}
-
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function Generate() {
   const [tab, setTab] = useState<Tab>("text");
@@ -623,7 +509,7 @@ export default function Generate() {
         <div>
           <h1 className="text-3xl font-light tracking-tight">Generate Studio</h1>
           <p className="text-sm text-white/40 mt-1.5">
-            Text, image, audio, video &amp; real-time voice generation.
+            Text, image, audio &amp; video generation.
           </p>
         </div>
 
@@ -652,7 +538,6 @@ export default function Generate() {
           {tab === "image" && <ImageTab />}
           {tab === "audio" && <AudioTab />}
           {tab === "video" && <VideoTab />}
-          {tab === "voice" && <VoiceTab />}
         </div>
 
         <p className="text-[11px] text-white/20 text-center">
