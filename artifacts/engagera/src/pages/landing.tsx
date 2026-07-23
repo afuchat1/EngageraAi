@@ -161,7 +161,7 @@ export default function Landing() {
 
     try {
       await streamEdgeChat(
-        { messages: apiMessages, model: msgModel, conversationId, stream: true },
+        { messages: apiMessages, model: msgModel, conversationId, stream: true, useAfuBot: true },
         {
           onToken: (chunk) => {
             streamedAny = true;

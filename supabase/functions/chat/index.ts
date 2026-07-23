@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { fetchWebResults, fetchNewsResults } from "../_shared/search.ts";
 
 /**
  * Engagera Chat Edge Function — v13 (2026-07-22)
@@ -557,42 +558,37 @@ async function fetchTimeInfo(location: string, requestId: string): Promise<TimeI
 // ── Web search (unchanged from v12) ──────────────────────────────────────────
 async function webSearch(query: string, requestId: string): Promise<SearchSource[]> {
   try {
-    const res = await fetch(
-      `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=us-en`,
-      {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36",
-          "Accept-Language": "en-US,en;q=0.9",
-          Accept: "text/html,application/xhtml+xml",
-        },
-        signal: AbortSignal.timeout(10_000),
-      },
-    );
-    if (!res.ok) return [];
-    const html = await res.text();
-    const linkRe = /<a\s[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
-    const snippetRe = /<a\s[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi;
-    const links: { url: string; title: string }[] = [];
-    const snippets: string[] = [];
-    let m: RegExpExecArray | null;
-    while ((m = linkRe.exec(html)) !== null && links.length < 10) {
-      let url = m[1];
-      const uddg = url.match(/[?&]uddg=([^&]+)/);
-      if (uddg) { try { url = decodeURIComponent(uddg[1]); } catch { continue; } }
-      if (!url.startsWith("http")) continue;
-      const title = m[2].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
-      if (title) links.push({ url, title });
+    // Use the shared fetchWebResults — more robust URL resolution than the
+    // old inline scraper (handles all DuckDuckGo redirect formats correctly).
+    const webResults = await fetchWebResults(query, 8);
+    const sources: SearchSource[] = webResults.map((r) => ({
+      title: r.title,
+      url: r.url,
+      snippet: r.description,
+    }));
+
+    // DuckDuckGo can return sparse results for very generic news/today queries.
+    // Supplement with live RSS news feeds which are reliable for those cases.
+    if (
+      sources.length < 3 &&
+      /\b(news|today|tonight|latest|breaking|current|update|recent|headlines)\b/i.test(query)
+    ) {
+      const newsResults = await fetchNewsResults(query, 6);
+      const seen = new Set(sources.map((s) => s.url));
+      for (const n of newsResults) {
+        if (!seen.has(n.url)) {
+          seen.add(n.url);
+          sources.push({ title: n.title, url: n.url, snippet: n.description, image: n.thumbnail ?? undefined });
+        }
+      }
     }
-    while ((m = snippetRe.exec(html)) !== null && snippets.length < 10) {
-      const text = m[1].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
-      if (text.length > 10) snippets.push(text);
-    }
-    const results: SearchSource[] = [];
-    for (let i = 0; i < Math.min(links.length, snippets.length, 6); i++) {
-      results.push({ url: links[i].url, title: links[i].title, snippet: snippets[i] });
-    }
-    return results;
-  } catch { return []; }
+
+    log("info", "search.results", { requestId, count: sources.length, query: query.slice(0, 60) });
+    return sources.slice(0, 6);
+  } catch (err) {
+    log("warn", "search.error", { requestId, error: String(err) });
+    return [];
+  }
 }
 
 async function fetchOgImage(url: string): Promise<string | undefined> {
