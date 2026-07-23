@@ -69,6 +69,8 @@ export interface ChatResponse {
   /** Web sources returned only when AfuBot was explicitly enabled. */
   sources?: Source[];
   searchInfo?: { query: string; sources: Source[] };
+  crawledUrls?: string[];
+  crawledSources?: Source[];
   timeInfo?: TimeInfo;
   usage: Usage;
 }
@@ -81,6 +83,11 @@ export interface ChatResponse {
 export interface ChatStreamEventText {
   type: "text";
   text: string;
+}
+
+export interface ChatStreamEventStatus {
+  type: "status";
+  message: string;
 }
 
 /** Emitted only when an explicitly enabled AfuBot crawl has finished. */
@@ -97,6 +104,8 @@ export interface ChatStreamEventDone {
   conversationId?: string;
   /** Web sources returned only when AfuBot was explicitly enabled. */
   sources?: Source[];
+  crawledUrls?: string[];
+  crawledSources?: Source[];
   timeInfo?: TimeInfo;
   usage: Usage;
 }
@@ -108,6 +117,7 @@ export interface ChatStreamEventError {
 
 export type ChatStreamEvent =
   | ChatStreamEventText
+  | ChatStreamEventStatus
   | ChatStreamEventSources
   | ChatStreamEventDone
   | ChatStreamEventError;

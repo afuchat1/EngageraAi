@@ -29,6 +29,7 @@ export interface SearchSource {
 export interface SearchInfo {
   query: string;
   sources: SearchSource[];
+  crawledUrls?: string[];
 }
 
 export interface TimeInfo {

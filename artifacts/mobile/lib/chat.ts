@@ -25,6 +25,7 @@ export interface ChatRequest {
   contextHint?: string;
   stream?: boolean;
   userLocation?: string;
+  useAfuBot?: boolean;
 }
 
 export interface SearchSource {
@@ -37,6 +38,7 @@ export interface SearchSource {
 export interface SearchInfo {
   query: string;
   sources: SearchSource[];
+  crawledUrls?: string[];
 }
 
 export interface TimeInfo {
@@ -59,6 +61,8 @@ export interface StreamDoneEvent {
   model: string;
   conversationId?: number;
   searchInfo?: SearchInfo;
+  crawledUrls?: string[];
+  crawledSources?: SearchSource[];
   timeInfo?: TimeInfo;
   weatherInfo?: WeatherInfo;
   guestMessageCount?: number;
@@ -256,6 +260,8 @@ export function streamChat(
               model: data?.model as string,
               conversationId: data?.conversationId as number | undefined,
               searchInfo: si,
+              crawledUrls: data?.crawledUrls as string[] | undefined,
+              crawledSources: data?.crawledSources as SearchSource[] | undefined,
               timeInfo: data?.timeInfo as TimeInfo | undefined,
               weatherInfo: data?.weatherInfo as WeatherInfo | undefined,
               guestMessageCount: data?.guestMessageCount as number | undefined,

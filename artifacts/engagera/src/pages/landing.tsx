@@ -11,6 +11,7 @@ import {
 import { streamEdgeChat, ChatMessage, TimeInfo } from "@/hooks/useEdgeChatCompletion";
 import { useAuth } from "@/hooks/useAuth";
 import { MessageContent, Source } from "@/components/MessageContent";
+import { WebCrawlIndicator } from "@/components/WebCrawlIndicator";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { detectModel, MODEL_LABELS, EngageraModel } from "@/lib/autoModel";
 import PublicLayout from "@/components/layout/PublicLayout";
@@ -19,6 +20,7 @@ interface DisplayMessage {
   role: "user" | "assistant";
   content: string;
   sources?: Source[];
+  crawledUrls?: string[];
   timeInfo?: TimeInfo;
   streaming?: boolean; // true while the SSE stream is open
   imageGenerating?: boolean; // true while an image-generation reply is in flight
@@ -200,6 +202,7 @@ export default function Landing() {
               next[assistantIndex] = {
                 ...next[assistantIndex],
                 sources: searchInfo.sources as Source[],
+                crawledUrls: searchInfo.crawledUrls,
                 searchStatus: undefined,
               };
               return next;
@@ -214,6 +217,7 @@ export default function Landing() {
                 ...next[assistantIndex],
                 streaming: false,
                 sources: rawSources?.length ? (rawSources as Source[]) : next[assistantIndex].sources,
+                crawledUrls: doneEvt.crawledUrls ?? next[assistantIndex].crawledUrls,
                 timeInfo: doneEvt.timeInfo ?? next[assistantIndex].timeInfo,
               };
               return next;
@@ -432,6 +436,7 @@ export default function Landing() {
                           </div>
                         ) : (
                           <div className="relative">
+                            {msg.crawledUrls?.length ? <WebCrawlIndicator urls={msg.crawledUrls} /> : null}
                             <MessageContent content={msg.content} sources={msg.sources} timeInfo={msg.timeInfo} />
                             {msg.streaming && (
                               <span className="inline-block w-[2px] h-[1em] bg-white/60 rounded-full ml-0.5 align-text-bottom animate-pulse" />

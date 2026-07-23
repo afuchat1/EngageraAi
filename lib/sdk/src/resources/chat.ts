@@ -64,6 +64,8 @@ export class Chat {
             sources: (raw.searchInfo.sources ?? []).map(normaliseSource),
           }
         : undefined,
+      crawledUrls: raw.crawledUrls,
+      crawledSources: (raw.crawledSources ?? []).map(normaliseSource),
       timeInfo: raw.timeInfo,
       usage: {
         promptTokens: raw.usage?.inputTokens ?? raw.usage?.prompt_tokens ?? 0,
@@ -114,6 +116,10 @@ export class Chat {
           };
           break;
         }
+        case "searchStatus": {
+          yield { type: "status", message: event.data.message ?? "Working…" };
+          break;
+        }
         // The edge function emits "token" events for text chunks
         case "token":
         case "text": {
@@ -138,6 +144,8 @@ export class Chat {
             model: event.data.model ?? body.model,
             conversationId: event.data.conversationId,
             sources: finalSources,
+            crawledUrls: event.data.crawledUrls,
+            crawledSources: (event.data.crawledSources ?? []).map(normaliseSource),
             timeInfo: event.data.timeInfo,
             usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
           };

@@ -219,10 +219,10 @@ const tb = StyleSheet.create({
 // ─── AI Snippet Card (All tab — hard-capped at 150 chars) ────────────────────
 
 const AiSnippet = React.memo(function AiSnippet({
-  messages, streaming, error, sources, onGoAi, onOpenBrowser,
+  messages, streaming, status, error, sources, onGoAi, onOpenBrowser,
 }: {
   messages: AiMsg[]; streaming: boolean; error: string;
-  sources: AiSrc[]; onGoAi: () => void; onOpenBrowser: (url: string) => void;
+  sources: AiSrc[]; status: string; onGoAi: () => void; onOpenBrowser: (url: string) => void;
 }) {
   const colors = useColors();
   const assistantText = messages.find((m) => m.role === 'assistant')?.content ?? '';
@@ -244,7 +244,7 @@ const AiSnippet = React.memo(function AiSnippet({
         {streaming ? (
           <View style={snip.genBadge}>
             <ActivityIndicator size="small" color={colors.mutedForeground} style={{ transform: [{ scale: 0.6 }] }} />
-            <Text style={[snip.genText, { color: colors.mutedForeground }]}>generating</Text>
+            <Text style={[snip.genText, { color: colors.mutedForeground }]}>{status || 'generating'}</Text>
           </View>
         ) : null}
       </View>
@@ -318,10 +318,10 @@ const snip = StyleSheet.create({
  *  - Pinned follow-up input at the bottom
  */
 const AiChatTab = React.memo(function AiChatTab({
-  messages, streaming, sources, error, onSend, onOpenBrowser,
+  messages, streaming, sources, status, error, onSend, onOpenBrowser,
 }: {
   messages: AiMsg[]; streaming: boolean; sources: AiSrc[];
-  error: string; onSend: (text: string) => void; onOpenBrowser: (url: string) => void;
+  status: string; error: string; onSend: (text: string) => void; onOpenBrowser: (url: string) => void;
 }) {
   const colors  = useColors();
   const insets  = useSafeAreaInsets();
@@ -832,11 +832,11 @@ const WebSkeleton = React.memo(function WebSkeleton() {
 // ─── All-tab feed ─────────────────────────────────────────────────────────────
 
 const AllFeed = React.memo(function AllFeed({
-  results, officialSiteUrl, loading, aiMessages, aiStreaming, aiError, aiSources,
+  results, officialSiteUrl, loading, aiMessages, aiStreaming, aiStatus, aiError, aiSources,
   onGoAi, onPress,
 }: {
   results: Results; officialSiteUrl: string | null; loading: Loading;
-  aiMessages: AiMsg[]; aiStreaming: boolean; aiError: string; aiSources: AiSrc[];
+  aiMessages: AiMsg[]; aiStreaming: boolean; aiStatus: string; aiError: string; aiSources: AiSrc[];
   onGoAi: () => void; onPress: (url: string) => void;
 }) {
   const colors = useColors();
@@ -861,7 +861,7 @@ const AllFeed = React.memo(function AllFeed({
   return (
     <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 48 }}>
       <AiSnippet
-        messages={aiMessages} streaming={aiStreaming} error={aiError}
+        messages={aiMessages} streaming={aiStreaming} status={aiStatus} error={aiError}
         sources={aiSources} onGoAi={onGoAi} onOpenBrowser={onPress} />
 
       {officialSiteUrl ? <OfficialCard url={officialSiteUrl} onPress={onPress} /> : null}
@@ -1007,6 +1007,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
   const [aiMsgs,      setAiMsgs]      = useState<AiMsg[]>([]);
   const [aiSources,   setAiSources]   = useState<AiSrc[]>([]);
   const [aiStreaming, setAiStreaming]  = useState(false);
+  const [aiStatus,    setAiStatus]    = useState('');
   const [aiError,     setAiError]     = useState('');
   const aiAbortRef = useRef<AbortController | null>(null);
   const aiInitRef  = useRef('');
@@ -1040,7 +1041,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
     setAiError('');
     setAiMsgs([...msgs, { role: 'assistant', content: '' }]);
     streamChat(
-      { messages: msgs.map((m) => ({ role: m.role, content: m.content })), model: LAB_MODEL, stream: true, contextHint: AI_PROMPT },
+      { messages: msgs.map((m) => ({ role: m.role, content: m.content })), model: LAB_MODEL, stream: true, contextHint: AI_PROMPT, useAfuBot: true },
       {
         onToken: (tok) => setAiMsgs((prev) => {
           const next = [...prev];
@@ -1055,7 +1056,13 @@ export function SearchEngine({ topPad }: { topPad: number }) {
           });
           setAiSources(mapped);
         },
-        onDone: () => setAiStreaming(false),
+        onSearchStatus: (message) => {
+          setAiStatus(message);
+        },
+        onDone: () => {
+          setAiStatus('');
+          setAiStreaming(false);
+        },
       },
       aiAbortRef.current.signal,
     ).catch((err) => {
@@ -1093,6 +1100,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
     setAiMsgs([]);
     setAiSources([]);
     setAiStreaming(false);
+    setAiStatus('');
     setAiError('');
     aiInitRef.current = '';
     setLoading({ web: true, images: true, videos: true, news: true, finance: true });
@@ -1131,6 +1139,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
     setAiMsgs([]);
     setAiSources([]);
     setAiStreaming(false);
+    setAiStatus('');
     setAiError('');
   }, []);
 
@@ -1238,13 +1247,13 @@ export function SearchEngine({ topPad }: { topPad: number }) {
           {activeTab === 'all' ? (
             <AllFeed
               results={results} officialSiteUrl={official} loading={loading}
-              aiMessages={aiMsgs} aiStreaming={aiStreaming} aiError={aiError} aiSources={aiSources}
+              aiMessages={aiMsgs} aiStreaming={aiStreaming} aiStatus={aiStatus} aiError={aiError} aiSources={aiSources}
               onGoAi={() => setActiveTab('ai')} onPress={openBrowser} />
           ) : null}
 
           {activeTab === 'ai' ? (
             <AiChatTab
-              messages={aiMsgs} streaming={aiStreaming} sources={aiSources}
+              messages={aiMsgs} streaming={aiStreaming} sources={aiSources} status={aiStatus}
               error={aiError} onSend={handleFollowUp} onOpenBrowser={openBrowser} />
           ) : null}
 

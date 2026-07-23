@@ -148,7 +148,7 @@ export function useChatSession(model: string, contextHint?: string) {
 
       try {
         await streamChat(
-          { messages: historyForRequest, model, conversationId: convId, contextHint },
+          { messages: historyForRequest, model, conversationId: convId, contextHint, useAfuBot: true },
           {
             onToken: (chunk) => {
               if (isImageReq) {
@@ -177,7 +177,7 @@ export function useChatSession(model: string, contextHint?: string) {
             onDone: (done) => {
               if (done.conversationId) setConversationId(done.conversationId);
               if (typeof done.guestMessageCount === 'number') setGuestCount(done.guestMessageCount);
-              if (done.timeInfo || done.weatherInfo) {
+              if (done.timeInfo || done.weatherInfo || done.crawledUrls) {
                 setMessages((prev) =>
                   prev.map((m) =>
                     m.id === assistantId
@@ -185,6 +185,7 @@ export function useChatSession(model: string, contextHint?: string) {
                           ...m,
                           ...(done.timeInfo ? { timeInfo: done.timeInfo } : {}),
                           ...(done.weatherInfo ? { weatherInfo: done.weatherInfo } : {}),
+                          ...(done.crawledUrls ? { crawledUrls: done.crawledUrls } : {}),
                         }
                       : m,
                   ),

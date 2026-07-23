@@ -1,5 +1,7 @@
 import React, { memo, useEffect, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
+import { Ionicons } from '@expo/vector-icons';
 import { ImageLightbox } from '@/components/ImageLightbox';
 import Animated, { useAnimatedStyle, useSharedValue, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
 import { useColors } from '@/hooks/useColors';
@@ -27,6 +29,8 @@ export interface DisplayMessage {
   imageGenerating?: boolean;
   /** Live search status message shown while external tools are running. */
   searchStatus?: string;
+  /** URLs read by AfuBot for this answer. */
+  crawledUrls?: string[];
   /** When set, renders a special UI card instead of text content. */
   kind?: 'image-auth-prompt';
 }
@@ -47,6 +51,34 @@ function StreamCursor({ color }: { color: string }) {
 
   return (
     <Animated.Text style={[styles.cursor, { color }, style]}>{' \u258C'}</Animated.Text>
+  );
+}
+
+function CrawlStrip({ urls, colors }: { urls: string[]; colors: ReturnType<typeof useColors> }) {
+  if (!urls.length) return null;
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.crawlStrip}>
+      {urls.map((url, index) => {
+        let label = 'Read page';
+        try {
+          label = `Read: ${new URL(url).hostname.replace(/^www\./, '')}`;
+        } catch {
+          // Keep a generic label for malformed URLs.
+        }
+        return (
+          <Pressable
+            key={`${url}-${index}`}
+            onPress={() => WebBrowser.openBrowserAsync(url)}
+            style={[styles.crawlChip, { borderColor: colors.border, backgroundColor: colors.muted }]}
+          >
+            <Ionicons name="link-outline" size={12} color={colors.mutedForeground} />
+            <Text style={[styles.crawlText, { color: colors.mutedForeground }]} numberOfLines={1}>
+              {label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </ScrollView>
   );
 }
 
@@ -124,6 +156,7 @@ export const ChatBubble = memo(function ChatBubble({
       {!isUser && message.searchInfo && message.searchInfo.sources.length > 0 ? (
         <SourceStrip searchInfo={message.searchInfo} />
       ) : null}
+      {!isUser && message.crawledUrls?.length ? <CrawlStrip urls={message.crawledUrls} colors={colors} /> : null}
 
       {showActions ? (
         <MessageActions
@@ -169,5 +202,22 @@ const styles = StyleSheet.create({
   cursor: {
     fontSize: 15,
     fontWeight: '400',
+  },
+  crawlStrip: {
+    marginTop: 2,
+  },
+  crawlChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginRight: 7,
+    maxWidth: 180,
+  },
+  crawlText: {
+    fontSize: 11,
   },
 });
