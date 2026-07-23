@@ -1444,10 +1444,14 @@ Deno.serve(async (req: Request) => {
               enq(sseFrame({ type: "searchStatus", message: "Working…" }));
               aiResult = await callAdvancedReasoning(builtMessages, keys, requestId);
             } else if (userSettings.agentModeEnabled && authResult.type === "user") {
-              // Agent mode: run tool loop, then stream final answer.
+              // Agent mode: run the tool loop, then send the tool-enriched
+              // conversation through the same private accuracy pass as every
+              // other text response.
               enq(sseFrame({ type: "searchStatus", message: "Working…" }));
-              const { result, toolsUsed } = await agentLoop(builtMessages, keys, db, userId, 2048, requestId);
-              aiResult = result;
+              const { result, toolsUsed, finalMessages } = await agentLoop(builtMessages, keys, db, userId, 2048, requestId);
+              aiResult = result.ok
+                ? await callAdvancedReasoning(finalMessages, keys, requestId)
+                : result;
               if (toolsUsed.length > 0) enq(sseFrame({ type: "searchStatus", message: "Working…" }));
             } else {
               // Every text answer gets the same private accuracy pass. The
