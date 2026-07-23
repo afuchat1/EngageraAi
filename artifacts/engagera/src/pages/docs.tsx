@@ -359,7 +359,7 @@ export default function Docs() {
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm mb-1.5">Use the response</p>
                     <CodeBlock language="json" code={`{
-  "id": "eng_1783860177654_cj924v",
+  "id": "request_example_id",
   "message": {
     "role": "assistant",
     "content": "I'm Engagera, an AI assistant..."
@@ -381,7 +381,7 @@ export default function Docs() {
               <p className="text-white/60 text-sm leading-relaxed mb-5">
                 All API requests must include your API key as a Bearer token in the <code className="font-mono text-xs bg-white/10 px-1 py-0.5 rounded">Authorization</code> header.
               </p>
-              <CodeBlock language="http" code={`Authorization: Bearer eng_your_api_key_here`} />
+              <CodeBlock language="http" code={`Authorization: Bearer YOUR_ENGAGERA_API_KEY`} />
               <Callout>
                 Never expose your API key in frontend code, mobile apps, or public repositories. Always proxy requests through your own backend server. Rotate keys immediately if compromised — you can do this in the Dashboard.
               </Callout>
@@ -552,8 +552,8 @@ print(data["message"]["content"])`} />
                   <CodeBlock language="json" code={`{
   "id": 42,
   "name": "Production Key",
-  "prefix": "eng_a1b2",
-  "key": "eng_a1b2c3d4e5f6g7h8i9j0...",
+  "prefix": "eng_xxxx",
+  "key": "YOUR_ENGAGERA_API_KEY",
   "createdAt": "2026-07-05T00:00:00Z"
 }`} />
                   <Callout icon={AlertCircle}>
@@ -661,7 +661,7 @@ print(data["message"]["content"])`} />
                   {
                     label: "curl",
                     content: <CodeBlock language="bash" code={`curl -X POST "${BASE_URL}/chat" \\
-  -H "x-engagera-api-key: eng_YOUR_KEY" \\
+  -H "x-engagera-api-key: YOUR_ENGAGERA_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "messages": [{ "role": "user", "content": "Latest SpaceX launch results" }],
@@ -687,7 +687,7 @@ result.sources.forEach(s => console.log(s.title, s.url, s.image));`} />
 res = requests.post(
     "${BASE_URL}/chat",
     headers={
-        "x-engagera-api-key": "eng_YOUR_KEY",
+        "x-engagera-api-key": "YOUR_ENGAGERA_API_KEY",
         "Content-Type": "application/json",
     },
     json={
@@ -764,7 +764,7 @@ for await (const event of client.chat.stream({
                   {
                     label: "curl",
                     content: <CodeBlock language="bash" code={`curl -X POST "${BASE_URL}/chat" \\
-  -H "x-engagera-api-key: eng_YOUR_KEY" \\
+  -H "x-engagera-api-key: YOUR_ENGAGERA_API_KEY" \\
   -H "Content-Type: application/json" \\
   -H "Accept: text/event-stream" \\
   -d '{
@@ -784,7 +784,7 @@ for await (const event of client.chat.stream({
                     content: <CodeBlock language="javascript" code={`const res = await fetch("${BASE_URL}/chat", {
   method: "POST",
   headers: {
-    "x-engagera-api-key": "eng_YOUR_KEY",
+    "x-engagera-api-key": "YOUR_ENGAGERA_API_KEY",
     "Content-Type": "application/json",
   },
   body: JSON.stringify({

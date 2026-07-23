@@ -10,3 +10,4 @@
 - [Imported artifact workflow wiring](imported-artifact-workflow.md) — an imported Vite artifact may have artifact metadata but no registered managed workflow; use its existing command and actual Vite port.
 - [Reasoning and AfuBot boundary](reasoning-afubot-separation.md) — chat reasoning is private and AfuBot live crawling is an explicit opt-in capability, never an implicit chat dependency.
 - [Private reasoning and crawl contract](private-reasoning-and-crawl-contract.md) — every final text answer, including post-tool answers, uses private reasoning; expose only safe crawl progress and sources.
+- [API and platform product boundary](api-platform-boundary.md) — API keys must bypass Supabase JWT gating and never inherit platform memories, settings, documents, or chat history.

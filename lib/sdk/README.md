@@ -101,6 +101,11 @@ General-purpose AI completions. Chat does not crawl the web by default.
 Use `useAfuBot: true` only when you explicitly want to add AfuBot live
 crawling to a chat request, or use the standalone `client.afubot` resource.
 
+API requests are a separate product boundary from the Engagera platform:
+developer API calls do not read or write platform memories, settings,
+documents, or conversation history. Any application instructions or dataset
+context must be supplied and controlled by the developer's own environment.
+
 ### Non-streaming
 
 ```ts

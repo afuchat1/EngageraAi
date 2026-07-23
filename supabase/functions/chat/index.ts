@@ -1241,15 +1241,19 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    const userId = authResult.type === "user" ? authResult.userId : (authResult.type === "api_key" ? authResult.userId : undefined);
+    // Product boundary: an API key identifies the developer for usage
+    // accounting, but it is not a platform-user session. Never use the key's
+    // linked owner to load platform memories, settings, documents, agent
+    // state, or conversation history. API context comes only from the
+    // developer's request/environment.
+    const userId = authResult.type === "user" ? authResult.userId : undefined;
 
     // ── Load user settings + memories in parallel ─────────────────────────────
     const lastUserMsg = incomingMessages.filter((m) => m.role === "user").at(-1);
     const userText    = lastUserMsg ? getTextContent(lastUserMsg.content) : "";
 
-    // Load settings and only the memories relevant to this request before
-    // composing the answer. This keeps context focused and prevents unrelated
-    // old facts from steering a response.
+    // Platform settings and memories are loaded only for platform JWT users.
+    // API-key requests remain isolated and receive no platform memory.
     const [userSettings, memories] = await Promise.all([
       userId ? loadUserSettings(db, userId) : Promise.resolve({} as UserSettings),
       userId ? loadMemories(db, userId, userText) : Promise.resolve([] as Memory[]),
