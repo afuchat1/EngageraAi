@@ -1,0 +1,204 @@
+Multitasking AI Platform Specification
+
+Mission
+
+Build an advanced AI system that acts as a complete intelligent assistant capable of handling multiple types of tasks through one unified API and user experience.
+
+The AI must feel like one powerful platform, not a collection of separate tools.
+
+Core Capabilities
+
+The AI should support:
+
+1. General Conversation
+
+- Answer user questions naturally.
+- Maintain conversation context.
+- Understand follow-up questions.
+- Adapt responses based on user intent.
+- Provide clear and helpful explanations.
+
+2. Reasoning & Problem Solving
+
+- Analyze complex problems.
+- Break problems into smaller steps.
+- Compare options.
+- Make recommendations.
+- Identify risks and improvements.
+
+3. Writing Assistant
+
+Support:
+
+- Emails
+- Articles
+- Reports
+- Documentation
+- Marketing content
+- Social media posts
+- Scripts
+- Summaries
+- Rewriting and editing
+
+Adapt tone:
+
+- Professional
+- Friendly
+- Technical
+- Creative
+- Formal
+- Casual
+
+4. Programming Assistant
+
+Support:
+
+- Code generation
+- Code explanation
+- Debugging
+- Architecture planning
+- Database design
+- API design
+- Security review
+- Optimization
+- Documentation
+
+Understand multiple programming environments and frameworks.
+
+5. Research Intelligence
+
+The AI should:
+
+- Gather information.
+- Analyze sources.
+- Compare information.
+- Summarize findings.
+- Extract important insights.
+- Separate facts from opinions.
+
+6. File Intelligence
+
+Support:
+
+- Document understanding
+- Data extraction
+- Summaries
+- Analysis
+- Transformations
+- Question answering from uploaded files
+
+7. Image Intelligence
+
+Support:
+
+- Image understanding
+- Visual analysis
+- Object recognition
+- Design feedback
+- Image generation workflows where enabled
+
+8. Business Assistant
+
+Help users with:
+
+- Business planning
+- Market analysis
+- Strategy
+- Customer support
+- Product ideas
+- Operations
+- Decision making
+
+9. Personal Productivity
+
+Support:
+
+- Planning
+- Task management
+- Learning assistance
+- Brainstorming
+- Goal tracking
+
+Intelligent Task Detection
+
+The AI should automatically understand what the user needs.
+
+Example:
+
+User:
+"Create a website for my company"
+
+The AI should understand:
+
+- This requires planning.
+- Design suggestions.
+- Code generation.
+- Technical recommendations.
+- Deployment guidance.
+
+The user should not need to manually select modes.
+
+Multi-Agent Workflow
+
+The system should internally coordinate specialized capabilities.
+
+Possible internal roles:
+
+- Research assistant
+- Coding assistant
+- Writing assistant
+- Reasoning assistant
+- Data analyst
+- Creative assistant
+- Business advisor
+
+The user should experience one unified AI.
+
+Memory System
+
+When enabled:
+
+- Remember useful user preferences.
+- Maintain long-term context.
+- Personalize future interactions.
+- Allow users to control stored information.
+
+API Requirements
+
+The API should provide:
+
+- Stable endpoints.
+- Clear documentation.
+- Authentication.
+- Usage tracking.
+- Rate limiting.
+- Error handling.
+- Developer analytics.
+
+Developers should only interact with our API layer.
+
+Privacy & Security
+
+Never expose:
+
+- Internal architecture
+- Routing logic
+- Private prompts
+- Internal tools
+- Credentials
+- Infrastructure details
+- Private datasets
+
+Response Quality
+
+Every answer should prioritize:
+
+1. Correctness
+2. Usefulness
+3. Clarity
+4. Speed
+5. User satisfaction
+
+Goal
+
+Create an AI platform that users can rely on for conversation, creation, coding, research, business, productivity, and problem solving through one unified intelligent experience.
