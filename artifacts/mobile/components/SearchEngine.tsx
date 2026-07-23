@@ -5,7 +5,7 @@
  *  - All tab: AI snippet hard-capped at 150 chars with "Full answer →" CTA
  *  - Tab bar: underline-indicator style (not pills)
  *  - Suggestions: absolute overlay (never affects flow)
- *  - Landing: vertical history list + horizontal category scroll
+ *  - Landing: category exploration + horizontal category scroll
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -40,16 +40,12 @@ import {
   fetchFinanceResults,
   getPotentialDomain,
   probeOfficialSite,
-  loadSearchHistory,
-  saveToHistory,
   clearSearchHistory,
-  removeFromHistory,
   type WebResult,
   type ImageResult,
   type VideoResult,
   type NewsResult,
   type FinanceResult,
-  type SearchHistoryItem,
 } from '@/lib/search';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -915,9 +911,8 @@ const AllFeed = React.memo(function AllFeed({
 
 // ─── Landing ──────────────────────────────────────────────────────────────────
 
-const Landing = React.memo(function Landing({ history, onSearch, onRemove, onClearHistory }: {
-  history: SearchHistoryItem[]; onSearch: (q: string) => void;
-  onRemove: (q: string) => void; onClearHistory: () => void;
+const Landing = React.memo(function Landing({ onSearch }: {
+  onSearch: (q: string) => void;
 }) {
   const colors = useColors();
   return (
@@ -935,36 +930,13 @@ const Landing = React.memo(function Landing({ history, onSearch, onRemove, onCle
         </ScrollView>
       </View>
 
-      {/* History */}
-      {history.length > 0 ? (
-        <View style={land.section}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, marginBottom: 10 }}>
-            <Text style={[land.sectionTitle, { color: colors.mutedForeground, flex: 1, marginBottom: 0 }]}>Recent</Text>
-            <Pressable onPress={onClearHistory} hitSlop={10}>
-              <Text style={[land.clearTxt, { color: colors.mutedForeground }]}>Clear all</Text>
-            </Pressable>
-          </View>
-          {history.slice(0, 8).map((h, i) => (
-            <View key={i} style={[land.histRow, { borderBottomColor: colors.border }]}>
-              <Pressable style={land.histLeft} onPress={() => onSearch(h.query)}>
-                <Ionicons name="time-outline" size={14} color={colors.mutedForeground} />
-                <Text style={[land.histText, { color: colors.foreground }]} numberOfLines={1}>{h.query}</Text>
-              </Pressable>
-              <Pressable hitSlop={12} onPress={() => onRemove(h.query)}>
-                <Ionicons name="close" size={16} color={colors.mutedForeground} />
-              </Pressable>
-            </View>
-          ))}
-        </View>
-      ) : (
-        <View style={{ alignItems: 'center', paddingTop: 60, gap: 12 }}>
-          <Ionicons name="flask-outline" size={44} color={colors.mutedForeground} style={{ opacity: 0.4 }} />
-          <Text style={{ fontSize: 20, fontFamily: 'SpaceGrotesk_600SemiBold', color: colors.foreground }}>Lab Research</Text>
-          <Text style={{ fontSize: 14, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, textAlign: 'center', lineHeight: 21, paddingHorizontal: 48 }}>
-            Search the web, explore with AI, browse images, videos, news and markets.
-          </Text>
-        </View>
-      )}
+      <View style={{ alignItems: 'center', paddingTop: 60, gap: 12 }}>
+        <Ionicons name="flask-outline" size={44} color={colors.mutedForeground} style={{ opacity: 0.4 }} />
+        <Text style={{ fontSize: 20, fontFamily: 'SpaceGrotesk_600SemiBold', color: colors.foreground }}>Lab Research</Text>
+        <Text style={{ fontSize: 14, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, textAlign: 'center', lineHeight: 21, paddingHorizontal: 48 }}>
+          Search the web, explore with AI, browse images, videos, news and markets.
+        </Text>
+      </View>
     </ScrollView>
   );
 });
@@ -1000,7 +972,6 @@ export function SearchEngine({ topPad }: { topPad: number }) {
   const [loading,     setLoading]     = useState<Loading>(NOT_LOADING);
   const [official,    setOfficial]    = useState<string | null>(null);
   const { open: openInBrowser }       = useBrowser();
-  const [history,     setHistory]     = useState<SearchHistoryItem[]>([]);
   const searchIdRef = useRef(0);
 
   // AI state
@@ -1016,7 +987,9 @@ export function SearchEngine({ topPad }: { topPad: number }) {
   const potentialDomain = getPotentialDomain(query);
   const shouldShowSug = focused && query.trim().length >= 1 && (showSug || !!potentialDomain);
 
-  useEffect(() => { loadSearchHistory().then(setHistory); }, []);
+  // Remove history created by older Lab builds. Lab searches are intentionally
+  // never rendered or persisted as sidebar/search history.
+  useEffect(() => { clearSearchHistory(); }, []);
 
   // Abort any in-flight AI stream on unmount so it doesn't update stale state
   useEffect(() => () => { aiAbortRef.current?.abort(); }, []);
@@ -1104,8 +1077,6 @@ export function SearchEngine({ topPad }: { topPad: number }) {
     setAiError('');
     aiInitRef.current = '';
     setLoading({ web: true, images: true, videos: true, news: true, finance: true });
-    saveToHistory(trimmed).then(() => loadSearchHistory().then(setHistory));
-
     const id = ++searchIdRef.current;
     const upd = (key: keyof Results, data: any) => {
       if (searchIdRef.current !== id) return;
@@ -1230,13 +1201,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
       {/* ── Landing ────────────────────────────────────────────────────────── */}
       {!hasSearch ? (
         <Landing
-          history={history}
-          onSearch={(q) => { setQuery(q); doSearch(q); }}
-          onRemove={(q) => removeFromHistory(q).then(() => loadSearchHistory().then(setHistory))}
-          onClearHistory={() => showDialog('Clear history', 'Remove all recent searches?', [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Clear all', style: 'destructive', onPress: () => clearSearchHistory().then(() => setHistory([])) },
-          ])} />
+          onSearch={(q) => { setQuery(q); doSearch(q); }} />
       ) : null}
 
       {/* ── Results ────────────────────────────────────────────────────────── */}

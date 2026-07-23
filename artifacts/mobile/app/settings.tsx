@@ -64,7 +64,7 @@ export default function SettingsScreen() {
   const [clearing, setClearing] = useState(false);
 
   const clearHistory = () => {
-    showDialog('Clear all conversations?', 'This deletes every saved chat in Chat and Lab. This cannot be undone.', [
+    showDialog('Clear all conversations?', 'This deletes every saved chat in Chat. This cannot be undone.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Clear all',

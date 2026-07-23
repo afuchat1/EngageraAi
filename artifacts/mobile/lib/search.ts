@@ -31,49 +31,14 @@ async function req<T>(type: string, query: string): Promise<T> {
   return res.json();
 }
 
-// ── Search history ────────────────────────────────────────────────────────────
-// Persists the last MAX_HISTORY searches in AsyncStorage, newest first.
+// ── Legacy Lab history cleanup ────────────────────────────────────────────────
+// Older Lab builds persisted recent searches locally. Keep the one-time cleanup
+// so upgraded installs do not retain that data, but never load or write it.
 
 const HISTORY_KEY = 'AFUBOT_SEARCH_HISTORY_V1';
-const MAX_HISTORY = 50;
-
-export interface SearchHistoryItem {
-  query: string;
-  timestamp: number;
-}
-
-export async function loadSearchHistory(): Promise<SearchHistoryItem[]> {
-  try {
-    const raw = await AsyncStorage.getItem(HISTORY_KEY);
-    if (!raw) return [];
-    return JSON.parse(raw) as SearchHistoryItem[];
-  } catch {
-    return [];
-  }
-}
-
-export async function saveToHistory(query: string): Promise<void> {
-  const q = query.trim();
-  if (!q) return;
-  try {
-    const existing = await loadSearchHistory();
-    // Dedupe: remove older entry for the same query (case-insensitive)
-    const deduped = existing.filter((h) => h.query.toLowerCase() !== q.toLowerCase());
-    const updated = [{ query: q, timestamp: Date.now() }, ...deduped].slice(0, MAX_HISTORY);
-    await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
-  } catch { /* non-fatal */ }
-}
 
 export async function clearSearchHistory(): Promise<void> {
   try { await AsyncStorage.removeItem(HISTORY_KEY); } catch { /* non-fatal */ }
-}
-
-export async function removeFromHistory(query: string): Promise<void> {
-  try {
-    const existing = await loadSearchHistory();
-    const updated = existing.filter((h) => h.query.toLowerCase() !== query.toLowerCase());
-    await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
-  } catch { /* non-fatal */ }
 }
 
 // ── Smart domain suggestion (omnibox-style) ───────────────────────────────────

@@ -1120,6 +1120,10 @@ async function persistConversation(
   aiResult: AIResult, model: string, conversationId: string | undefined,
   hadSearch: boolean, requestId: string,
 ): Promise<number | null> {
+  // Lab/reasoning sessions are intentionally ephemeral. They should never
+  // create or update chat history entries shown in the chat sidebar.
+  if (model === "engagera-reason" || model === "engagera-2.1") return null;
+
   const convId: number | null = conversationId ? Number(conversationId) : null;
   if (authResult.type === "api_key") {
     try {

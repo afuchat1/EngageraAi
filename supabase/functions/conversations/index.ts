@@ -67,6 +67,9 @@ Deno.serve(async (req: Request) => {
       .from("engagera_conversations")
       .select("id, title, model, message_count, created_at, updated_at")
       .eq(ownerCol, ownerVal)
+      // Lab/reasoning sessions are not chat history and must never appear in
+      // the chat sidebar. Legacy rows remain inaccessible through this list.
+      .not("model", "in", "(engagera-reason,engagera-2.1)")
       .order("updated_at", { ascending: false })
       .limit(50);
     if (modelFilter) query = (query as typeof query).eq("model", modelFilter);

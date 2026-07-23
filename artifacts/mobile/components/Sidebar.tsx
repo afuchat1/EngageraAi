@@ -107,7 +107,11 @@ export function Sidebar({
     setLoading(true);
     try {
       const data = await listConversations();
-      setConversations(data);
+      setConversations(data.filter((conversation) =>
+        conversation.model !== LAB_MODEL &&
+        conversation.model !== 'engagera-2.1' &&
+        conversation.model !== 'engagera-reason'
+      ));
     } catch {
       // silently keep last known list
     } finally {

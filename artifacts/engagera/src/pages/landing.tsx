@@ -95,6 +95,10 @@ export default function Landing() {
   useEffect(() => stopRevealLoop, []);
 
   const { data: conversations = [], refetch: refetchConversations } = useListConversations();
+  const chatConversations = conversations.filter((conversation) =>
+    conversation.model !== "engagera-reason" &&
+    conversation.model !== "engagera-2.1"
+  );
   const { data: historyMessages } = useGetConversationMessages(conversationId!, {
     query: { enabled: !!conversationId, queryKey: getGetConversationMessagesQueryKey(conversationId!) }
   });
@@ -321,10 +325,10 @@ export default function Landing() {
         </button>
       </div>
       <div className="flex-1 overflow-y-auto scrollbar-thin px-2 pb-2 space-y-0.5">
-        {conversations.length === 0 ? (
+        {chatConversations.length === 0 ? (
           <div className="p-4 text-center text-white/30 text-sm">No conversations yet.</div>
         ) : (
-          conversations.map((conv) => (
+          chatConversations.map((conv) => (
             <div
               key={conv.id}
               onClick={() => loadConversation(conv.id)}
