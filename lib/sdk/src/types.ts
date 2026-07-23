@@ -38,9 +38,15 @@ export interface Message {
 // ---------------------------------------------------------------------------
 
 export type EngageraModel =
+  | "engagera-lite"
+  | "engagera-pro"
+  | "engagera-reason"
+  | "engagera-code"
+  | "engagera-vision"
+  | "engagera-voice"
+  | "engagera-image"
   | "engagera-2.0"
   | "engagera-2.1"
-  | "engagera-pro"
   | "afubot-search"
   | (string & {}); // allow arbitrary strings for forward-compat
 
@@ -142,7 +148,7 @@ export interface EngageraClientOptions {
    * Useful for self-hosted deployments or local testing.
    */
   baseUrl?: string;
-  /** Default model to use when none is specified. Defaults to `"engagera-2.0"`. */
+  /** Default model to use when none is specified. Defaults to `"engagera-pro"`. */
   defaultModel?: EngageraModel;
   /** Request timeout in milliseconds. Defaults to 120 000 (2 min). */
   timeout?: number;

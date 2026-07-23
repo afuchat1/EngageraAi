@@ -406,7 +406,7 @@ export default function Docs() {
                 <ModelCard id="engagera-reason" name="Engagera Reason" tagline="Deep thinking & complex problems" speed={40} quality={98} />
                 <ModelCard id="engagera-code" name="Engagera Code" tagline="Code generation, review & debugging" speed={70} quality={92} />
                 <ModelCard id="engagera-vision" name="Engagera Vision" tagline="Image understanding & analysis" speed={60} quality={88} />
-                <ModelCard id="engagera-voice" name="Engagera Voice" tagline="Conversational & voice-optimised" speed={90} quality={70} />
+                <ModelCard id="engagera-image" name="Engagera Image" tagline="Image generation & editing" speed={60} quality={88} />
               </div>
               <p className="text-xs text-white/30 mt-4">
                 Not sure which model to use? Start with <code className="font-mono bg-white/10 px-1 py-0.5 rounded">engagera-pro</code>. The Engagera chat auto-selects the best model based on your prompt.

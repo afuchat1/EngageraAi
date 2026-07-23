@@ -367,6 +367,8 @@ export function streamChat(
   );
 }
 
-export const CHAT_MODEL = 'engagera-2.0';
-export const LAB_MODEL = 'engagera-2.1';
+// Public model aliases are company-owned. The edge function keeps the
+// historical 2.x aliases working for older clients and maps them internally.
+export const CHAT_MODEL = 'engagera-pro';
+export const LAB_MODEL = 'engagera-reason';
 export const GUEST_MESSAGE_LIMIT = 5;

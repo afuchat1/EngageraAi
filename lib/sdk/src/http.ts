@@ -19,7 +19,7 @@ export class HttpClient {
     this.apiKey = opts.apiKey;
     this.baseUrl = (opts.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "");
     this.timeout = opts.timeout ?? 120_000;
-    this.defaultModel = opts.defaultModel ?? "engagera-2.0";
+    this.defaultModel = opts.defaultModel ?? "engagera-pro";
   }
 
   buildHeaders(extra?: Record<string, string>): Record<string, string> {

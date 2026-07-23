@@ -299,7 +299,9 @@ export function Sidebar({
                         >
                           <Ionicons
                             name={
-                              item.model === LAB_MODEL
+                              item.model === LAB_MODEL ||
+                              item.model === 'engagera-2.1' ||
+                              item.model === 'engagera-reason'
                                 ? 'flask-outline'
                                 : 'chatbubble-outline'
                             }

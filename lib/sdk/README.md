@@ -161,9 +161,14 @@ await ask("And the one before that?");  // context maintained
 
 | Model | Description |
 |---|---|
-| `engagera-2.0` | Default — fast, balanced |
-| `engagera-2.1` | Latest generation |
-| `engagera-pro` | Most capable |
+| `engagera-lite` | Fast answers for lightweight tasks |
+| `engagera-pro` | Default — best all-around model |
+| `engagera-reason` | Deep reasoning and analysis |
+| `engagera-code` | Production software engineering |
+| `engagera-vision` | Image and document understanding |
+| `engagera-image` | Image generation and editing |
+
+Legacy `engagera-2.0` and `engagera-2.1` aliases remain accepted for existing clients.
 
 ---
 

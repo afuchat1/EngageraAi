@@ -228,7 +228,12 @@ export default function ChatScreen() {
   // ── Load conversation ─────────────────────────────────────────────────────
   const handleSelectConversation = useCallback(
     async (conv: ConversationSummary) => {
-      const targetMode: ChatMode = conv.model === LAB_MODEL ? 'lab' : 'chat';
+      const targetMode: ChatMode =
+        conv.model === LAB_MODEL ||
+        conv.model === 'engagera-2.1' ||
+        conv.model === 'engagera-reason'
+          ? 'lab'
+          : 'chat';
       const target = targetMode === 'lab' ? labSession : chatSession;
       try {
         const history = await fetchConversationMessages(conv.id);

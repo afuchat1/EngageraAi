@@ -52,7 +52,7 @@ async function callDevChat(request: DevChatRequest): Promise<DevChatResponse> {
       headers,
       body: JSON.stringify({
         messages: request.messages,
-        model: "engagera-2.0",
+        model: "engagera-code",
         mode: "dev",
       }),
       signal: controller.signal,
