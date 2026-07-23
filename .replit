@@ -38,8 +38,8 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "PORT=3000 BASE_PATH=/ pnpm --filter @workspace/engagera run dev"
-waitForPort = 3000
+args = "PORT=24935 BASE_PATH=/ pnpm --filter @workspace/engagera run dev"
+waitForPort = 24935
 
 [workflows.workflow.metadata]
 outputType = "webview"
@@ -50,8 +50,8 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "PORT=3001 BASE_PATH=/pitch-deck/ pnpm --filter @workspace/engagera-pitch-deck run dev"
-waitForPort = 3001
+args = "PORT=19084 BASE_PATH=/pitch-deck/ pnpm --filter @workspace/engagera-pitch-deck run dev"
+waitForPort = 19084
 
 [workflows.workflow.metadata]
 outputType = "webview"
@@ -62,8 +62,8 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "PORT=3002 BASE_PATH=/mobile/ pnpm --filter @workspace/mobile run dev"
-waitForPort = 3002
+args = "PORT=18115 BASE_PATH=/mobile/ pnpm --filter @workspace/mobile run dev"
+waitForPort = 18115
 
 [workflows.workflow.metadata]
 outputType = "webview"
@@ -74,8 +74,8 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "PORT=3003 BASE_PATH=/__mockup pnpm --filter @workspace/mockup-sandbox run dev"
-waitForPort = 3003
+args = "PORT=8081 BASE_PATH=/__mockup pnpm --filter @workspace/mockup-sandbox run dev"
+waitForPort = 8081
 
 [workflows.workflow.metadata]
 outputType = "webview"
