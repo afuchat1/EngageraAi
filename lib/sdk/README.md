@@ -1,6 +1,6 @@
 # @afuchat1/engagera
 
-The official TypeScript SDK for [Engagera](https://engagera.afuchat.com) — powered by **AfuBot**, our live web crawler and search AI.
+The official TypeScript SDK for [Engagera](https://engagera.afuchat.com). Chat and **AfuBot**, our optional live web crawler, are separate capabilities.
 
 [![npm version](https://img.shields.io/npm/v/@afuchat1/engagera)](https://www.npmjs.com/package/@afuchat1/engagera)
 [![license](https://img.shields.io/npm/l/@afuchat1/engagera)](LICENSE)
@@ -10,7 +10,7 @@ Two building blocks:
 | | What it does | Streaming? |
 |---|---|---|
 | **`client.afubot`** | Crawls the live web — spiders pages, extracts titles, images & snippets, returns cited sources | ✗ Synchronous |
-| **`client.chat`** | AI completions that can invoke AfuBot internally | ✓ Token-by-token SSE |
+| **`client.chat`** | AI completions; web crawling is opt-in with `useAfuBot` | ✓ Token-by-token SSE |
 
 ---
 
@@ -97,8 +97,9 @@ async function search(userQuery: string) {
 
 ## Chat — AI Completions
 
-General-purpose AI completions that can internally invoke AfuBot to fetch
-live data. Use `chat` when you need streaming or multi-turn conversations.
+General-purpose AI completions. Chat does not crawl the web by default.
+Use `useAfuBot: true` only when you explicitly want to add AfuBot live
+crawling to a chat request, or use the standalone `client.afubot` resource.
 
 ### Non-streaming
 
@@ -108,10 +109,11 @@ const reply = await client.chat.create({
     { role: "system", content: "You are a helpful assistant." },
     { role: "user",   content: "What happened in tech this week?" },
   ],
+  useAfuBot: true,
 });
 
 console.log(reply.content);  // full AI answer
-console.log(reply.sources);  // pages AfuBot crawled (if triggered)
+console.log(reply.sources);  // pages AfuBot crawled when explicitly enabled
 ```
 
 ### Streaming — token-by-token
@@ -153,6 +155,24 @@ async function ask(question: string) {
 
 await ask("Who won the last World Cup?");
 await ask("And the one before that?");  // context maintained
+```
+
+---
+
+### Advanced reasoning
+
+Use `engagera-reason` for deep analysis, planning, trade-off evaluation, and
+careful multi-step problem solving. Reasoning runs privately on the server and
+only the final answer is returned. Internal notes, routing, and providers are
+never exposed.
+
+```ts
+const reply = await client.chat.create({
+  model: "engagera-reason",
+  messages: [
+    { role: "user", content: "Compare these architectures and recommend one." },
+  ],
+});
 ```
 
 ---

@@ -62,6 +62,7 @@ export class AfuBot {
       model: params.model ?? this.http.defaultModel,
       conversationId: params.conversationId,
       contextHint: params.contextHint,
+      useAfuBot: true,
       stream: false,
     };
 

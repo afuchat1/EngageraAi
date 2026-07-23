@@ -41,6 +41,7 @@ export class Chat {
       model: params.model ?? this.http.defaultModel,
       conversationId: params.conversationId,
       contextHint: params.contextHint,
+      useAfuBot: params.useAfuBot === true,
       stream: false,
     };
 
@@ -89,6 +90,7 @@ export class Chat {
       model: params.model ?? this.http.defaultModel,
       conversationId: params.conversationId,
       contextHint: params.contextHint,
+      useAfuBot: params.useAfuBot === true,
       stream: true,
     };
 

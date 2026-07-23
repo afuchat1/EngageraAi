@@ -8,3 +8,4 @@
 - [Supabase Edge Function deploy via Management API](supabase-edge-function-deploy-api.md) — deploy edge functions from the sandbox without CLI/Docker; also covers a Bing-scraping attribute-quoting gotcha.
 - [Chat edge function boot error fix](chat-edge-boot-error.md) — toLocaleString(locale) at module init + static WASM imports cause 503 BOOT_ERROR in Supabase Deno runtime; fix: move date strings inside handler, remove WASM static imports.
 - [Imported artifact workflow wiring](imported-artifact-workflow.md) — an imported Vite artifact may have artifact metadata but no registered managed workflow; use its existing command and actual Vite port.
+- [Reasoning and AfuBot boundary](reasoning-afubot-separation.md) — chat reasoning is private and AfuBot live crawling is an explicit opt-in capability, never an implicit chat dependency.

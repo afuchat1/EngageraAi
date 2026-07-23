@@ -398,7 +398,7 @@ export default function Docs() {
             {/* Models */}
             <Section id="models" title="Models" icon={Layers}>
               <p className="text-white/60 text-sm leading-relaxed mb-6">
-                Six purpose-built models, each optimised for a different workload. All provider details are abstracted — you work with Engagera model IDs only.
+                Six purpose-built models, including a private high-reasoning mode for complex analysis. All provider details are abstracted — you work with Engagera model IDs only.
               </p>
               <div className="grid sm:grid-cols-2 gap-3">
                 <ModelCard id="engagera-lite" name="Engagera Lite" tagline="Fast responses for simple queries" speed={100} quality={55} />
@@ -409,7 +409,7 @@ export default function Docs() {
                 <ModelCard id="engagera-image" name="Engagera Image" tagline="Image generation & editing" speed={60} quality={88} />
               </div>
               <p className="text-xs text-white/30 mt-4">
-                Not sure which model to use? Start with <code className="font-mono bg-white/10 px-1 py-0.5 rounded">engagera-pro</code>. The Engagera chat auto-selects the best model based on your prompt.
+                Not sure which model to use? Start with <code className="font-mono bg-white/10 px-1 py-0.5 rounded">engagera-pro</code>, or choose <code className="font-mono bg-white/10 px-1 py-0.5 rounded">engagera-reason</code> for advanced analysis. The assistant never exposes its private working process.
               </p>
             </Section>
 
@@ -445,7 +445,7 @@ export default function Docs() {
                   Token usage — <code className="font-mono text-[11px]">inputTokens</code>, <code className="font-mono text-[11px]">outputTokens</code>, <code className="font-mono text-[11px]">totalTokens</code>. Field names are camelCase.
                 </Param>
                 <Param name="searchInfo" type="object">
-                  Present only when the model performed a live web search to answer the prompt. Contains the <code className="font-mono text-[11px]">query</code> used and an array of <code className="font-mono text-[11px]">sources</code> (<code className="font-mono text-[11px]">title</code>, <code className="font-mono text-[11px]">url</code>, <code className="font-mono text-[11px]">snippet</code>).
+                  Present only when AfuBot was explicitly enabled for the request. Contains the <code className="font-mono text-[11px]">query</code> used and an array of <code className="font-mono text-[11px]">sources</code> (<code className="font-mono text-[11px]">title</code>, <code className="font-mono text-[11px]">url</code>, <code className="font-mono text-[11px]">snippet</code>).
                 </Param>
                 <Param name="timeInfo" type="object">
                   Present only when the prompt asked about the current date/time. Contains <code className="font-mono text-[11px]">ianaZone</code> and a human-readable <code className="font-mono text-[11px]">label</code> for the resolved location.
@@ -655,7 +655,7 @@ print(data["message"]["content"])`} />
                   <span className="text-xs text-white/30 border border-white/10 rounded px-1.5 py-0.5">stream: false</span>
                 </div>
                 <p className="text-white/55 text-sm mb-4">
-                  Send a search query. AfuBot crawls the web and returns a synthesised answer with cited sources. Uses the same <code className="font-mono text-xs bg-white/10 px-1 py-0.5 rounded">/chat</code> endpoint — AfuBot activates automatically when the query requires live web data.
+                  Send a search query. AfuBot crawls the web and returns a synthesised answer with cited sources. AfuBot is a separate opt-in layer: use the standalone SDK resource or send <code className="font-mono text-xs bg-white/10 px-1 py-0.5 rounded">useAfuBot: true</code> when you explicitly want crawling. Ordinary chat never invokes it automatically.
                 </p>
                 <Tabs tabs={[
                   {
@@ -666,6 +666,7 @@ print(data["message"]["content"])`} />
   -d '{
     "messages": [{ "role": "user", "content": "Latest SpaceX launch results" }],
     "model": "engagera-pro",
+    "useAfuBot": true,
     "stream": false
   }'`} />
                   },
@@ -721,7 +722,7 @@ for source in data.get("crawledSources", []):
             {/* Streaming */}
             <Section id="streaming" title="Streaming (SSE)" icon={Zap}>
               <p className="text-white/60 text-sm leading-relaxed mb-4">
-                Set <code className="font-mono text-xs bg-white/10 px-1 py-0.5 rounded">stream: true</code> in the request body to receive a <code className="font-mono text-xs bg-white/10 px-1 py-0.5 rounded">text/event-stream</code> response. Tokens arrive as they are generated. AfuBot crawling happens first, then the model streams its answer.
+                Set <code className="font-mono text-xs bg-white/10 px-1 py-0.5 rounded">stream: true</code> in the request body to receive a <code className="font-mono text-xs bg-white/10 px-1 py-0.5 rounded">text/event-stream</code> response. Tokens arrive as they are generated. If <code className="font-mono text-xs bg-white/10 px-1 py-0.5 rounded">useAfuBot: true</code> is set, AfuBot runs first and the model then streams its answer.
               </p>
               <Callout icon={AlertCircle}>
                 Streaming is a <strong className="text-white/70">chat-layer feature</strong>. AfuBot itself is synchronous — it crawls first, then the AI streams its answer over SSE.
@@ -831,7 +832,7 @@ pnpm add @afuchat1/engagera`} />
                 <div className="grid sm:grid-cols-2 gap-3 my-5">
                   {[
                     { title: "Full TypeScript", body: "All methods, events, and return types are typed. No any in your code." },
-                    { title: "AfuBot first-class", body: "client.afubot.search() — one line to search the live web." },
+                    { title: "AfuBot first-class", body: "client.afubot.search() — one explicit call to search the live web." },
                     { title: "Async iterators", body: "for await (const event of client.chat.stream()) — native streaming." },
                     { title: "Zero dependencies", body: "Pure fetch. Nothing to audit. Works everywhere." },
                   ].map(({ title, body }) => (
@@ -886,7 +887,7 @@ const result2 = await client.afubot.search({
 });
 
 console.log(reply.content);  // full answer
-console.log(reply.sources);  // pages AfuBot crawled (if triggered)
+console.log(reply.sources);  // pages AfuBot crawled when explicitly enabled
 console.log(reply.usage);    // { promptTokens, completionTokens, totalTokens }`} />
                   },
                   {

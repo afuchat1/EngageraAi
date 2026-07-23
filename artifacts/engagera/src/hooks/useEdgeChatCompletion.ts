@@ -15,6 +15,7 @@ export interface ChatRequest {
   model: string;
   conversationId?: number;
   contextHint?: string;
+  useAfuBot?: boolean;
   stream?: boolean;
 }
 

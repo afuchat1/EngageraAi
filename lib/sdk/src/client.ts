@@ -37,7 +37,7 @@ export class Engagera {
    */
   readonly afubot: AfuBot;
 
-  /** Chat completions with optional AfuBot web-search augmentation. Supports streaming. */
+  /** Chat completions without web crawling by default. AfuBot can be explicitly opted in. */
   readonly chat: Chat;
 
   constructor(options: EngageraClientOptions) {

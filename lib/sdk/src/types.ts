@@ -55,8 +55,10 @@ export interface ChatCreateParams {
   model?: EngageraModel;
   /** Pass an existing ID to continue a conversation. */
   conversationId?: string;
-  /** Extra hint to bias AfuBot's crawl behaviour. */
+  /** Optional context passed to the assistant. */
   contextHint?: string;
+  /** Explicitly add AfuBot live crawling to this chat request. Defaults to false. */
+  useAfuBot?: boolean;
 }
 
 export interface ChatResponse {
@@ -64,7 +66,7 @@ export interface ChatResponse {
   content: string;
   model: string;
   conversationId?: string;
-  /** Web sources AfuBot crawled to produce this response. */
+  /** Web sources returned only when AfuBot was explicitly enabled. */
   sources?: Source[];
   searchInfo?: { query: string; sources: Source[] };
   timeInfo?: TimeInfo;
@@ -81,7 +83,7 @@ export interface ChatStreamEventText {
   text: string;
 }
 
-/** Emitted when AfuBot has finished crawling and sources are ready. */
+/** Emitted only when an explicitly enabled AfuBot crawl has finished. */
 export interface ChatStreamEventSources {
   type: "sources";
   searchQuery: string;
@@ -93,7 +95,7 @@ export interface ChatStreamEventDone {
   content: string;
   model: string;
   conversationId?: string;
-  /** Web sources AfuBot crawled during this turn. */
+  /** Web sources returned only when AfuBot was explicitly enabled. */
   sources?: Source[];
   timeInfo?: TimeInfo;
   usage: Usage;
