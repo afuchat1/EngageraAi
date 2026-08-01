@@ -1,0 +1,126 @@
+// supabase/functions/v1/chat/index.ts
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+
+const DEEP_RESEARCH_SYSTEM = `PASTE THE SYSTEM PROMPT ABOVE HERE`;
+
+interface Message {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+async function callLLM(messages: Message[], model: string) {
+  // Your existing LLM router (OpenAI, Anthropic, etc.)
+  // Returns { content: string, usage: object }
+}
+
+async function afubotCrawl(query: string) {
+  // Your existing AfuBot crawler
+  // Returns { answer: string, sources: Array<{title, url, image, snippet}> }
+}
+
+function extractTag(text: string, tag: string): string | null {
+  const match = text.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`));
+  return match ? match[1].trim() : null;
+}
+
+serve(async (req) => {
+  const { messages, model = "engagera-pro", stream = false } = await req.json();
+  
+  const userMessage = messages[messages.length - 1].content;
+
+  // ── PASS 1: Research Plan + Decision ──
+  const pass1Messages: Message[] = [
+    { role: "system", content: DEEP_RESEARCH_SYSTEM },
+    ...messages,
+  ];
+
+  const pass1 = await callLLM(pass1Messages, model);
+  const raw1 = pass1.content;
+
+  // Check for tool call
+  const toolCall = extractTag(raw1, "tool_call");
+  
+  if (toolCall) {
+    const tool = JSON.parse(toolCall);
+    
+    if (tool.tool === "afubot" && tool.query) {
+      // Execute AfuBot
+      const crawl = await afubotCrawl(tool.query);
+      
+      // Build source list for LLM
+      const sourcesText = crawl.sources.map((s, i) => 
+        `[${i + 1}] Title: ${s.title}\nURL: ${s.url}\nSnippet: ${s.snippet}`
+      ).join("\n\n");
+
+      // ── PASS 2: Synthesize with sources ──
+      const pass2Prompt = `The user asked: "${userMessage}"
+
+AfuBot searched for: "${tool.query}"
+
+Here are the sources:
+${sourcesText}
+
+Now complete the response. Use this exact format:
+
+<sources>
+${crawl.sources.map((s, i) => `[${i + 1}] Title: ${s.title} | URL: ${s.url} | Key fact: ${s.snippet.substring(0, 120)}...`).join('\n')}
+</sources>
+
+<answer>
+[Your synthesized answer, citing sources like [1], [2]]
+</answer>`;
+
+      const pass2Messages: Message[] = [
+        { role: "system", content: DEEP_RESEARCH_SYSTEM },
+        ...messages,
+        { role: "user", content: pass2Prompt },
+      ];
+
+      const pass2 = await callLLM(pass2Messages, model);
+      const raw2 = pass2.content;
+
+      // Parse final output
+      const researchPlan = extractTag(raw1, "research_plan");
+      const sources = extractTag(raw2, "sources");
+      const answer = extractTag(raw2, "answer") || raw2;
+
+      // Return structured response
+      return new Response(JSON.stringify({
+        id: crypto.randomUUID(),
+        message: {
+          role: "assistant",
+          // Combine visible reasoning + answer
+          content: `<research_plan>\n${researchPlan}\n</research_plan>\n\n<sources>\n${sources}\n</sources>\n\n<answer>\n${answer}\n</answer>`,
+        },
+        model,
+        usage: {
+          inputTokens: pass1.usage.inputTokens + pass2.usage.inputTokens,
+          outputTokens: pass1.usage.outputTokens + pass2.usage.outputTokens,
+          totalTokens: pass1.usage.totalTokens + pass2.usage.totalTokens,
+        },
+        searchInfo: {
+          query: tool.query,
+          sources: crawl.sources,
+        },
+      }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }
+
+  // ── DIRECT ANSWER (no search needed) ──
+  const researchPlan = extractTag(raw1, "research_plan");
+  const answer = extractTag(raw1, "answer") || raw1;
+
+  return new Response(JSON.stringify({
+    id: crypto.randomUUID(),
+    message: {
+      role: "assistant",
+      content: `<research_plan>\n${researchPlan}\n</research_plan>\n\n<answer>\n${answer}\n</answer>`,
+    },
+    model,
+    usage: pass1.usage,
+  }), {
+    headers: { "Content-Type": "application/json" },
+  });
+});
