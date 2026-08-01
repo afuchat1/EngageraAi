@@ -1,0 +1,79 @@
+// Inside your Supabase edge function handler
+async function handleChat(req: Request) {
+  const body = await req.json();
+  const { messages, model, stream = false } = body;
+
+  // Determine if this model should auto-reason about AfuBot
+  const supportsAutoSearch = model === "engagera-pro" || model === "engagera-auto";
+
+  if (!supportsAutoSearch) {
+    // Fallback to existing behavior (manual useAfuBot)
+    return forwardToLLM(body);
+  }
+
+  // ── PASS 1: Reasoning + Decision ──
+  const reasoningSystem = `PASTE THE SYSTEM PROMPT ABOVE HERE`;
+  
+  const pass1Messages = [
+    { role: "system", content: reasoningSystem },
+    ...messages, // include full conversation history
+  ];
+
+  const pass1 = await callLLM({ messages: pass1Messages, model: "engagera-pro" });
+  const rawContent = pass1.message.content;
+
+  // Extract <thinking> (log it, strip it from user response)
+  const thinkingMatch = rawContent.match(/<thinking>([\s\S]*?)<\/thinking>/);
+  const thinking = thinkingMatch ? thinkingMatch[1].trim() : "";
+
+  // ── CHECK FOR TOOL CALL ──
+  const toolCallMatch = rawContent.match(/<tool_call>([\s\S]*?)<\/tool_call>/);
+  
+  if (toolCallMatch) {
+    const tool = JSON.parse(toolCallMatch[1].trim());
+    
+    if (tool.tool === "afubot" && tool.query) {
+      // ── CALL AFUBOT (your existing crawler) ──
+      const crawlResult = await afubotCrawl(tool.query); // reuse your existing AfuBot service
+      
+      // ── PASS 2: Synthesize with crawl results ──
+      const pass2System = `You are Engagera by AfuAI. Answer the user using the AfuBot crawl results provided. Be concise and accurate.`;
+      
+      const pass2Messages = [
+        { role: "system", content: pass2System },
+        ...messages,
+        {
+          role: "user",
+          content: `AfuBot crawled the web for: "${tool.query}"\n\nResults:\n${crawlResult}\n\nNow answer the original question.`
+        }
+      ];
+
+      if (stream) {
+        return streamLLM({ messages: pass2Messages, model: "engagera-pro" });
+      } else {
+        const pass2 = await callLLM({ messages: pass2Messages, model: "engagera-pro" });
+        return jsonResponse({
+          ...pass2,
+          searchInfo: { query: tool.query, sources: crawlResult.sources },
+          // thinking is omitted — internal only
+        });
+      }
+    }
+  }
+
+  // ── DIRECT ANSWER (no AfuBot needed) ──
+  const answerMatch = rawContent.match(/<answer>([\s\S]*?)<\/answer>/);
+  const finalAnswer = answerMatch ? answerMatch[1].trim() : rawContent;
+
+  if (stream) {
+    // Stream the direct answer as SSE
+    return streamText(finalAnswer);
+  } else {
+    return jsonResponse({
+      id: generateId(),
+      message: { role: "assistant", content: finalAnswer },
+      model,
+      usage: pass1.usage,
+    });
+  }
+}
