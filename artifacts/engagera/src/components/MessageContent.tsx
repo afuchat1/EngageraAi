@@ -2,8 +2,9 @@ import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
+import React from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Copy, Check, ImageOff, Film,
@@ -151,6 +152,74 @@ function extractSiteName(source: Source): string {
     const name = parts.length >= 2 ? parts[parts.length - 2] : hostname;
     return name.charAt(0).toUpperCase() + name.slice(1);
   } catch { return source.url.slice(0, 20); }
+}
+
+// ── Inline source favicon injection ──────────────────────────────────────────
+// When the AI mentions a source by name (e.g. "Wikipedia", "BBC") inside its
+// text, we inject a tiny favicon circle right after that word so readers can
+// see exactly where the information came from — no extra links or pills.
+
+function buildSourceNameMap(sources: Source[]): Map<string, Source> {
+  const map = new Map<string, Source>();
+  for (const s of sources) {
+    try {
+      const domain = new URL(s.url).hostname.replace(/^www\./, "");
+      const name = getBrandName(domain);
+      if (name.length > 2) map.set(name.toLowerCase(), s);
+      // Also try extractSiteName for custom names from the title
+      const siteName = extractSiteName(s);
+      if (siteName.length > 2) map.set(siteName.toLowerCase(), s);
+    } catch {}
+  }
+  return map;
+}
+
+function splitWithInlineFavicons(text: string, sourceMap: Map<string, Source>): React.ReactNode {
+  if (!sourceMap.size) return text;
+  const brands = [...sourceMap.keys()].sort((a, b) => b.length - a.length);
+  const escaped = brands.map(b => b.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const regex = new RegExp(`(${escaped.join("|")})`, "gi");
+  const parts = text.split(regex);
+  if (parts.length <= 1) return text;
+  return (
+    <>
+      {parts.map((part, i) => {
+        const source = sourceMap.get(part.toLowerCase());
+        if (source) {
+          return (
+            <span key={i} className="inline-flex items-center gap-0.5 align-baseline">
+              {part}
+              <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full overflow-hidden bg-white/[0.09] border border-white/[0.06] shrink-0 ml-[2px]">
+                <Favicon url={source.url} size={11} />
+              </span>
+            </span>
+          );
+        }
+        return part;
+      })}
+    </>
+  );
+}
+
+function processChildrenWithFavicons(
+  children: React.ReactNode,
+  sourceMap: Map<string, Source>,
+): React.ReactNode {
+  if (!sourceMap.size) return children;
+  if (typeof children === "string") {
+    return splitWithInlineFavicons(children, sourceMap);
+  }
+  if (Array.isArray(children)) {
+    return children.map((child, i) => {
+      if (typeof child === "string") {
+        const processed = splitWithInlineFavicons(child, sourceMap);
+        // If it changed (returned JSX), wrap in a Fragment with key
+        return typeof processed === "string" ? child : <React.Fragment key={i}>{processed}</React.Fragment>;
+      }
+      return child; // React element (bold, code, link…) — leave untouched
+    });
+  }
+  return children;
 }
 
 /** Recursively pull all text content from React children nodes */
@@ -1113,6 +1182,14 @@ export function MessageContent({ content, sources, timeInfo }: MessageContentPro
   // detectMediaTitles fires on summarised page content and shows blank placeholders.
   const mediaTitles = hasInlineImages || hasSources ? [] : detectMediaTitles(cleanContent);
 
+  // Build brand-name → source lookup so we can inject inline favicon chips.
+  // Memoized so it only recomputes when the sources array reference changes.
+  const sourceNameMap = useMemo<Map<string, Source>>(
+    () => (hasSources ? buildSourceNameMap(sources!) : new Map()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sources, hasSources],
+  );
+
   return (
     <div className="text-[0.875rem] leading-relaxed text-white/90 min-w-0 overflow-hidden">
 
@@ -1134,9 +1211,11 @@ export function MessageContent({ content, sources, timeInfo }: MessageContentPro
         remarkPlugins={[remarkGfm]}
         urlTransform={(url) => (/^data:image\//i.test(url) ? url : defaultUrlTransform(url))}
         components={{
-          // ── Paragraphs — clean, no inline chips ──────────────────────────────
+          // ── Paragraphs — inject inline favicon chips wherever a source name appears ──
           p: ({ children }) => (
-            <p className="mb-3 last:mb-0 leading-[1.75] text-white/88">{children}</p>
+            <p className="mb-3 last:mb-0 leading-[1.75] text-white/88">
+              {processChildrenWithFavicons(children, sourceNameMap)}
+            </p>
           ),
 
           // ── Headings ──────────────────────────────────────────────────────────
@@ -1163,7 +1242,7 @@ export function MessageContent({ content, sources, timeInfo }: MessageContentPro
                     </span>
                   : <span className="mt-[9px] shrink-0 h-[5px] w-[5px] rounded-full bg-white/25 select-none" />
                 }
-                <span className="flex-1 min-w-0">{children}</span>
+                <span className="flex-1 min-w-0">{processChildrenWithFavicons(children, sourceNameMap)}</span>
               </li>
             );
           },

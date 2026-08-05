@@ -17,6 +17,8 @@ export interface ChatRequest {
   contextHint?: string;
   useAfuBot?: boolean;
   stream?: boolean;
+  /** Agent ID to route to — e.g. "research", "coding", "writing", "planner" */
+  agent?: string;
 }
 
 export interface SearchSource {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
-import { Menu, Plus, MessageSquare, Send, Trash2, Image as ImageIcon } from "lucide-react";
+import { Menu, Plus, MessageSquare, Send, Trash2, Image as ImageIcon, ChevronDown } from "lucide-react";
 import { logoSrc } from "@/lib/assets";
 import {
   useListConversations,
@@ -27,6 +27,19 @@ interface DisplayMessage {
   searchStatus?: string; // live search progress message shown while tools are running
 }
 
+// ── Agent definitions for the selector ──────────────────────────────────────
+const AGENTS = [
+  { id: "assistant", label: "Assistant",   icon: "✦", description: "General AI conversation" },
+  { id: "research",  label: "Research",    icon: "🔍", description: "Deep web research & analysis" },
+  { id: "coding",    label: "Coding",      icon: "⌨", description: "Write, debug & review code" },
+  { id: "writing",   label: "Writing",     icon: "✍", description: "Articles, emails & content" },
+  { id: "planner",   label: "Planner",     icon: "📋", description: "Goals into actionable plans" },
+  { id: "data",      label: "Data",        icon: "📊", description: "Analyze data & find insights" },
+  { id: "document",  label: "Document",    icon: "📄", description: "Read, summarize & extract docs" },
+  { id: "automation",label: "Automation",  icon: "⚡", description: "Workflows & process automation" },
+] as const;
+type AgentId = (typeof AGENTS)[number]["id"];
+
 export default function Landing() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
@@ -37,9 +50,24 @@ export default function Landing() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [guestLimitReached, setGuestLimitReached] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedAgent, setSelectedAgent] = useState<AgentId>("assistant");
+  const [showAgentMenu, setShowAgentMenu] = useState(false);
+  const agentMenuRef = useRef<HTMLDivElement>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Close agent menu on outside click
+  useEffect(() => {
+    if (!showAgentMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (agentMenuRef.current && !agentMenuRef.current.contains(e.target as Node)) {
+        setShowAgentMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showAgentMenu]);
 
   // Real tokens arrive over the wire in genuine SSE frames (verified against
   // the edge function), but fast providers (e.g. Groq) can deliver an entire
@@ -167,7 +195,14 @@ export default function Landing() {
 
     try {
       await streamEdgeChat(
-        { messages: apiMessages, model: msgModel, conversationId, stream: true, useAfuBot: true },
+        {
+          messages: apiMessages,
+          model: msgModel,
+          conversationId,
+          stream: true,
+          useAfuBot: true,
+          agent: selectedAgent !== "assistant" ? selectedAgent : undefined,
+        },
         {
           onToken: (chunk) => {
             streamedAny = true;
@@ -476,30 +511,68 @@ export default function Landing() {
 
           {/* Input footer */}
           <div className="shrink-0 p-3 md:p-4 bg-black">
-            <div className="max-w-3xl mx-auto relative flex items-end gap-2">
-              <div className="flex-1 relative flex items-end">
-                <textarea
-                  ref={chatInputRef}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder={guestLimitReached ? "Sign up to continue..." : "Message Engagera..."}
-                  disabled={guestLimitReached}
-                  className="w-full bg-transparent border border-white/20 focus:border-white/50 outline-none resize-none py-3 pl-4 pr-12 text-sm max-h-48 scrollbar-thin min-h-[50px] transition-colors disabled:opacity-40 rounded-2xl"
-                  rows={1}
-                  onInput={(e) => {
-                    const t = e.target as HTMLTextAreaElement;
-                    t.style.height = "auto";
-                    t.style.height = `${Math.min(t.scrollHeight, 200)}px`;
-                  }}
-                />
+            <div className="max-w-3xl mx-auto space-y-2">
+              {/* Agent selector */}
+              <div className="relative" ref={agentMenuRef}>
                 <button
-                  onClick={handleSend}
-                  disabled={!input.trim() || isLoading || guestLimitReached}
-                  className="absolute right-2 bottom-2 p-1.5 text-white/40 hover:text-white disabled:opacity-20 transition-colors"
+                  onClick={() => setShowAgentMenu(v => !v)}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/[0.06] hover:bg-white/[0.10] border border-white/[0.08] hover:border-white/[0.16] transition-all text-[12px] text-white/60 hover:text-white/80"
                 >
-                  <Send className="w-4 h-4" />
+                  <span className="text-sm leading-none">{AGENTS.find(a => a.id === selectedAgent)?.icon ?? "✦"}</span>
+                  <span className="font-medium">{AGENTS.find(a => a.id === selectedAgent)?.label ?? "Assistant"}</span>
+                  <ChevronDown className={`w-3 h-3 transition-transform ${showAgentMenu ? "rotate-180" : ""}`} />
                 </button>
+
+                {/* Agent dropdown */}
+                {showAgentMenu && (
+                  <div className="absolute bottom-full mb-2 left-0 z-50 w-72 rounded-2xl border border-white/[0.10] bg-[#0e0e0e] shadow-2xl p-1.5 grid grid-cols-2 gap-1">
+                    {AGENTS.map(agent => (
+                      <button
+                        key={agent.id}
+                        onClick={() => { setSelectedAgent(agent.id); setShowAgentMenu(false); }}
+                        className={`flex items-start gap-2 px-2.5 py-2 rounded-xl text-left transition-all ${
+                          selectedAgent === agent.id
+                            ? "bg-white/[0.10] border border-white/[0.14]"
+                            : "hover:bg-white/[0.06] border border-transparent"
+                        }`}
+                      >
+                        <span className="text-base leading-none mt-0.5 shrink-0">{agent.icon}</span>
+                        <div className="min-w-0">
+                          <div className="text-[12px] font-semibold text-white/85 leading-tight">{agent.label}</div>
+                          <div className="text-[10px] text-white/35 leading-snug mt-0.5 truncate">{agent.description}</div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Text input row */}
+              <div className="relative flex items-end gap-2">
+                <div className="flex-1 relative flex items-end">
+                  <textarea
+                    ref={chatInputRef}
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder={guestLimitReached ? "Sign up to continue..." : `Message ${AGENTS.find(a => a.id === selectedAgent)?.label ?? "Engagera"}…`}
+                    disabled={guestLimitReached}
+                    className="w-full bg-transparent border border-white/20 focus:border-white/50 outline-none resize-none py-3 pl-4 pr-12 text-sm max-h-48 scrollbar-thin min-h-[50px] transition-colors disabled:opacity-40 rounded-2xl"
+                    rows={1}
+                    onInput={(e) => {
+                      const t = e.target as HTMLTextAreaElement;
+                      t.style.height = "auto";
+                      t.style.height = `${Math.min(t.scrollHeight, 200)}px`;
+                    }}
+                  />
+                  <button
+                    onClick={handleSend}
+                    disabled={!input.trim() || isLoading || guestLimitReached}
+                    className="absolute right-2 bottom-2 p-1.5 text-white/40 hover:text-white disabled:opacity-20 transition-colors"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </div>
             <p className="text-center mt-2 text-[10px] text-white/20">

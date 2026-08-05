@@ -12,3 +12,6 @@
 - [Private reasoning and crawl contract](private-reasoning-and-crawl-contract.md) — every final text answer, including post-tool answers, uses private reasoning; expose only safe crawl progress and sources.
 - [API and platform product boundary](api-platform-boundary.md) — API keys must bypass Supabase JWT gating and never inherit platform memories, settings, documents, or chat history.
 - [Auto-reasoning two-pass AfuBot pipeline](auto-reasoning-two-pass.md) — engagera-pro/engagera-auto use Pass 1 reasoning to decide if AfuBot is needed; <thinking> stripped from all client output.
+- [SDK agent platform upgrade](sdk-agent-platform.md) — SDK bumped 0.1.5→0.2.0 with agents/memory/workflows resources; Memory_ class exported as MemoryResource to avoid name collision with Memory type.
+- [Inline source favicon injection](inline-source-favicons.md) — inject favicons into paragraph/li text nodes via buildSourceNameMap+processChildrenWithFavicons; processes string children only, leaves React elements untouched.
+- [Agent selector and routing](agent-selector-routing.md) — 8-agent selector chip (AGENTS array) in landing.tsx above textarea; agent passed to edge fn; research agent forces afuBotEnabled; system prompt augmented per agentId in AGENT_AUGMENTS map.

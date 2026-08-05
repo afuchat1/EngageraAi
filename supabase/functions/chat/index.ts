@@ -1313,6 +1313,7 @@ Deno.serve(async (req: Request) => {
       userLocation?: string;
       useAfuBot?: boolean;
       afubot?: boolean;
+      agent?: string;
     };
     try { body = await req.json(); } catch { return json({ error: "Invalid JSON body" }, 400); }
 
@@ -1325,6 +1326,7 @@ Deno.serve(async (req: Request) => {
       userLocation,
       useAfuBot = false,
       afubot = false,
+      agent: agentId,
     } = body;
     const afuBotEnabled = useAfuBot === true || afubot === true;
 
@@ -1396,9 +1398,11 @@ Deno.serve(async (req: Request) => {
 
     const isCompleteImage  = !hasUploadedImage && (isCompleteImageRequest(userText) || looksLikeImageIntent(userText));
     const isAnyImageIntent = isCompleteImage || hasUploadedImage;
-    // AfuBot is a separate opt-in layer. Chat never crawls the web unless the
-    // caller explicitly enables it (the SDK's afubot resource does this).
-    const shouldSearch     = afuBotEnabled && !isAnyImageIntent && userText.length > 3 && needsWebSearch(userText);
+    // Research agent always searches; other agents respect the AfuBot opt-in.
+    const shouldSearch     = !isAnyImageIntent && userText.length > 3 && (
+      agentId === "research" ||
+      (afuBotEnabled && needsWebSearch(userText))
+    );
     const shouldSearchDocs = userId && !isAnyImageIntent && (isKnowledgeBaseQuery(userText) || Boolean(userSettings.agentModeEnabled));
 
     if (isCompleteImage && authResult.type === "guest") {
@@ -1441,6 +1445,21 @@ Deno.serve(async (req: Request) => {
         docContext: docCtx,
         agentModeEnabled: userSettings.agentModeEnabled,
       });
+      // Agent-specific system prompt augmentation
+      if (agentId && agentId !== "assistant") {
+        const AGENT_AUGMENTS: Record<string, string> = {
+          research: `\n\n## Research Agent Mode\nYou are operating as the Research Agent. Your mission is deep, exhaustive information gathering.\n- Actively use live web search to find the latest information\n- Analyze multiple sources and compare findings\n- Structure findings with: Summary, Key Findings, Source Analysis, and Caveats\n- Always cite sources by name inline (e.g. "According to BBC, ...") — never use raw URLs\n- Rate information reliability and flag contradictions between sources\n- Never answer from memory alone — always verify with current data`,
+          planner: `\n\n## Planner Agent Mode\nYou are operating as the Planner Agent. Convert goals into structured, actionable plans.\n- Break down any objective into numbered steps with clear, specific actions\n- Include estimated effort/time for each step (e.g. "~2 hours", "~1 week")\n- Identify dependencies between steps\n- Flag potential risks, blockers, and mitigation strategies\n- Format output as a structured project plan with phases if needed\n- Focus on actionability — every step should be something the user can act on right now`,
+          coding: `\n\n## Coding Agent Mode\nYou are operating as the Coding Agent — an expert software engineer.\n- Always provide complete, working code with proper error handling\n- Include type annotations and inline documentation\n- Follow best practices for the specified language/framework\n- Explain your approach briefly before writing code\n- Suggest tests and edge cases to consider\n- Prefer modern, idiomatic code`,
+          writing: `\n\n## Writing Agent Mode\nYou are operating as the Writing Agent specialized in high-quality content creation.\n- Match tone and style to the requested format (professional/casual/technical/creative)\n- Structure content with proper flow, hierarchy, and narrative arc\n- Use active voice, precise language, and concrete examples\n- Deliver complete, polished content — not outlines or summaries unless explicitly asked`,
+          data: `\n\n## Data Agent Mode\nYou are operating as the Data Agent specialized in analysis and insights.\n- Structure findings with: Executive Summary, Key Metrics, Trends, Anomalies, and Recommendations\n- Use specific numbers and percentages when available\n- Always state confidence levels and data limitations\n- Focus on actionable insights, not just descriptions`,
+          document: `\n\n## Document Agent Mode\nYou are operating as the Document Agent specialized in processing documents.\n- Provide comprehensive yet concise summaries\n- Extract key information: dates, names, facts, decisions, and action items\n- Organize findings by category, relevance, or chronology\n- Quote directly from the document when accuracy is critical\n- Flag unclear, missing, or contradictory information`,
+          automation: `\n\n## Automation Agent Mode\nYou are operating as the Automation Agent specialized in workflow design.\n- Break workflows into discrete steps with clear inputs and outputs\n- Specify trigger conditions and success/failure paths\n- Suggest specific tools, services, or APIs for each step\n- Include error handling and retry logic\n- Consider edge cases, rate limits, and failure scenarios`,
+          memory: `\n\n## Memory Agent Mode\nYou are operating as the Memory Agent specialized in knowledge organization.\n- Identify what information should be remembered long-term\n- Organize knowledge by category: preferences, facts, decisions, skills\n- Surface relevant past context naturally in your responses\n- Help maintain a clear, searchable knowledge structure`,
+        };
+        const augment = AGENT_AUGMENTS[agentId];
+        if (augment) systemPrompt += augment;
+      }
       if (hint) systemPrompt += `\n\nContext: ${hint}`;
       return [{ role: "system", content: systemPrompt }, ...nonSystemMsgs];
     }

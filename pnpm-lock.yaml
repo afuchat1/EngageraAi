@@ -180,7 +180,7 @@ importers:
         specifier: ^15.5.13
         version: 15.5.13
       posthog-js:
-        specifier: ^1.399.1
+        specifier: ^1.404.1
         version: 1.404.1
       react-markdown:
         specifier: ^10.1.0

@@ -5,10 +5,13 @@
 import { HttpClient } from "./http.js";
 import { Chat } from "./resources/chat.js";
 import { AfuBot } from "./resources/afubot.js";
+import { Agents } from "./resources/agents.js";
+import { Memory_ as MemoryResource } from "./resources/memory.js";
+import { Workflows } from "./resources/workflows.js";
 import type { EngageraClientOptions } from "./types.js";
 
 /**
- * The AfuChat SDK client. Create one instance per application.
+ * The Engagera AI Platform client. Create one instance per application.
  *
  * @example
  * ```ts
@@ -16,10 +19,11 @@ import type { EngageraClientOptions } from "./types.js";
  *
  * const client = new Engagera({ apiKey: "eng_..." });
  *
- * // AfuBot web search (synchronous crawler)
- * const result = await client.afubot.search("latest AI breakthroughs");
- * console.log(result.answer);
- * console.log(result.sources); // crawled pages with images & snippets
+ * // Run a specialized agent
+ * const result = await client.agents.run({
+ *   agentId: "research",
+ *   messages: [{ role: "user", content: "Latest AI breakthroughs" }],
+ * });
  *
  * // Chat with streaming
  * for await (const event of client.chat.stream({
@@ -27,6 +31,18 @@ import type { EngageraClientOptions } from "./types.js";
  * })) {
  *   if (event.type === "text") process.stdout.write(event.text);
  * }
+ *
+ * // Manage memory
+ * await client.memory.add({ content: "User prefers TypeScript", type: "user" });
+ *
+ * // Build a multi-agent workflow
+ * const wf = await client.workflows.create({
+ *   name: "Content Pipeline",
+ *   steps: [
+ *     { name: "Research", agentId: "research", prompt: "Find top AI topics this week" },
+ *     { name: "Write", agentId: "writing", prompt: "Write an article", dependsOn: ["Research"] },
+ *   ],
+ * });
  * ```
  */
 export class Engagera {
@@ -37,12 +53,31 @@ export class Engagera {
    */
   readonly afubot: AfuBot;
 
-  /** Chat completions without web crawling by default. AfuBot can be explicitly opted in. */
+  /** Chat completions with optional streaming and AfuBot web search. */
   readonly chat: Chat;
+
+  /**
+   * Agent Engine — run built-in or custom specialized AI agents.
+   * Includes: assistant, research, planner, coding, writing, data, document, automation, memory.
+   */
+  readonly agents: Agents;
+
+  /**
+   * Memory — persistent facts and preferences, searchable across sessions.
+   */
+  readonly memory: MemoryResource;
+
+  /**
+   * Workflow Engine — build and run multi-agent pipelines.
+   */
+  readonly workflows: Workflows;
 
   constructor(options: EngageraClientOptions) {
     const http = new HttpClient(options);
     this.afubot = new AfuBot(http);
     this.chat = new Chat(http);
+    this.agents = new Agents(http);
+    this.memory = new MemoryResource(http);
+    this.workflows = new Workflows(http);
   }
 }

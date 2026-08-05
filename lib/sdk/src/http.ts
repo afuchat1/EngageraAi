@@ -37,15 +37,35 @@ export class HttpClient {
     body: unknown,
     stream: boolean,
   ): Promise<unknown | Response> {
+    const response = await this.request("POST", path, body);
+    if (stream) return response;
+    return response.json();
+  }
+
+  async get(path: string): Promise<unknown> {
+    const response = await this.request("GET", path);
+    return response.json();
+  }
+
+  async patch(path: string, body: unknown): Promise<unknown> {
+    const response = await this.request("PATCH", path, body);
+    return response.json();
+  }
+
+  async delete(path: string): Promise<void> {
+    await this.request("DELETE", path);
+  }
+
+  private async request(method: string, path: string, body?: unknown): Promise<Response> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeout);
 
     let response: Response;
     try {
       response = await fetch(`${this.baseUrl}${path}`, {
-        method: "POST",
+        method,
         headers: this.buildHeaders(),
-        body: JSON.stringify(body),
+        body: body !== undefined ? JSON.stringify(body) : undefined,
         signal: controller.signal,
       });
     } finally {
@@ -63,7 +83,6 @@ export class HttpClient {
       throw new EngageraError(text, { status: response.status });
     }
 
-    if (stream) return response;
-    return response.json();
+    return response;
   }
 }
