@@ -24,6 +24,12 @@ other deps used direct `npm:`/`https:` specifiers.
 `new FormData()` and `Blob` from `node:buffer` (the global `Blob` is not defined in the durable runtime).
 Never print the access token; read it via `process.env.SUPABASE_ACCESS_TOKEN` only inside the impure block.
 
+For a public developer API function, disable Supabase gateway JWT verification and enforce the product's API key inside the function. Keep the setting in both deployment metadata and repository configuration.
+
+**Why:** Otherwise Supabase rejects requests that only carry `x-engagera-api-key` with `UNAUTHORIZED_NO_AUTH_HEADER` before the function can validate the developer key.
+
+**How to apply:** Deploy `chat` with `verify_jwt: false` and keep `[functions.chat] verify_jwt = false` in `supabase/config.toml`.
+
 ## Known bundler trap: `.d.ts`-only deps can pull in native modules
 Deno's bundler used by this deploy endpoint walks *type-only* `.d.ts` edges, not just runtime imports. `linkedom`'s
 package ships a `types/.../canvas-element.d.ts` that references `esm.sh/canvas@3.2.3`, which requires a native

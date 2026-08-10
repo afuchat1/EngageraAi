@@ -344,7 +344,7 @@ export default function Docs() {
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm mb-1.5">Make your first request</p>
                     <CodeBlock language="bash" code={`curl -X POST "${BASE_URL}/chat" \\
-  -H "Authorization: Bearer YOUR_API_KEY" \\
+  -H "x-engagera-api-key: YOUR_ENGAGERA_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "engagera-pro",
@@ -379,9 +379,9 @@ export default function Docs() {
             {/* Authentication */}
             <Section id="authentication" title="Authentication" icon={Key}>
               <p className="text-white/60 text-sm leading-relaxed mb-5">
-                All API requests must include your API key as a Bearer token in the <code className="font-mono text-xs bg-white/10 px-1 py-0.5 rounded">Authorization</code> header.
+                Developer API requests must include your Engagera API key in the <code className="font-mono text-xs bg-white/10 px-1 py-0.5 rounded">x-engagera-api-key</code> header. For compatibility, <code className="font-mono text-xs bg-white/10 px-1 py-0.5 rounded">Authorization: Bearer eng_...</code> is also accepted.
               </p>
-              <CodeBlock language="http" code={`Authorization: Bearer YOUR_ENGAGERA_API_KEY`} />
+              <CodeBlock language="http" code={`x-engagera-api-key: YOUR_ENGAGERA_API_KEY`} />
               <Callout>
                 Never expose your API key in frontend code, mobile apps, or public repositories. Always proxy requests through your own backend server. Rotate keys immediately if compromised — you can do this in the Dashboard.
               </Callout>
@@ -464,7 +464,7 @@ export default function Docs() {
                   label: "curl",
                   content: (
                     <CodeBlock language="bash" code={`curl -X POST "${BASE_URL}/chat" \\
-  -H "Authorization: Bearer YOUR_API_KEY" \\
+  -H "x-engagera-api-key: YOUR_ENGAGERA_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "engagera-pro",
@@ -481,7 +481,7 @@ export default function Docs() {
                     <CodeBlock language="javascript" code={`const response = await fetch("${BASE_URL}/chat", {
   method: "POST",
   headers: {
-    "Authorization": "Bearer YOUR_API_KEY",
+    "x-engagera-api-key": "YOUR_ENGAGERA_API_KEY",
     "Content-Type": "application/json",
   },
   body: JSON.stringify({
@@ -504,7 +504,7 @@ console.log(data.message.content);`} />
 response = requests.post(
     "${BASE_URL}/chat",
     headers={
-        "Authorization": "Bearer YOUR_API_KEY",
+        "x-engagera-api-key": "YOUR_ENGAGERA_API_KEY",
         "Content-Type": "application/json",
     },
     json={
