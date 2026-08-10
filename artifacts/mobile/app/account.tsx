@@ -9,7 +9,7 @@ import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollV
 export default function AccountSheet() {
   const colors = useColors();
   const { user, displayName, signIn, signUp, signOut } = useAuth();
-  const params = useLocalSearchParams<{ mode?: string }>();
+  const params = useLocalSearchParams<{ mode?: string; returnToChat?: string }>();
   const [mode, setMode] = useState<'signIn' | 'signUp'>(
     params.mode === 'signUp' ? 'signUp' : 'signIn',
   );
@@ -68,8 +68,8 @@ export default function AccountSheet() {
       </Text>
       <Text style={[styles.body, { color: colors.mutedForeground }]}>
         {mode === 'signIn'
-          ? 'Sign in for unlimited messages and to keep your conversation history.'
-          : 'Create a free account for unlimited messages.'}
+          ? 'Sign in to use Engagera and keep your conversation history.'
+          : 'Create a standalone Engagera account to start chatting.'}
       </Text>
 
       <TextInput
@@ -115,9 +115,6 @@ export default function AccountSheet() {
         </Text>
       </Pressable>
 
-      <Pressable onPress={() => router.back()} style={styles.continueGuestBtn}>
-        <Text style={[styles.switchModeText, { color: colors.mutedForeground }]}>Continue as guest</Text>
-      </Pressable>
     </KeyboardAwareScrollViewCompat>
   );
 }

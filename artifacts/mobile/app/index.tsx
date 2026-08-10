@@ -111,25 +111,11 @@ export default function ChatScreen() {
     busy,
     send,
     regenerateMessage,
-    guestBlocked,
     conversationId,
   } = session;
 
   const lastMessage = messages.length > 0 ? messages[messages.length - 1] : undefined;
   const lastIsPending = !!lastMessage?.pending;
-
-  // Guest cap alert
-  useEffect(() => {
-    if (!guestBlocked) return;
-    showDialog(
-      'Free messages used up',
-      "You've used all your free guest messages. Create a free account to keep chatting, generate images, and unlock all models.",
-      [
-        { text: 'Sign in', onPress: () => router.push('/account') },
-        { text: 'Maybe later', style: 'cancel' },
-      ],
-    );
-  }, [guestBlocked, showDialog]);
 
   // ── Scroll helpers ────────────────────────────────────────────────────────
   /**
@@ -363,8 +349,7 @@ export default function ChatScreen() {
               onImagePicked={setPendingImage}
               onAudioChat={() => setAudioChatOpen(true)}
               busy={busy || lastIsPending}
-              disabled={guestBlocked}
-              placeholder={guestBlocked ? 'Sign in to keep chatting…' : CHAT_COPY.placeholder}
+              placeholder={CHAT_COPY.placeholder}
             />
           </View>
         </View>

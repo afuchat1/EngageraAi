@@ -340,7 +340,7 @@ export function Sidebar({
                   Save your chats
                 </Text>
                 <Text style={[styles.guestBody, { color: colors.mutedForeground }]}>
-                  Create a free account to keep your history and unlock unlimited messages.
+                  Sign in or create an Engagera account to save your history and start chatting.
                 </Text>
                 <Pressable
                   onPress={() => { onClose(); router.push('/account'); }}

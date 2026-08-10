@@ -3,11 +3,12 @@ import { useAuth } from '@/hooks/useAuth';
 import {
   ChatMessage,
   ChatRequestError,
-  GUEST_MESSAGE_LIMIT,
   SearchInfo,
   looksLikeImageRequest,
   streamChat,
 } from '@/lib/chat';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { router } from 'expo-router';
 import { fetchConversationMessages, listConversations } from '@/lib/conversations';
 import type { DisplayMessage } from '@/components/ChatBubble';
 import type { PendingImage } from '@/components/ChatInput';
@@ -53,11 +54,18 @@ export function useChatSession(model: string, contextHint?: string) {
   const [inputText, setInputText] = useState('');
   const [pendingImage, setPendingImage] = useState<PendingImage | null>(null);
   const [busy, setBusy] = useState(false);
-  const [guestCount, setGuestCount] = useState(0);
-  const [guestBlocked, setGuestBlocked] = useState(false);
   const [conversationId, setConversationId] = useState<number | undefined>(undefined);
+  const AUTH_DRAFT_KEY = 'engagera_auth_prompt_draft';
 
-  const remaining = Math.max(0, GUEST_MESSAGE_LIMIT - guestCount);
+  useEffect(() => {
+    if (!user) return;
+    AsyncStorage.getItem(AUTH_DRAFT_KEY).then((draft) => {
+      if (draft) {
+        setInputText(draft);
+        return AsyncStorage.removeItem(AUTH_DRAFT_KEY);
+      }
+    }).catch(() => {});
+  }, [user]);
 
   // The edge function can deliver several model tokens in one SSE frame
   // (network/upstream batching we don't control), which would otherwise
@@ -176,7 +184,6 @@ export function useChatSession(model: string, contextHint?: string) {
             },
             onDone: (done) => {
               if (done.conversationId) setConversationId(done.conversationId);
-              if (typeof done.guestMessageCount === 'number') setGuestCount(done.guestMessageCount);
               if (done.timeInfo || done.weatherInfo || done.crawledUrls) {
                 setMessages((prev) =>
                   prev.map((m) =>
@@ -203,12 +210,6 @@ export function useChatSession(model: string, contextHint?: string) {
         }
       } catch (err) {
         stopReveal();
-        if (err instanceof ChatRequestError && err.status === 429) {
-          setGuestBlocked(true);
-          const data = err.data as { guestMessageCount?: number } | undefined;
-          if (data?.guestMessageCount) setGuestCount(data.guestMessageCount);
-        }
-
         const isRateLimited = err instanceof ChatRequestError && err.status === 429;
         if (isImageReq && !isRateLimited) {
           const recovered = await tryRecoverPersistedReply(convId);
@@ -310,27 +311,17 @@ export function useChatSession(model: string, contextHint?: string) {
   const send = useCallback(async () => {
     const text = inputText.trim();
     if (!text && !pendingImage) return;
-    if (!user && guestBlocked) return;
+    if (!user) {
+      await AsyncStorage.setItem(AUTH_DRAFT_KEY, text);
+      router.push({ pathname: '/account', params: { returnToChat: '1' } });
+      return;
+    }
 
     // When the user has attached an image, we route to vision analysis / image
     // editing — NOT to the Flux text-to-image generator. Vision is available to
     // all users; only text-based image generation (Flux) requires sign-in.
     const hasImage = !!pendingImage;
     const isImageReq = !hasImage && looksLikeImageRequest(text);
-
-    if (!user && isImageReq) {
-      // isImageReq is only true when hasImage is false, so pendingImage is null here
-      const userMsg: DisplayMessage = { id: randomId(), role: 'user', text, imageUri: undefined };
-      const signInMsg: DisplayMessage = {
-        id: randomId(),
-        role: 'assistant',
-        text: 'Image generation is only available to signed-in users. Create a free account to unlock it — it only takes a moment.',
-      };
-      setMessages((prev) => [...prev, userMsg, signInMsg]);
-      setInputText('');
-      setPendingImage(null);
-      return;
-    }
 
     const userMessage: DisplayMessage = {
       id: randomId(),
@@ -377,7 +368,7 @@ export function useChatSession(model: string, contextHint?: string) {
     setPendingImage(null);
 
     await runStreamRequest(historyForRequest, assistantId, isImageReq, conversationId);
-  }, [inputText, pendingImage, messages, user, guestBlocked, conversationId, runStreamRequest]);
+  }, [inputText, pendingImage, messages, user, conversationId, runStreamRequest]);
 
   return {
     messages,
@@ -390,8 +381,6 @@ export function useChatSession(model: string, contextHint?: string) {
     deleteMessage,
     regenerateMessage,
     isGuest: !user,
-    remaining,
-    guestBlocked,
     conversationId,
     startNewConversation,
     loadConversation,

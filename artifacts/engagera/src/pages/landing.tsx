@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
-import { Menu, Plus, MessageSquare, Send, Trash2, Image as ImageIcon, ChevronDown } from "lucide-react";
+import { Menu, Plus, Send, Trash2, Image as ImageIcon, ChevronDown } from "lucide-react";
 import { logoSrc } from "@/lib/assets";
 import {
   useListConversations,
@@ -48,7 +48,6 @@ export default function Landing() {
   const [input, setInput] = useState("");
   const [autoModel, setAutoModel] = useState<EngageraModel>("engagera-pro");
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
-  const [guestLimitReached, setGuestLimitReached] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<AgentId>("assistant");
   const [showAgentMenu, setShowAgentMenu] = useState(false);
@@ -56,6 +55,16 @@ export default function Landing() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
+  const AUTH_DRAFT_KEY = "engagera_auth_prompt_draft";
+
+  useEffect(() => {
+    if (!user) return;
+    const draft = sessionStorage.getItem(AUTH_DRAFT_KEY);
+    if (!draft) return;
+    setInput(draft);
+    sessionStorage.removeItem(AUTH_DRAFT_KEY);
+    requestAnimationFrame(() => chatInputRef.current?.focus());
+  }, [user]);
 
   // Close agent menu on outside click
   useEffect(() => {
@@ -266,11 +275,6 @@ export default function Landing() {
               setConversationId(doneEvt.conversationId);
               if (user) refetchConversations();
             }
-            if (!user && doneEvt.guestMessageCount != null && doneEvt.guestMessageLimit != null) {
-              if (doneEvt.guestMessageCount >= doneEvt.guestMessageLimit) {
-                setGuestLimitReached(true);
-              }
-            }
           },
         },
       );
@@ -296,7 +300,6 @@ export default function Landing() {
       streamClosedRef.current = true;
       const status = err?.status ?? err?.response?.status;
       if (status === 429 || status === 403) {
-        setGuestLimitReached(true);
         setMessages((prev) => prev.slice(0, assistantIndex - 1)); // remove user msg + placeholder
       } else if (!streamedAny) {
         setMessages(newMessages.slice(0, -1)); // remove user msg + empty placeholder

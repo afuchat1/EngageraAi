@@ -80,14 +80,12 @@ export default function PublicLayout({ children }: PublicLayoutProps) {
                     Sign in
                   </button>
                 </Link>
-                <a
-                  href="https://web.afuchat.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <Link
+                  href="/sign-up"
                   className="px-3.5 py-1.5 text-sm bg-white text-black font-semibold rounded-lg hover:bg-white/90 transition-colors"
                 >
                   Get started
-                </a>
+                </Link>
               </>
             )}
           </div>
@@ -159,13 +157,11 @@ export default function PublicLayout({ children }: PublicLayoutProps) {
                     </div>
                   </Link>
                   <a
-                    href="https://web.afuchat.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    href="/sign-up"
                     onClick={() => setMobileOpen(false)}
                     className="block px-3 py-2.5 rounded-xl text-sm font-semibold text-black bg-white hover:bg-white/90 transition-colors text-center"
                   >
-                    Get started — Join AfuChat
+                    Get started with Engagera
                   </a>
                 </>
               )}

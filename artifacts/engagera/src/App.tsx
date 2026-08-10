@@ -12,6 +12,7 @@ import { AlertProvider } from "@/components/ui/alert-toast";
 
 import Landing from "./pages/landing";
 import SignIn from "./pages/sign-in";
+import SignUp from "./pages/sign-up";
 import ForgotPassword from "./pages/forgot-password";
 import ResetPassword from "./pages/reset-password";
 import Dashboard from "./pages/dashboard";
@@ -97,18 +98,13 @@ function AdminRoute({ component: Component }: { component: React.ComponentType<a
   return <Component />;
 }
 
-function SignUpRedirect() {
-  useEffect(() => { window.location.replace("https://web.afuchat.com"); }, []);
-  return null;
-}
-
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Landing} />
       <Route path="/docs" component={Docs} />
       <Route path="/sign-in" component={SignIn} />
-      <Route path="/sign-up" component={SignUpRedirect} />
+      <Route path="/sign-up" component={SignUp} />
       <Route path="/forgot-password" component={ForgotPassword} />
       <Route path="/reset-password" component={ResetPassword} />
       <Route path="/dashboard"><ProtectedRoute component={Dashboard} /></Route>
