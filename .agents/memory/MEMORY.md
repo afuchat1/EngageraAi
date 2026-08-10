@@ -15,3 +15,4 @@
 - [SDK agent platform upgrade](sdk-agent-platform.md) — SDK bumped 0.1.5→0.2.0 with agents/memory/workflows resources; Memory_ class exported as MemoryResource to avoid name collision with Memory type.
 - [Inline source favicon injection](inline-source-favicons.md) — inject favicons into paragraph/li text nodes via buildSourceNameMap+processChildrenWithFavicons; processes string children only, leaves React elements untouched.
 - [Agent selector and routing](agent-selector-routing.md) — 8-agent selector chip (AGENTS array) in landing.tsx above textarea; agent passed to edge fn; research agent forces afuBotEnabled; system prompt augmented per agentId in AGENT_AUGMENTS map.
+- [Workspace dependency restore](workspace-dependency-restore.md) — a locked package can still be missing from node_modules; restore with frozen-lockfile install before changing app code.
