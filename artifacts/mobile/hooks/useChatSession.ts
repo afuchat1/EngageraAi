@@ -229,9 +229,7 @@ export function useChatSession(model: string, contextHint?: string) {
 
         const message =
           err instanceof ChatRequestError
-            ? err.status === 429
-              ? "You've used all your free guest messages. Sign in to keep chatting."
-              : err.message
+            ? err.message
             : err instanceof Error && err.message
               ? `Something went wrong: ${err.message}`
               : 'Something went wrong. Please try again.';

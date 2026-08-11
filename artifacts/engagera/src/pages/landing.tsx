@@ -167,7 +167,12 @@ export default function Landing() {
   }, [input]);
 
   const handleSend = useCallback(async () => {
-    if (!input.trim() || isLoading || guestLimitReached) return;
+    if (!input.trim() || isLoading) return;
+    if (!user) {
+      sessionStorage.setItem(AUTH_DRAFT_KEY, input);
+      setLocation("/sign-in?returnTo=/");
+      return;
+    }
 
     const msgModel = detectModel(input.trim());
     // detectModel already routes unambiguous image requests to
@@ -314,7 +319,7 @@ export default function Landing() {
     } finally {
       setIsLoading(false);
     }
-  }, [input, isLoading, guestLimitReached, messages, conversationId, user, refetchConversations]);
+  }, [input, isLoading, messages, conversationId, user, refetchConversations, setLocation]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -326,7 +331,6 @@ export default function Landing() {
   const handleNewChat = () => {
     setConversationId(undefined);
     setMessages([]);
-    setGuestLimitReached(false);
     setInput("");
     if (isMobileSidebarOpen) setIsMobileSidebarOpen(false);
   };
@@ -434,7 +438,7 @@ export default function Landing() {
                 </p>
                 {!user && (
                   <div className="text-xs text-white/35 px-4 py-2 border border-white/10 rounded-full bg-white/[0.03]">
-                    Guest mode · 5 free messages
+                    Sign in to send messages and save your conversations
                   </div>
                 )}
               </div>
@@ -558,8 +562,7 @@ export default function Landing() {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder={guestLimitReached ? "Sign up to continue..." : `Message ${AGENTS.find(a => a.id === selectedAgent)?.label ?? "Engagera"}…`}
-                    disabled={guestLimitReached}
+                    placeholder={`Message ${AGENTS.find(a => a.id === selectedAgent)?.label ?? "Engagera"}…`}
                     className="w-full bg-transparent border border-white/20 focus:border-white/50 outline-none resize-none py-3 pl-4 pr-12 text-sm max-h-48 scrollbar-thin min-h-[50px] transition-colors disabled:opacity-40 rounded-2xl"
                     rows={1}
                     onInput={(e) => {
@@ -570,7 +573,7 @@ export default function Landing() {
                   />
                   <button
                     onClick={handleSend}
-                    disabled={!input.trim() || isLoading || guestLimitReached}
+                    disabled={!input.trim() || isLoading}
                     className="absolute right-2 bottom-2 p-1.5 text-white/40 hover:text-white disabled:opacity-20 transition-colors"
                   >
                     <Send className="w-4 h-4" />
@@ -585,41 +588,6 @@ export default function Landing() {
         </div>
       </div>
 
-      {/* Guest Limit Modal */}
-      {guestLimitReached && !user && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0a0a0a] rounded-2xl p-6 max-w-sm w-full shadow-2xl">
-            <div className="w-10 h-10 rounded-full border border-white/15 flex items-center justify-center mb-4 mx-auto">
-              <MessageSquare className="w-5 h-5 text-white/50" />
-            </div>
-            <h3 className="text-lg font-semibold text-center mb-1">Free messages used up</h3>
-            <p className="text-white/45 text-sm text-center mb-3">
-              You've used all 5 guest messages. Sign in to keep chatting, access the API, and unlock all models.
-            </p>
-            <p className="text-white/30 text-xs text-center mb-6 leading-relaxed">
-              Engagera is exclusive to{" "}
-              <a href="https://web.afuchat.com" target="_blank" rel="noopener noreferrer" className="text-white/50 underline underline-offset-2">AfuChat</a>
-              {" "}members. No separate sign-up exists here — use your AfuChat account credentials to sign in.
-            </p>
-            <div className="flex flex-col gap-3">
-              <button
-                onClick={() => setLocation("/sign-in")}
-                className="w-full py-2.5 bg-white text-black font-semibold text-sm rounded-full hover:bg-white/90 transition-colors"
-              >
-                Sign in with AfuChat account
-              </button>
-              <a
-                href="https://web.afuchat.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full py-2.5 border border-white/20 text-sm rounded-full hover:bg-white/5 transition-colors text-center"
-              >
-                Don't have an AfuChat account? Join here →
-              </a>
-            </div>
-          </div>
-        </div>
-      )}
     </PublicLayout>
   );
 }

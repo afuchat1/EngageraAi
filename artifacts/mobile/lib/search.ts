@@ -8,7 +8,6 @@
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from '@/lib/supabase';
-import { getOrCreateGuestSessionId } from '@/lib/chat';
 
 const BASE = `${SUPABASE_URL}/functions/v1/search`;
 
@@ -19,7 +18,6 @@ async function buildHeaders(): Promise<Record<string, string>> {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${token ?? SUPABASE_ANON_KEY}`,
   };
-  if (!token) headers['x-guest-session-id'] = await getOrCreateGuestSessionId();
   return headers;
 }
 

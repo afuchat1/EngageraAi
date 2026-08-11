@@ -56,8 +56,6 @@ export interface ChatResponse {
   message: { role: "assistant"; content: string };
   usage: { inputTokens: number; outputTokens: number; totalTokens: number };
   conversationId?: number;
-  guestMessageCount?: number;
-  guestMessageLimit?: number;
   searchInfo?: SearchInfo;
   crawledUrls?: string[];
   crawledSources?: SearchSource[];  // rich source objects with og:image for user-pasted URLs
@@ -72,22 +70,9 @@ async function buildHeaders(): Promise<Record<string, string>> {
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData.session?.access_token;
 
-  const guestId =
-    localStorage.getItem("engagera_guest_session_id") ??
-    (() => {
-      const id = crypto.randomUUID();
-      localStorage.setItem("engagera_guest_session_id", id);
-      return id;
-    })();
-
-  // Always include x-guest-session-id alongside the bearer token.
-  // The server prefers a valid JWT but falls back to the guest session
-  // if the token is expired/invalid — this prevents a 401 when the browser
-  // has a stale session that hasn't been cleared yet.
   return {
     "Content-Type": "application/json",
     "Authorization": `Bearer ${token ?? SUPABASE_ANON_KEY}`,
-    "x-guest-session-id": guestId,
   };
 }
 
@@ -146,8 +131,6 @@ export interface StreamDoneEvent {
   crawledSources?: SearchSource[];
   timeInfo?: TimeInfo;
   weatherInfo?: WeatherInfo;
-  guestMessageCount?: number;
-  guestMessageLimit?: number;
 }
 
 export interface StreamHandlers {
@@ -205,8 +188,6 @@ export async function streamEdgeChat(
         crawledSources: data?.crawledSources,
         timeInfo: data?.timeInfo,
         weatherInfo: data?.weatherInfo,
-        guestMessageCount: data?.guestMessageCount,
-        guestMessageLimit: data?.guestMessageLimit,
       });
       return;
     }

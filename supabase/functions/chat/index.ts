@@ -21,7 +21,6 @@ const CEREBRAS_URL = "https://api.cerebras.ai/v1/chat/completions";
 const CF_BASE      = "https://api.cloudflare.com/client/v4/accounts";
 const PISTON_URL   = "https://emkc.org/api/v2/piston/execute";
 
-const GUEST_LIMIT  = 5;
 const AGENT_MAX_ITER = 3;
 const API_RATE_LIMIT = 60;
 const API_RATE_WINDOW_MS = 60 * 1000;
@@ -52,7 +51,7 @@ const TOOL_RESULT_TAG = "<tool_result>";
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-guest-session-id, x-engagera-api-key",
+    "authorization, x-client-info, apikey, content-type, x-engagera-api-key",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -1173,7 +1172,6 @@ async function agentLoop(
 type AuthResult =
   | { type: "api_key"; userId?: string; apiKeyId: number }
   | { type: "user"; userId: string }
-  | { type: "guest"; guestSessionId: string }
   | { type: "invalid_key"; reason: "not_found" | "revoked" | "paused" | "lookup_error" }
   | { type: "none" };
 
@@ -1197,8 +1195,6 @@ async function resolveAuth(req: Request, db: ReturnType<typeof createClient>, re
     const { data } = await db.auth.getUser(bearerToken);
     if (data.user) return { type: "user", userId: data.user.id };
   }
-  const guestId = req.headers.get("x-guest-session-id")?.trim();
-  if (guestId) return { type: "guest", guestSessionId: guestId };
   return { type: "none" };
 }
 
@@ -1221,21 +1217,6 @@ async function checkApiRateLimit(
     used,
     retryAfterSeconds: 60,
   };
-}
-
-async function checkGuestLimit(db: ReturnType<typeof createClient>, guestSessionId: string): Promise<{ allowed: boolean; count: number }> {
-  const windowStart = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const { data, error } = await db.from("engagera_guest_sessions").select("message_count, window_start").eq("session_id", guestSessionId).single();
-  if (error || !data) return { allowed: true, count: 0 };
-  if (data.window_start < windowStart) return { allowed: true, count: 0 };
-  return { allowed: data.message_count < GUEST_LIMIT, count: data.message_count };
-}
-
-async function incrementGuestCount(db: ReturnType<typeof createClient>, guestSessionId: string): Promise<number> {
-  try {
-    const { data } = await db.rpc("engagera_increment_guest_count", { p_session_id: guestSessionId });
-    return typeof data === "number" ? data : 0;
-  } catch { return 0; }
 }
 
 async function persistConversation(
@@ -1341,10 +1322,6 @@ Deno.serve(async (req: Request) => {
 
     const authResult = await resolveAuth(req, db, requestId);
 
-    if (authResult.type === "guest") {
-      const { allowed, count } = await checkGuestLimit(db, authResult.guestSessionId);
-      if (!allowed) return json({ error: "Guest message limit reached. Sign in for unlimited access.", guestMessageCount: count, guestMessageLimit: GUEST_LIMIT }, 429);
-    }
     if (authResult.type === "invalid_key") {
       const message = authResult.reason === "revoked"
         ? "API key revoked — generate a new one in the Dashboard."
@@ -1404,10 +1381,6 @@ Deno.serve(async (req: Request) => {
       (afuBotEnabled && needsWebSearch(userText))
     );
     const shouldSearchDocs = userId && !isAnyImageIntent && (isKnowledgeBaseQuery(userText) || Boolean(userSettings.agentModeEnabled));
-
-    if (isCompleteImage && authResult.type === "guest") {
-      return json({ error: "Sign in to generate images.", requiresAuth: true, feature: "image_generation" }, 401);
-    }
 
     const userUrls       = afuBotEnabled ? extractUrls(userText) : [];
     const _weatherLoc    = extractWeatherLocation(userText);
@@ -1473,19 +1446,15 @@ Deno.serve(async (req: Request) => {
         const returnImageJson = async (content: string, mdl: string) => {
           const fakeResult: AIResult = { ok: true, content, inputTokens: 0, outputTokens: 0 };
           const convId = await persistConversation(db, authResult, imageCaption || "[image]", fakeResult, model, conversationId, false, requestId);
-          let ngc: number | undefined;
-          if (authResult.type === "guest") ngc = await incrementGuestCount(db, authResult.guestSessionId);
-          return json({ id: requestId, model: mdl, message: { role: "assistant", content }, conversationId: convId, ...(ngc !== undefined && { guestMessageCount: ngc, guestMessageLimit: GUEST_LIMIT }) });
+          return json({ id: requestId, model: mdl, message: { role: "assistant", content }, conversationId: convId });
         };
         const returnTextSse = async (content: string, mdl: string) => {
           const fakeResult: AIResult = { ok: true, content, inputTokens: 0, outputTokens: 0, provider: "groq-vision", model: mdl };
           const convId = await persistConversation(db, authResult, imageCaption || "[image]", fakeResult, model, conversationId, false, requestId);
-          let ngc: number | undefined;
-          if (authResult.type === "guest") ngc = await incrementGuestCount(db, authResult.guestSessionId);
           const sseStream = new ReadableStream({ start(ctrl) {
             const enq = (f: string) => ctrl.enqueue(enc.encode(f));
             enq(sseFrame({ type: "token", content }));
-            enq(sseFrame({ type: "done", model: mdl, conversationId: convId, ...(ngc !== undefined && { guestMessageCount: ngc, guestMessageLimit: GUEST_LIMIT }) }));
+            enq(sseFrame({ type: "done", model: mdl, conversationId: convId }));
             enq("data: [DONE]\n\n"); ctrl.close();
           }});
           return new Response(sseStream, { status: 200, headers: { ...CORS, "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "X-Accel-Buffering": "no" } });
@@ -1508,9 +1477,7 @@ Deno.serve(async (req: Request) => {
           if (imageMarkdown) {
             const fakeResult: AIResult = { ok: true, content: imageMarkdown, inputTokens: 0, outputTokens: 0, provider: "cloudflare-flux", model };
             const convId = await persistConversation(db, authResult, userText, fakeResult, model, conversationId, false, requestId);
-            let newGuestCount: number | undefined;
-            if (authResult.type === "guest") newGuestCount = await incrementGuestCount(db, authResult.guestSessionId);
-            return json({ id: requestId, model: "engagera-image", message: { role: "assistant", content: imageMarkdown }, conversationId: convId, ...(newGuestCount !== undefined && { guestMessageCount: newGuestCount, guestMessageLimit: GUEST_LIMIT }) });
+            return json({ id: requestId, model: "engagera-image", message: { role: "assistant", content: imageMarkdown }, conversationId: convId });
           }
           const errResult: AIResult = { ok: true, content: "I wasn't able to generate that image right now. Please try again in a moment.", inputTokens: 0, outputTokens: 0 };
           await persistConversation(db, authResult, userText, errResult, model, conversationId, false, requestId);
@@ -1661,8 +1628,6 @@ Deno.serve(async (req: Request) => {
             enq(sseFrame({ type: "token", content: aiResult.content }));
 
             const convId = await persistConversation(db, authResult, userText, aiResult, model, conversationId, searchSources.length > 0, requestId);
-            let newGuestCount: number | undefined;
-            if (authResult.type === "guest") newGuestCount = await incrementGuestCount(db, authResult.guestSessionId);
 
             const latencyMs = Date.now() - startTime;
             log("info", "handler.success", { requestId, provider: aiResult.provider, model: aiResult.model, latencyMs });
@@ -1675,7 +1640,6 @@ Deno.serve(async (req: Request) => {
               ...(userUrls.length > 0 && { crawledUrls: userUrls }),
               ...(weatherInfo && { weatherInfo }),
               ...(timeInfo && { timeInfo }),
-              ...(newGuestCount !== undefined && { guestMessageCount: newGuestCount, guestMessageLimit: GUEST_LIMIT }),
             }));
             enq("data: [DONE]\n\n");
             ctrl.close();
@@ -1700,9 +1664,7 @@ Deno.serve(async (req: Request) => {
       const persistAndReturn = async (content: string, mdl: string) => {
         const fakeResult: AIResult = { ok: true, content, inputTokens: 0, outputTokens: 0 };
         const convId = await persistConversation(db, authResult, imageCaption || "[image]", fakeResult, model, conversationId, false, requestId);
-        let ngc: number | undefined;
-        if (authResult.type === "guest") ngc = await incrementGuestCount(db, authResult.guestSessionId);
-        return json({ id: requestId, model: mdl, message: { role: "assistant", content }, conversationId: convId, ...(ngc !== undefined && { guestMessageCount: ngc, guestMessageLimit: GUEST_LIMIT }) });
+        return json({ id: requestId, model: mdl, message: { role: "assistant", content }, conversationId: convId });
       };
       if (imageIntent === "edit" && keys.cloudflare && keys.cloudflareAccountId) {
         const edited = await editImageCF(uploadedImageUrl, imageCaption, keys.cloudflare, keys.cloudflareAccountId, requestId);
@@ -1720,9 +1682,7 @@ Deno.serve(async (req: Request) => {
       const content = imageMarkdown ?? "I wasn't able to generate that image right now. Please try again.";
       const fakeResult: AIResult = { ok: true, content, inputTokens: 0, outputTokens: 0 };
       const convId = await persistConversation(db, authResult, userText, fakeResult, model, conversationId, false, requestId);
-      let newGuestCount: number | undefined;
-      if (authResult.type === "guest") newGuestCount = await incrementGuestCount(db, authResult.guestSessionId);
-      return json({ id: requestId, model: "engagera-image", message: { role: "assistant", content }, conversationId: convId, ...(newGuestCount !== undefined && { guestMessageCount: newGuestCount, guestMessageLimit: GUEST_LIMIT }) });
+      return json({ id: requestId, model: "engagera-image", message: { role: "assistant", content }, conversationId: convId });
     }
 
     // JSON path: auto-reasoning for engagera-pro / engagera-auto (no explicit afubot)
@@ -1761,15 +1721,12 @@ Deno.serve(async (req: Request) => {
 
       if (!jsonResult.ok) return json({ error: "AI service temporarily unavailable. Please try again." }, 503);
       const jsonConvId = await persistConversation(db, authResult, userText, jsonResult, model, conversationId, jsonSearchSources.length > 0, requestId);
-      let jsonGuestCount: number | undefined;
-      if (authResult.type === "guest") jsonGuestCount = await incrementGuestCount(db, authResult.guestSessionId);
       if (userId && jsonResult.content && keys.groq) extractAndSaveMemories(db, userId, userText, jsonResult.content, keys.groq).catch(() => {});
       return json({
         id: requestId, model,
         message: { role: "assistant", content: jsonResult.content },
         conversationId: jsonConvId,
         ...(jsonSearchSources.length > 0 && { searchInfo: { query: pass1Json.searchQuery, sources: jsonSearchSources } }),
-        ...(jsonGuestCount !== undefined && { guestMessageCount: jsonGuestCount, guestMessageLimit: GUEST_LIMIT }),
       });
     }
 
@@ -1790,8 +1747,6 @@ Deno.serve(async (req: Request) => {
     if (!result.ok) return json({ error: "AI service temporarily unavailable. Please try again." }, 503);
 
     const convId = await persistConversation(db, authResult, userText, result, model, conversationId, enrichedSources.length > 0, requestId);
-    let newGuestCount: number | undefined;
-    if (authResult.type === "guest") newGuestCount = await incrementGuestCount(db, authResult.guestSessionId);
 
     if (userId && result.ok && result.content && keys.groq) {
       extractAndSaveMemories(db, userId, userText, result.content, keys.groq).catch(() => {});
@@ -1814,7 +1769,6 @@ Deno.serve(async (req: Request) => {
       }),
       ...(weatherInfoRaw && { weatherInfo: weatherInfoRaw }),
       ...(timeInfo && { timeInfo }),
-      ...(newGuestCount !== undefined && { guestMessageCount: newGuestCount, guestMessageLimit: GUEST_LIMIT }),
     });
 
   } catch (err) {

@@ -3,7 +3,7 @@ import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { setAuthTokenGetter, setFallbackBearerToken, setUrlMapper, setGuestSessionId } from "@workspace/api-client-react";
+import { setAuthTokenGetter, setFallbackBearerToken, setUrlMapper } from "@workspace/api-client-react";
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/supabase";
 import { initAnalytics, identifyUser, resetUser } from "@/lib/analytics";
 import { useAuth } from "@/hooks/useAuth";
@@ -54,16 +54,6 @@ setUrlMapper((path) => {
   if (path.startsWith("/api/dataset-export")) return `${FN_BASE}/dataset-export`;
   return path;
 });
-
-const GUEST_SESSION_KEY = "engagera_guest_session_id";
-function getOrCreateGuestSessionId(): string {
-  let id = localStorage.getItem(GUEST_SESSION_KEY);
-  if (!id) {
-    id = crypto.randomUUID();
-    localStorage.setItem(GUEST_SESSION_KEY, id);
-  }
-  return id;
-}
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType<any> }) {
   const { user, loading } = useAuth();
@@ -117,7 +107,7 @@ function Router() {
       <Route path="/admin/models"><AdminRoute component={AdminModels} /></Route>
       <Route path="/admin/analytics"><AdminRoute component={AdminAnalytics} /></Route>
       <Route path="/admin/storage"><AdminRoute component={AdminStorage} /></Route>
-      <Route path="/generate" component={Generate} />
+      <Route path="/generate"><ProtectedRoute component={Generate} /></Route>
       <Route component={NotFound} />
     </Switch>
   );
@@ -126,7 +116,6 @@ function Router() {
 function App() {
   useEffect(() => {
     document.documentElement.classList.add("dark");
-    setGuestSessionId(getOrCreateGuestSessionId());
     initAnalytics();
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) identifyUser(session.user.id, session.user.email);

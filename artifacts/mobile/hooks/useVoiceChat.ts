@@ -29,13 +29,11 @@ import {
   FileSystemUploadType,
 } from 'expo-file-system/legacy';
 import * as Speech from 'expo-speech';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from '@/lib/supabase';
 
 const STT_URL        = `${SUPABASE_URL}/functions/v1/stt`;
 const POLLINATIONS   = `${SUPABASE_URL}/functions/v1/pollinations`;
 const CONVERSATIONS  = `${SUPABASE_URL}/functions/v1/conversations`;
-const GUEST_ID_KEY   = 'engagera_guest_session_id';
 
 // VAD thresholds
 const SPEECH_THRESHOLD_DB = -40;   // dBFS: above this = speech detected
@@ -76,12 +74,9 @@ export interface UseVoiceChatOptions {
 async function buildHeaders(): Promise<Record<string, string>> {
   const { data } = await supabase.auth.getSession();
   const token    = data.session?.access_token ?? SUPABASE_ANON_KEY;
-  let guestId    = '';
-  try { guestId  = (await AsyncStorage.getItem(GUEST_ID_KEY)) ?? ''; } catch {}
   return {
     'Content-Type':  'application/json',
     Authorization:   `Bearer ${token}`,
-    ...(guestId ? { 'x-guest-session-id': guestId } : {}),
   };
 }
 

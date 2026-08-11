@@ -3,9 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
-import { GUEST_MESSAGE_LIMIT } from '@/lib/chat';
-
-export function GuestBanner({ remaining }: { remaining: number }) {
+export function GuestBanner() {
   const colors = useColors();
 
   return (
@@ -23,7 +21,7 @@ export function GuestBanner({ remaining }: { remaining: number }) {
       <View style={styles.left}>
         <Ionicons name="sparkles" size={12} color={colors.mutedForeground} />
         <Text style={[styles.text, { color: colors.mutedForeground }]}>
-          {remaining > 0 ? `${remaining}/${GUEST_MESSAGE_LIMIT} guest messages left` : 'Guest limit reached'}
+          Sign in to use Engagera
         </Text>
       </View>
       <Text style={[styles.cta, { color: colors.foreground }]}>Sign in</Text>

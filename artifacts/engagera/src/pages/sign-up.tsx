@@ -53,7 +53,10 @@ export default function SignUp() {
                 activate your account.
               </p>
               <button
-                onClick={() => setLocation("/sign-in")}
+                onClick={() => {
+                  const returnTo = new URLSearchParams(window.location.search).get("returnTo");
+                  setLocation(returnTo ? `/sign-in?returnTo=${encodeURIComponent(returnTo)}` : "/sign-in");
+                }}
                 className="mt-5 w-full py-2.5 bg-white text-black text-sm font-semibold rounded-xl hover:bg-white/90 transition-colors"
               >
                 Go to sign in

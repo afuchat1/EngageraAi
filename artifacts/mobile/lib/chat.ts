@@ -65,8 +65,6 @@ export interface StreamDoneEvent {
   crawledSources?: SearchSource[];
   timeInfo?: TimeInfo;
   weatherInfo?: WeatherInfo;
-  guestMessageCount?: number;
-  guestMessageLimit?: number;
 }
 
 export interface StreamHandlers {
@@ -118,20 +116,10 @@ export function looksLikeImageRequest(text: string): boolean {
 
 const EDGE_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/chat`;
 const REQUEST_TIMEOUT_MS = 60_000;
-const GUEST_SESSION_KEY = 'engagera_guest_session_id';
-
 function randomId(): string {
   // Do NOT use the 'uuid' package here — it needs crypto.getRandomValues(),
   // which crashes on iOS/Android. This matches the project convention.
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 11);
-}
-
-export async function getOrCreateGuestSessionId(): Promise<string> {
-  const existing = await AsyncStorage.getItem(GUEST_SESSION_KEY);
-  if (existing) return existing;
-  const id = randomId();
-  await AsyncStorage.setItem(GUEST_SESSION_KEY, id);
-  return id;
 }
 
 export async function buildAuthHeaders(): Promise<Record<string, string>> {
@@ -146,10 +134,6 @@ async function buildHeaders(): Promise<Record<string, string>> {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${token ?? SUPABASE_ANON_KEY}`,
   };
-
-  if (!token) {
-    headers['x-guest-session-id'] = await getOrCreateGuestSessionId();
-  }
 
   return headers;
 }
@@ -264,8 +248,6 @@ export function streamChat(
               crawledSources: data?.crawledSources as SearchSource[] | undefined,
               timeInfo: data?.timeInfo as TimeInfo | undefined,
               weatherInfo: data?.weatherInfo as WeatherInfo | undefined,
-              guestMessageCount: data?.guestMessageCount as number | undefined,
-              guestMessageLimit: data?.guestMessageLimit as number | undefined,
             });
             settle(() => resolve());
           } catch {
@@ -377,4 +359,3 @@ export function streamChat(
 // historical 2.x aliases working for older clients and maps them internally.
 export const CHAT_MODEL = 'engagera-pro';
 export const LAB_MODEL = 'engagera-reason';
-export const GUEST_MESSAGE_LIMIT = 5;
