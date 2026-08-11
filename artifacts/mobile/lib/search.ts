@@ -54,6 +54,18 @@ export function getPotentialDomain(input: string): string | null {
   return `${t}.com`;
 }
 
+/** Return a complete website address that should open directly in the browser. */
+export function getDirectDomainUrl(input: string): string | null {
+  const t = input.trim();
+  if (!t || /\s/.test(t)) return null;
+
+  const withoutScheme = t.replace(/^https?:\/\//i, '');
+  const domainRe = /^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}(\/[^\s]*)?$/i;
+  if (!domainRe.test(withoutScheme)) return null;
+
+  return /^https?:\/\//i.test(t) ? t : `https://${t}`;
+}
+
 // ── Official-site probe ───────────────────────────────────────────────────────
 // For single-word queries (e.g. "afuchat"), asks the edge function to probe
 // common TLDs (afuchat.com, afuchat.io, …) and return the first live URL.

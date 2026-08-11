@@ -42,6 +42,7 @@ import {
   fetchNewsResults,
   fetchFinanceResults,
   getPotentialDomain,
+  getDirectDomainUrl,
   probeOfficialSite,
   clearSearchHistory,
   type WebResult,
@@ -1076,6 +1077,20 @@ export function SearchEngine({ topPad }: { topPad: number }) {
   const doSearch = useCallback(async (q: string) => {
     const trimmed = q.trim();
     if (!trimmed) return;
+
+    // Treat a complete domain as an address, not a search query. This happens
+    // before the auth check because opening a website does not require a Lab
+    // account.
+    const directUrl = getDirectDomainUrl(trimmed);
+    if (directUrl) {
+      Keyboard.dismiss();
+      setShowSug(false);
+      setSuggestions([]);
+      setSubmitted('');
+      openInBrowser(directUrl);
+      return;
+    }
+
     if (!user) {
       await AsyncStorage.setItem(AUTH_SEARCH_DRAFT_KEY, q);
       router.push('/account');
@@ -1115,7 +1130,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
     fetchVideoResults(trimmed).then((r) => upd('videos', r)).catch(() => upd('videos', []));
     fetchNewsResults(trimmed).then((r) => upd('news', r)).catch(() => upd('news', []));
     fetchFinanceResults(trimmed).then((r) => upd('finance', r)).catch(() => upd('finance', []));
-  }, [user]);
+  }, [user, openInBrowser]);
 
   const clearSearch = useCallback(() => {
     aiAbortRef.current?.abort();
