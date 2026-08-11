@@ -118,6 +118,7 @@ export function InAppBrowser({ url, onClose, onSearchFallback }: Props) {
   const [tabs, setTabs]               = useState<BrowserTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [visible, setVisible]         = useState(false);
+  const [minimized, setMinimized]     = useState(false);
 
   // ── URL bar ────────────────────────────────────────────────────────────────
   const [urlBarText, setUrlBarText]   = useState('');
@@ -149,6 +150,7 @@ export function InAppBrowser({ url, onClose, onSearchFallback }: Props) {
     setTabs((prev) => [...prev, tab]);
     setActiveTabId(tab.id);
     setVisible(true);
+    setMinimized(false);
     // Scroll tab strip to end after state settles
     setTimeout(() => tabStripRef.current?.scrollToEnd({ animated: true }), 100);
   }, [url]);
@@ -173,6 +175,7 @@ export function InAppBrowser({ url, onClose, onSearchFallback }: Props) {
       if (remaining.length === 0) {
         // All tabs gone — close the browser
         setVisible(false);
+        setMinimized(false);
         setShowTabSwitcher(false);
         setShowHistory(false);
         onClose();
@@ -295,6 +298,7 @@ export function InAppBrowser({ url, onClose, onSearchFallback }: Props) {
   // ── Close entire browser ───────────────────────────────────────────────────
   const handleClose = useCallback(() => {
     setVisible(false);
+    setMinimized(false);
     setTabs([]);
     setActiveTabId(null);
     webViewRefs.current.clear();
@@ -303,13 +307,19 @@ export function InAppBrowser({ url, onClose, onSearchFallback }: Props) {
     onClose();
   }, [onClose]);
 
-  if (!visible || tabs.length === 0) return null;
+  if (tabs.length === 0) return null;
 
   const isLoading = (activeTab?.progress ?? 1) < 1;
 
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
-    <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={handleClose}>
+    <>
+      <Modal
+        visible={visible && !minimized}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={handleClose}
+      >
       <View style={[s.container, { backgroundColor: colors.background }]}>
 
         {/* ── Nav bar ──────────────────────────────────────────────────────── */}
@@ -402,6 +412,17 @@ export function InAppBrowser({ url, onClose, onSearchFallback }: Props) {
           {/* Close browser */}
           <Pressable onPress={handleClose} hitSlop={8} style={s.navBtn}>
             <Ionicons name="close" size={22} color={colors.foreground} />
+          </Pressable>
+
+          {/* Minimize browser */}
+          <Pressable
+            onPress={() => { setEditingUrl(false); setMinimized(true); }}
+            hitSlop={8}
+            style={s.navBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Minimize browser"
+          >
+            <Ionicons name="chevron-down" size={22} color={colors.foreground} />
           </Pressable>
         </View>
 
@@ -578,7 +599,53 @@ export function InAppBrowser({ url, onClose, onSearchFallback }: Props) {
           </View>
         ) : null}
       </View>
-    </Modal>
+      </Modal>
+
+      {/* The browser stays mounted while minimized so the active tab and page
+          remain intact. This bar sits above the app and restores the browser
+          without opening a new tab. */}
+      {visible && minimized ? (
+        <View
+          style={[
+            s.minimizedBar,
+            {
+              bottom: Math.max(insets.bottom, 10),
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+            },
+          ]}
+        >
+          <Pressable
+            style={s.minimizedRestore}
+            onPress={() => setMinimized(false)}
+            accessibilityRole="button"
+            accessibilityLabel="Restore browser"
+          >
+            <View style={[s.minimizedIcon, { backgroundColor: colors.foreground }]}>
+              <Ionicons name="globe-outline" size={15} color={colors.background} />
+            </View>
+            <View style={s.minimizedCopy}>
+              <Text style={[s.minimizedTitle, { color: colors.foreground }]} numberOfLines={1}>
+                {activeTab?.title || 'Browser'}
+              </Text>
+              <Text style={[s.minimizedUrl, { color: colors.mutedForeground }]} numberOfLines={1}>
+                {displayHost(activeTab?.currentUrl ?? '')}
+              </Text>
+            </View>
+            <Ionicons name="chevron-up" size={18} color={colors.mutedForeground} />
+          </Pressable>
+          <Pressable
+            onPress={handleClose}
+            hitSlop={8}
+            style={s.minimizedClose}
+            accessibilityRole="button"
+            accessibilityLabel="Close browser"
+          >
+            <Ionicons name="close" size={18} color={colors.mutedForeground} />
+          </Pressable>
+        </View>
+      ) : null}
+    </>
   );
 }
 
@@ -721,6 +788,49 @@ const s = StyleSheet.create({
   webViewContainer: { flex: 1 },
   webView:          { flex: 1 },
   hiddenWebView:    { display: 'none' },
+
+  // Minimized browser
+  minimizedBar: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    minHeight: 58,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: 10,
+    paddingRight: 6,
+    zIndex: 1000,
+    elevation: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 5 },
+  },
+  minimizedRestore: {
+    flex: 1,
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  minimizedIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  minimizedCopy: { flex: 1, gap: 2 },
+  minimizedTitle: { fontSize: 13, fontFamily: 'Inter_500Medium' },
+  minimizedUrl: { fontSize: 11, fontFamily: 'Inter_400Regular' },
+  minimizedClose: {
+    width: 36,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
   // Overlay (tab switcher + history)
   overlay: {
