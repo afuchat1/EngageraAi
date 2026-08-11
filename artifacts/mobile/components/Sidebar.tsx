@@ -328,7 +328,7 @@ export function Sidebar({
                 )}
               </>
             ) : (
-              /* Guest: welcoming sign-in card */
+              /* Authentication is required before using the platform. */
               <View
                 style={[
                   styles.guestCard,
@@ -337,10 +337,10 @@ export function Sidebar({
               >
                 <Ionicons name="person-circle-outline" size={34} color={colors.mutedForeground} />
                 <Text style={[styles.guestTitle, { color: colors.foreground }]}>
-                  Save your chats
+                  Sign in to Engagera
                 </Text>
                 <Text style={[styles.guestBody, { color: colors.mutedForeground }]}>
-                  Sign in or create an Engagera account to save your history and start chatting.
+                  Sign in or create an account to start chatting and save your history.
                 </Text>
                 <Pressable
                   onPress={() => { onClose(); router.push('/account'); }}
@@ -506,7 +506,7 @@ const styles = StyleSheet.create({
   rowTitle: { flex: 1, fontSize: 13.5, fontFamily: 'Inter_500Medium' },
   rowTime: { fontSize: 11, fontFamily: 'Inter_400Regular' },
 
-  // Guest card
+  // Authentication card
   guestCard: {
     marginHorizontal: 16,
     borderRadius: 16,

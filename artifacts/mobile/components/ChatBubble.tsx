@@ -12,7 +12,6 @@ import { ClockWidget } from '@/components/ClockWidget';
 import { WeatherWidget } from '@/components/WeatherWidget';
 import { toPlainText } from '@/lib/plainText';
 import type { SearchInfo, TimeInfo, WeatherInfo } from '@/lib/chat';
-import { ImageAuthPrompt } from '@/components/ImageAuthPrompt';
 
 export interface DisplayMessage {
   id: string;
@@ -31,8 +30,6 @@ export interface DisplayMessage {
   searchStatus?: string;
   /** URLs read by AfuBot for this answer. */
   crawledUrls?: string[];
-  /** When set, renders a special UI card instead of text content. */
-  kind?: 'image-auth-prompt';
 }
 
 /**
@@ -99,15 +96,6 @@ export const ChatBubble = memo(function ChatBubble({
   onRegenerate?: (id: string) => void;
 }) {
   const colors = useColors();
-
-  // Special-purpose cards rendered instead of a normal bubble.
-  if (message.kind === 'image-auth-prompt') {
-    return (
-      <View style={[styles.row, { alignItems: 'flex-start' }]}>
-        <ImageAuthPrompt />
-      </View>
-    );
-  }
 
   const [lightboxOpen, setLightboxOpen] = useState(false);
 

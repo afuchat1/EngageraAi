@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
-import { Menu, Plus, Send, Trash2, Image as ImageIcon, ChevronDown } from "lucide-react";
+import { Menu, Plus, Send, Trash2, Image as ImageIcon, ChevronDown, MessageSquare } from "lucide-react";
 import { logoSrc } from "@/lib/assets";
 import {
   useListConversations,

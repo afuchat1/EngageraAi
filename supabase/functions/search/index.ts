@@ -31,11 +31,12 @@ import {
   fetchNewsResults,
   fetchFinanceResults,
 } from "../_shared/search.ts";
+import { createClient } from "npm:@supabase/supabase-js@2";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-guest-session-id",
+    "authorization, x-client-info, apikey, content-type",
 };
 
 function json(data: unknown, status = 200) {
@@ -45,8 +46,21 @@ function json(data: unknown, status = 200) {
   });
 }
 
+async function requireUser(req: Request): Promise<boolean> {
+  const authHeader = req.headers.get("authorization");
+  if (!authHeader?.startsWith("Bearer ")) return false;
+  const db = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    { auth: { autoRefreshToken: false, persistSession: false } },
+  );
+  const { data } = await db.auth.getUser(authHeader.slice(7));
+  return !!data.user;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
+  if (!(await requireUser(req))) return json({ error: "Authentication required" }, 401);
 
   const url = new URL(req.url);
   const type = url.searchParams.get("type") ?? "web";

@@ -3,7 +3,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 export const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-guest-session-id, x-engagera-api-key",
+    "authorization, x-client-info, apikey, content-type, x-engagera-api-key",
   "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
 };
 
@@ -65,25 +65,4 @@ export async function requireAuth(
     return json({ error: "Invalid or expired token" }, 401);
   }
   return { userId: data.user.id };
-}
-
-export async function optionalAuth(
-  req: Request,
-): Promise<{ userId?: string; guestSessionId?: string }> {
-  // 1. Engagera API key
-  const apiKeyUserId = await resolveApiKey(req);
-  if (apiKeyUserId) return { userId: apiKeyUserId };
-
-  // 2. Supabase JWT
-  const authHeader = req.headers.get("authorization");
-  if (authHeader?.startsWith("Bearer ")) {
-    const token = authHeader.slice(7);
-    const { data } = await adminDb().auth.getUser(token);
-    if (data.user) return { userId: data.user.id };
-  }
-
-  // 3. Guest session
-  const guestId = req.headers.get("x-guest-session-id")?.trim();
-  if (guestId) return { guestSessionId: guestId };
-  return {};
 }

@@ -1,3 +1,5 @@
+import { createClient } from "npm:@supabase/supabase-js@2";
+
 /**
  * Supabase Edge Function: stt
  *
@@ -11,7 +13,7 @@
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-guest-session-id",
+    "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -20,6 +22,18 @@ function jsonRes(data: unknown, status = 200) {
     status,
     headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
   });
+}
+
+async function requireUser(req: Request): Promise<boolean> {
+  const authHeader = req.headers.get("authorization");
+  if (!authHeader?.startsWith("Bearer ")) return false;
+  const db = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    { auth: { autoRefreshToken: false, persistSession: false } },
+  );
+  const { data } = await db.auth.getUser(authHeader.slice(7));
+  return !!data.user;
 }
 
 /** Map MIME types → file extensions Whisper accepts */
@@ -36,6 +50,7 @@ function audioExt(contentType: string): string {
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
   if (req.method !== "POST")   return jsonRes({ error: "Method not allowed" }, 405);
+  if (!(await requireUser(req))) return jsonRes({ error: "Authentication required" }, 401);
 
   const groqKey = Deno.env.get("GROQ_API_KEY");
   if (!groqKey) return jsonRes({ error: "STT service not configured (missing GROQ_API_KEY)" }, 503);

@@ -32,6 +32,7 @@ import { fetchConversationMessages, type ConversationSummary } from '@/lib/conve
 import { SearchEngine } from '@/components/SearchEngine';
 import { useDialog } from '@/contexts/DialogContext';
 import { AudioChatModal } from '@/components/AudioChatModal';
+import { useAuth } from '@/hooks/useAuth';
 
 const CHAT_COPY = {
   placeholder: 'Message Engagera…',
@@ -66,6 +67,7 @@ function FocusBubble({ isNew, children }: { isNew: boolean; children: React.Reac
 // ─── ChatScreen ───────────────────────────────────────────────────────────────
 export default function ChatScreen() {
   const colors = useColors();
+  const { user } = useAuth();
   const { show: showDialog } = useDialog();
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
@@ -200,6 +202,14 @@ export default function ChatScreen() {
     pendingFocusIndexRef.current = messages.length;
     send();
   }, [send, messages.length]);
+
+  const handleAudioChat = useCallback(() => {
+    if (!user) {
+      router.push('/account');
+      return;
+    }
+    setAudioChatOpen(true);
+  }, [user]);
 
   // ── New chat ──────────────────────────────────────────────────────────────
   const handleNewChat = useCallback(() => {
@@ -346,8 +356,8 @@ export default function ChatScreen() {
               onChangeText={setInputText}
               onSend={handleSend}
               image={pendingImage}
-              onImagePicked={setPendingImage}
-              onAudioChat={() => setAudioChatOpen(true)}
+                onImagePicked={setPendingImage}
+                onAudioChat={handleAudioChat}
               busy={busy || lastIsPending}
               placeholder={CHAT_COPY.placeholder}
             />

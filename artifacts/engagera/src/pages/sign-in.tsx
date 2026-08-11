@@ -42,10 +42,6 @@ export default function SignIn() {
             <p className="text-sm text-white/40 mt-1">Sign in to continue using Engagera</p>
           </div>
 
-          <div className="rounded-2xl bg-blue-500/10 border border-blue-500/20 px-4 py-3.5 mb-5 text-sm text-white/70 leading-relaxed">
-            Sign in to unlock the full Engagera platform. New here? Create a standalone Engagera account below.
-          </div>
-
           <div className="rounded-2xl bg-white/[0.04] p-6">
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && (

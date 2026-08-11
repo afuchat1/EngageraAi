@@ -9,7 +9,7 @@ import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollV
 export default function AccountSheet() {
   const colors = useColors();
   const { user, displayName, signIn, signUp, signOut } = useAuth();
-  const params = useLocalSearchParams<{ mode?: string; returnToChat?: string }>();
+  const params = useLocalSearchParams<{ mode?: string }>();
   const [mode, setMode] = useState<'signIn' | 'signUp'>(
     params.mode === 'signUp' ? 'signUp' : 'signIn',
   );
@@ -68,8 +68,8 @@ export default function AccountSheet() {
       </Text>
       <Text style={[styles.body, { color: colors.mutedForeground }]}>
         {mode === 'signIn'
-          ? 'Sign in to use Engagera and keep your conversation history.'
-          : 'Create a standalone Engagera account to start chatting.'}
+          ? 'Sign in to continue using Engagera and keep your conversation history.'
+          : 'Create an Engagera account to start chatting and save your history.'}
       </Text>
 
       <TextInput
@@ -142,7 +142,6 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: { fontSize: 16, fontFamily: 'Inter_700Bold', letterSpacing: -0.1 },
   switchModeBtn: { alignItems: 'center', marginTop: 8 },
-  continueGuestBtn: { alignItems: 'center', marginTop: 4 },
   switchModeText: { fontSize: 13, fontFamily: 'Inter_400Regular' },
   signedInHeader: { alignItems: 'center', gap: 10, marginTop: 48, marginBottom: 32 },
   email: { fontSize: 16, fontFamily: 'Inter_600SemiBold' },

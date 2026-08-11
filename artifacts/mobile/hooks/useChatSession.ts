@@ -310,14 +310,13 @@ export function useChatSession(model: string, contextHint?: string) {
     const text = inputText.trim();
     if (!text && !pendingImage) return;
     if (!user) {
-      await AsyncStorage.setItem(AUTH_DRAFT_KEY, text);
+      await AsyncStorage.setItem(AUTH_DRAFT_KEY, inputText);
       router.push({ pathname: '/account', params: { returnToChat: '1' } });
       return;
     }
 
     // When the user has attached an image, we route to vision analysis / image
-    // editing — NOT to the Flux text-to-image generator. Vision is available to
-    // all users; only text-based image generation (Flux) requires sign-in.
+    // editing — NOT to the Flux text-to-image generator.
     const hasImage = !!pendingImage;
     const isImageReq = !hasImage && looksLikeImageRequest(text);
 
@@ -378,7 +377,6 @@ export function useChatSession(model: string, contextHint?: string) {
     send,
     deleteMessage,
     regenerateMessage,
-    isGuest: !user,
     conversationId,
     startNewConversation,
     loadConversation,

@@ -8,7 +8,7 @@ import { useSEO } from "@/hooks/useSEO";
 export default function SignUp() {
   useSEO({
     title: "Sign Up — Engagera | AfuAI",
-    description: "Create a free Engagera account to chat with leading AI models, get API keys, and track usage.",
+    description: "Create an Engagera account to chat with leading AI models, get API keys, and track usage.",
     path: "/sign-up",
   });
   const [email, setEmail]       = useState("");
@@ -39,7 +39,7 @@ export default function SignUp() {
           <div className="flex flex-col items-center mb-8">
             <img src={logoSrc} alt="Engagera" className="w-10 h-10 rounded-xl mb-4" />
             <h1 className="text-xl font-semibold tracking-tight">Create an account</h1>
-            <p className="text-sm text-white/40 mt-1">Start using Engagera for free</p>
+            <p className="text-sm text-white/40 mt-1">Create your Engagera account to continue</p>
           </div>
 
           {done ? (
@@ -119,7 +119,7 @@ export default function SignUp() {
 
           <p className="text-center text-sm text-white/40 mt-5">
             Already have an account?{" "}
-            <Link href="/sign-in" className="text-white hover:underline underline-offset-4 transition-colors">
+            <Link href={`/sign-in${window.location.search ? window.location.search : ""}`} className="text-white hover:underline underline-offset-4 transition-colors">
               Sign in
             </Link>
           </p>

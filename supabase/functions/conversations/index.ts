@@ -4,7 +4,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-guest-session-id, x-engagera-api-key",
+    "authorization, x-client-info, apikey, content-type, x-engagera-api-key",
   "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
 };
 
@@ -27,26 +27,25 @@ function adminDb() {
   );
 }
 
-async function optionalAuth(
+async function resolveUser(
   req: Request,
-): Promise<{ userId?: string; guestSessionId?: string }> {
+): Promise<string | null> {
   const authHeader = req.headers.get("authorization");
   if (authHeader?.startsWith("Bearer ")) {
     const token = authHeader.slice(7);
     const db = adminDb();
     const { data } = await db.auth.getUser(token);
-    if (data.user) return { userId: data.user.id };
+    if (data.user) return data.user.id;
   }
-  const guestId = req.headers.get("x-guest-session-id")?.trim();
-  if (guestId) return { guestSessionId: guestId };
-  return {};
+  return null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return cors();
 
-  const { userId, guestSessionId } = await optionalAuth(req);
+  const userId = await resolveUser(req);
+  if (!userId) return json({ error: "Authentication required" }, 401);
   const db = adminDb();
   const url = new URL(req.url);
   const parts = url.pathname.split("/").filter(Boolean);
@@ -56,12 +55,11 @@ Deno.serve(async (req: Request) => {
   const convIdStr = isMessages ? parts[messagesIdx - 1] : parts[parts.length - 1];
   const convId = convIdStr && convIdStr !== "conversations" ? parseInt(convIdStr, 10) : NaN;
 
-  const ownerCol = userId ? "user_id" : "guest_session_id";
-  const ownerVal = userId ?? guestSessionId ?? "";
+  const ownerCol = "user_id";
+  const ownerVal = userId;
 
   // ── GET list ──────────────────────────────────────────────────────────────
   if (req.method === "GET" && isNaN(convId) && !isMessages) {
-    if (!userId && !guestSessionId) return json([]);
     const modelFilter = url.searchParams.get("model");
     let query = db
       .from("engagera_conversations")
@@ -85,8 +83,6 @@ Deno.serve(async (req: Request) => {
 
   // ── POST create (voice conversation) ─────────────────────────────────────
   if (req.method === "POST" && isNaN(convId) && !isMessages) {
-    if (!userId && !guestSessionId) return json({ error: "Authentication required" }, 401);
-
     let body: { title?: string; model?: string; messages?: Array<{ role: string; content: string }> };
     try { body = await req.json(); } catch { return json({ error: "Invalid JSON" }, 400); }
 
@@ -114,8 +110,6 @@ Deno.serve(async (req: Request) => {
   }
 
   if (isNaN(convId)) return json({ error: "Invalid conversation id" }, 400);
-
-  if (!userId && !guestSessionId) return json({ error: "Authentication required" }, 401);
 
   // ── GET messages ──────────────────────────────────────────────────────────
   if (req.method === "GET" && isMessages) {

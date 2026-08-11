@@ -17,13 +17,9 @@ export const POLLINATIONS_FN = `${SUPABASE_URL}/functions/v1/pollinations`;
 export async function buildPollinationsHeaders(): Promise<Record<string, string>> {
   const { data } = await supabase.auth.getSession();
   const token   = data.session?.access_token ?? SUPABASE_ANON_KEY;
-  const guestId = typeof localStorage !== "undefined"
-    ? (localStorage.getItem("engagera_guest_session_id") ?? "")
-    : "";
   return {
     "Content-Type":   "application/json",
     "Authorization":  `Bearer ${token}`,
-    ...(guestId ? { "x-guest-session-id": guestId } : {}),
   };
 }
 

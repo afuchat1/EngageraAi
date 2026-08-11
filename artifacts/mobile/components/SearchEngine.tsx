@@ -8,6 +8,7 @@
  *  - Landing: category exploration + horizontal category scroll
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   ActivityIndicator,
   Animated,
@@ -29,6 +30,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useBrowser } from '@/contexts/BrowserContext';
 import { useDialog } from '@/contexts/DialogContext';
+import { useAuth } from '@/hooks/useAuth';
+import { router } from 'expo-router';
 import { Markdown } from '@/components/Markdown';
 import { streamChat, LAB_MODEL } from '@/lib/chat';
 import {
@@ -76,6 +79,7 @@ const AI_PROMPT = [
   '  - End with a brief "Key Takeaway" or "Bottom Line" sentence (no heading).',
   'Keep total length moderate — thorough but skimmable. For follow-ups keep prior context.',
 ].join(' ');
+const AUTH_SEARCH_DRAFT_KEY = 'engagera_auth_search_draft';
 
 const TABS: { key: Tab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { key: 'all',     label: 'All',     icon: 'globe-outline'       },
@@ -956,6 +960,7 @@ const land = StyleSheet.create({
 
 export function SearchEngine({ topPad }: { topPad: number }) {
   const colors  = useColors();
+  const { user } = useAuth();
   const { show: showDialog } = useDialog();
   const insets  = useSafeAreaInsets();
   const inputRef = useRef<TextInput>(null);
@@ -983,6 +988,15 @@ export function SearchEngine({ topPad }: { topPad: number }) {
   const aiAbortRef = useRef<AbortController | null>(null);
   const aiInitRef  = useRef('');
 
+  useEffect(() => {
+    if (!user) return;
+    AsyncStorage.getItem(AUTH_SEARCH_DRAFT_KEY).then((draft) => {
+      if (!draft) return;
+      setQuery(draft);
+      AsyncStorage.removeItem(AUTH_SEARCH_DRAFT_KEY).catch(() => {});
+    }).catch(() => {});
+  }, [user]);
+
   const hasSearch = submitted.length > 0;
   const potentialDomain = getPotentialDomain(query);
   const shouldShowSug = focused && query.trim().length >= 1 && (showSug || !!potentialDomain);
@@ -997,14 +1011,14 @@ export function SearchEngine({ topPad }: { topPad: number }) {
   // Suggestion debounce
   useEffect(() => {
     if (debRef.current) clearTimeout(debRef.current);
-    if (!query.trim() || query.length < 2) { setSuggestions([]); setShowSug(false); return; }
+    if (!user || !query.trim() || query.length < 2) { setSuggestions([]); setShowSug(false); return; }
     debRef.current = setTimeout(async () => {
       const s = await fetchSuggestions(query);
       setSuggestions(s);
       setShowSug(s.length > 0 || !!getPotentialDomain(query));
     }, 160);
     return () => { if (debRef.current) clearTimeout(debRef.current); };
-  }, [query]);
+  }, [query, user]);
 
   // AI stream helper
   const startAi = useCallback((msgs: AiMsg[]) => {
@@ -1062,6 +1076,11 @@ export function SearchEngine({ topPad }: { topPad: number }) {
   const doSearch = useCallback(async (q: string) => {
     const trimmed = q.trim();
     if (!trimmed) return;
+    if (!user) {
+      await AsyncStorage.setItem(AUTH_SEARCH_DRAFT_KEY, q);
+      router.push('/account');
+      return;
+    }
     Keyboard.dismiss();
     setShowSug(false);
     setSuggestions([]);
@@ -1096,7 +1115,7 @@ export function SearchEngine({ topPad }: { topPad: number }) {
     fetchVideoResults(trimmed).then((r) => upd('videos', r)).catch(() => upd('videos', []));
     fetchNewsResults(trimmed).then((r) => upd('news', r)).catch(() => upd('news', []));
     fetchFinanceResults(trimmed).then((r) => upd('finance', r)).catch(() => upd('finance', []));
-  }, []);
+  }, [user]);
 
   const clearSearch = useCallback(() => {
     aiAbortRef.current?.abort();

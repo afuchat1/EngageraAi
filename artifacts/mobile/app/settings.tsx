@@ -107,7 +107,7 @@ export default function SettingsScreen() {
         ) : (
           <Row
             icon="log-in-outline"
-            label="Sign in to use Engagera"
+            label="Sign in to start using Engagera"
             onPress={() => router.push('/account')}
             last
           />

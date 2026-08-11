@@ -451,7 +451,7 @@ export default function Docs() {
                   Present only when the prompt asked about the current date/time. Contains <code className="font-mono text-[11px]">ianaZone</code> and a human-readable <code className="font-mono text-[11px]">label</code> for the resolved location.
                 </Param>
                 <Param name="conversationId" type="string">
-                  Identifier for the conversation this exchange was saved under. Omitted for guest/anonymous requests.
+                  Identifier for the conversation this exchange was saved under.
                 </Param>
               </div>
               <Callout>
@@ -615,7 +615,7 @@ print(data["message"]["content"])`} />
                   { code: "400", name: "Bad Request", body: "The request body is malformed or missing required fields." },
                   { code: "401", name: "Unauthorized", body: "Your API key is missing, invalid, or has been revoked." },
                   { code: "403", name: "Forbidden", body: "The request is not permitted for your account tier." },
-                  { code: "429", name: "Rate Limited", body: "You've exceeded the free message limit. Authenticated users have higher limits." },
+                  { code: "429", name: "Rate Limited", body: "The request was throttled. Please retry shortly." },
                   { code: "500", name: "Server Error", body: "Something went wrong on our end. Retrying after a short delay usually resolves this." },
                   { code: "503", name: "Model Unavailable", body: "All models in the routing chain are temporarily unavailable. Try again shortly." },
                 ].map((e, i) => (
