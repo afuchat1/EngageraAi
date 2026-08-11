@@ -3,8 +3,8 @@
  *
  * Features
  * ─────────
- * • Multiple tabs — always-mounted WebViews, inactive tabs hidden with
- *   display:'none' so back/forward history and page state survive switching.
+ * • Multiple tabs — always-mounted WebViews, stacked in the same full-size
+ *   layer so back/forward history and page state survive switching.
  * • Tab strip — horizontal scrollable strip above the WebView; active tab
  *   highlighted; × to close each tab; + to open a new blank tab.
  * • Tab switcher — full-screen card grid (long-press the tab count badge or
@@ -43,13 +43,21 @@ import {
 // WebView is native-only — on web we use an iframe fallback
 type WebViewNavigation = any;
 const WebView: React.ComponentType<any> = Platform.OS === 'web'
-  ? ({ source }: any) => {
+  ? ({ source, style, pointerEvents }: any) => {
       const src = typeof source === 'string' ? source : source?.uri ?? '';
       // Use plain CSS strings — RN StyleSheet objects cannot be spread onto DOM elements
+      const flattenedStyle = StyleSheet.flatten(style) ?? {};
       return (
         <iframe
           src={src}
-          style={{ border: 'none', width: '100%', height: '100%', display: 'block' } as React.CSSProperties}
+          style={{
+            ...flattenedStyle,
+            border: 'none',
+            width: '100%',
+            height: '100%',
+            display: 'block',
+            pointerEvents: pointerEvents ?? flattenedStyle.pointerEvents,
+          } as React.CSSProperties}
           title="browser"
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
         />
@@ -486,7 +494,10 @@ export function InAppBrowser({ url, onClose, onSearchFallback }: Props) {
           </View>
         ) : null}
 
-        {/* ── WebViews — all always mounted ─────────────────────────────────── */}
+        {/* ── WebViews — all always mounted in one stacked layer ───────────────
+            Keeping each WebView mounted preserves its page state. Absolute
+            positioning is important here: rendering multiple flex:1 WebViews
+            would split the content area between tabs on Android. */}
         <View style={s.webViewContainer}>
           {tabs.map((tab) => (
             <WebView
@@ -496,7 +507,11 @@ export function InAppBrowser({ url, onClose, onSearchFallback }: Props) {
                 if (ref) webViewRefs.current.set(tab.id, ref);
               }}
               source={{ uri: tab.initialUrl }}
-              style={[s.webView, tab.id !== activeTabId && s.hiddenWebView]}
+              pointerEvents={tab.id === activeTabId ? 'auto' : 'none'}
+              style={[
+                s.webView,
+                tab.id === activeTabId ? s.activeWebView : s.inactiveWebView,
+              ]}
               onNavigationStateChange={(state: any) => handleNavState(tab.id, state)}
               onLoadProgress={({ nativeEvent }: any) => handleProgress(tab.id, nativeEvent.progress)}
               onLoad={() => handleLoad(tab.id)}
@@ -785,9 +800,26 @@ const s = StyleSheet.create({
   progressFill:  { height: 2 },
 
   // WebViews
-  webViewContainer: { flex: 1 },
-  webView:          { flex: 1 },
-  hiddenWebView:    { display: 'none' },
+  webViewContainer: {
+    flex: 1,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  webView: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+  },
+  activeWebView: {
+    zIndex: 2,
+    opacity: 1,
+  },
+  inactiveWebView: {
+    zIndex: 1,
+    opacity: 0,
+  },
 
   // Minimized browser
   minimizedBar: {
