@@ -33,10 +33,17 @@
           "action": "VIEW",
           "autoVerify": false,
           "data": [
-            { "scheme": "https" },
-            { "scheme": "http" }
+            {
+              "scheme": "https"
+            },
+            {
+              "scheme": "http"
+            }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
@@ -66,7 +73,8 @@
         {
           "microphonePermission": "Engagera needs microphone access for live voice chat."
         }
-      ]
+      ],
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true,
