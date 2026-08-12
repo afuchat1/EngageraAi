@@ -422,6 +422,45 @@ function isKnowledgeBaseQuery(text: string): boolean {
 }
 
 // ── Extract & save memories (async, fire-and-forget) ─────────────────────────
+function extractExplicitUserFacts(userText: string): string[] {
+  const facts: string[] = [];
+  const nameMatch = userText.match(
+    /\b(?:my name is|call me)\s+([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*){0,2})(?=\s*(?:[.!?,;]|$)|\s+(?:and|but|please|you can|if)\b)/i,
+  );
+  if (nameMatch?.[1]) {
+    const name = nameMatch[1].replace(/\s+/g, " ").trim();
+    if (name.length >= 2 && name.length <= 100) {
+      facts.push(`The user's name is ${name}.`);
+    }
+  }
+  return facts;
+}
+
+async function saveMemoryFacts(
+  db: ReturnType<typeof createClient>,
+  userId: string,
+  facts: string[],
+): Promise<void> {
+  const validFacts = facts
+    .filter((fact) => typeof fact === "string" && fact.trim().length > 10)
+    .map((fact) => fact.trim())
+    .slice(0, 3);
+  if (validFacts.length === 0) return;
+  await db.rpc("engagera_add_memories", { p_user_id: userId, p_facts: validFacts });
+}
+
+async function saveExplicitUserFacts(
+  db: ReturnType<typeof createClient>,
+  userId: string,
+  userText: string,
+): Promise<void> {
+  try {
+    await saveMemoryFacts(db, userId, extractExplicitUserFacts(userText));
+  } catch {
+    // Memory persistence is non-fatal to the chat response.
+  }
+}
+
 async function extractAndSaveMemories(
   db: ReturnType<typeof createClient>,
   userId: string,
@@ -429,7 +468,7 @@ async function extractAndSaveMemories(
   aiResponse: string,
   groqKey: string | undefined,
 ): Promise<void> {
-  if (!groqKey || userText.length < 20) return;
+  if (!groqKey || !userText.trim()) return;
   try {
     const prompt = `Given this exchange, extract 1-3 specific facts about the USER that are worth remembering for future conversations. Focus on: the user's name, preferences, expertise, goals, personal context, profession, location, or opinions they stated.
 
@@ -464,10 +503,7 @@ JSON array:`;
     if (!match) return;
     const facts: string[] = JSON.parse(match[0]);
     if (!Array.isArray(facts) || facts.length === 0) return;
-    const validFacts = facts.filter((f) => typeof f === "string" && f.trim().length > 10).slice(0, 3);
-    if (validFacts.length > 0) {
-      await db.rpc("engagera_add_memories", { p_user_id: userId, p_facts: validFacts });
-    }
+    await saveMemoryFacts(db, userId, facts);
   } catch { /* non-fatal */ }
 }
 
@@ -1629,6 +1665,12 @@ Deno.serve(async (req: Request) => {
 
             const convId = await persistConversation(db, authResult, userText, aiResult, model, conversationId, searchSources.length > 0, requestId);
 
+            // Persist explicit identity facts before the completion frame so a
+            // newly-started chat can use them immediately.
+            if (userId && aiResult.ok && aiResult.content) {
+              await saveExplicitUserFacts(db, userId, userText);
+            }
+
             const latencyMs = Date.now() - startTime;
             log("info", "handler.success", { requestId, provider: aiResult.provider, model: aiResult.model, latencyMs });
 
@@ -1644,7 +1686,8 @@ Deno.serve(async (req: Request) => {
             enq("data: [DONE]\n\n");
             ctrl.close();
 
-            // Fire-and-forget: extract and save memories from this exchange
+            // Broader AI-assisted extraction remains best-effort and
+            // fire-and-forget after explicit identity facts are persisted.
             if (userId && aiResult.ok && aiResult.content && keys.groq) {
               extractAndSaveMemories(db, userId, userText, aiResult.content, keys.groq).catch(() => {});
             }
@@ -1721,7 +1764,12 @@ Deno.serve(async (req: Request) => {
 
       if (!jsonResult.ok) return json({ error: "AI service temporarily unavailable. Please try again." }, 503);
       const jsonConvId = await persistConversation(db, authResult, userText, jsonResult, model, conversationId, jsonSearchSources.length > 0, requestId);
-      if (userId && jsonResult.content && keys.groq) extractAndSaveMemories(db, userId, userText, jsonResult.content, keys.groq).catch(() => {});
+      if (userId && jsonResult.content) {
+        await saveExplicitUserFacts(db, userId, userText);
+        if (keys.groq) {
+          extractAndSaveMemories(db, userId, userText, jsonResult.content, keys.groq).catch(() => {});
+        }
+      }
       return json({
         id: requestId, model,
         message: { role: "assistant", content: jsonResult.content },
@@ -1748,8 +1796,11 @@ Deno.serve(async (req: Request) => {
 
     const convId = await persistConversation(db, authResult, userText, result, model, conversationId, enrichedSources.length > 0, requestId);
 
-    if (userId && result.ok && result.content && keys.groq) {
-      extractAndSaveMemories(db, userId, userText, result.content, keys.groq).catch(() => {});
+    if (userId && result.ok && result.content) {
+      await saveExplicitUserFacts(db, userId, userText);
+      if (keys.groq) {
+        extractAndSaveMemories(db, userId, userText, result.content, keys.groq).catch(() => {});
+      }
     }
 
     return json({
