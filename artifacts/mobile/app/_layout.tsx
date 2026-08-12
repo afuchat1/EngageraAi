@@ -18,14 +18,11 @@ import { Stack, router } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import colors from '@/constants/colors';
 
-// KeyboardProvider is native-only — on web it's a no-op wrapper
-let KeyboardProvider: React.FC<{ children: React.ReactNode }>;
-if (Platform.OS !== 'web') {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  KeyboardProvider = require('react-native-keyboard-controller').KeyboardProvider;
-} else {
-  KeyboardProvider = ({ children }) => <>{children}</>;
-}
+// Keep the provider boundary stable without requiring a native module that is
+// unavailable in the standard Expo Go client.
+const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <>{children}</>
+);
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();

@@ -12,7 +12,7 @@
   "devDependencies": {
     "@babel/core": "^7.25.2",
     "@expo-google-fonts/inter": "^0.4.0",
-    "@expo/cli": "54.0.23",
+    "@expo/cli": "55.0.34",
     "@expo/ngrok": "^4.1.0",
     "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "2.2.0",
@@ -44,7 +44,6 @@
     "react-dom": "19.2.0",
     "react-native": "0.83.10",
     "react-native-gesture-handler": "~2.30.1",
-    "react-native-keyboard-controller": "1.20.7",
     "react-native-reanimated": "~4.2.1",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.23.0",
