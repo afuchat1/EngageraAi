@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useLocation } from "wouter";
-import { Menu, Plus, Send, Trash2, Image as ImageIcon, ChevronDown, MessageSquare } from "lucide-react";
+import { Menu, Plus, Send, Trash2, Image as ImageIcon, ChevronDown, MessageSquare, Search, UserCircle } from "lucide-react";
 import { logoSrc } from "@/lib/assets";
 import {
   useListConversations,
@@ -41,13 +41,14 @@ const AGENTS = [
 type AgentId = (typeof AGENTS)[number]["id"];
 
 export default function Landing() {
-  const { user } = useAuth();
-  const [, setLocation] = useLocation();
+  const { user, displayName } = useAuth();
+  const [location, setLocation] = useLocation();
   const [conversationId, setConversationId] = useState<number | undefined>();
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState("");
   const [autoModel, setAutoModel] = useState<EngageraModel>("engagera-pro");
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [historyQuery, setHistoryQuery] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<AgentId>("assistant");
   const [showAgentMenu, setShowAgentMenu] = useState(false);
@@ -136,6 +137,13 @@ export default function Landing() {
     conversation.model !== "engagera-reason" &&
     conversation.model !== "engagera-2.1"
   );
+  const filteredChatConversations = useMemo(() => {
+    const query = historyQuery.trim().toLowerCase();
+    if (!query) return chatConversations;
+    return chatConversations.filter((conversation) =>
+      (conversation.title || "New Conversation").toLowerCase().includes(query)
+    );
+  }, [chatConversations, historyQuery]);
   const { data: historyMessages } = useGetConversationMessages(conversationId!, {
     query: { enabled: !!conversationId, queryKey: getGetConversationMessagesQueryKey(conversationId!) }
   });
@@ -332,6 +340,7 @@ export default function Landing() {
     setConversationId(undefined);
     setMessages([]);
     setInput("");
+    setHistoryQuery("");
     if (isMobileSidebarOpen) setIsMobileSidebarOpen(false);
   };
 
@@ -366,11 +375,25 @@ export default function Landing() {
           New Chat
         </button>
       </div>
+      <div className="px-3 pb-3">
+        <div className="flex items-center gap-2 px-3 h-9 rounded-xl border border-white/[0.10] bg-white/[0.03]">
+          <Search className="w-3.5 h-3.5 shrink-0 text-white/35" />
+          <input
+            value={historyQuery}
+            onChange={(event) => setHistoryQuery(event.target.value)}
+            placeholder="Search chats"
+            aria-label="Search chats"
+            className="w-full bg-transparent outline-none text-xs text-white placeholder:text-white/30"
+          />
+        </div>
+      </div>
       <div className="flex-1 overflow-y-auto scrollbar-thin px-2 pb-2 space-y-0.5">
-        {chatConversations.length === 0 ? (
-          <div className="p-4 text-center text-white/30 text-sm">No conversations yet.</div>
+        {filteredChatConversations.length === 0 ? (
+          <div className="p-4 text-center text-white/30 text-sm">
+            {historyQuery ? "No matching chats." : "No conversations yet."}
+          </div>
         ) : (
-          chatConversations.map((conv) => (
+          filteredChatConversations.map((conv) => (
             <div
               key={conv.id}
               onClick={() => loadConversation(conv.id)}
@@ -391,6 +414,23 @@ export default function Landing() {
             </div>
           ))
         )}
+      </div>
+      <div className="shrink-0 border-t border-white/[0.08] p-2">
+        <button
+          onClick={() => {
+            setIsMobileSidebarOpen(false);
+            setLocation("/settings");
+          }}
+          aria-label="Open profile and settings"
+          className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left transition-colors ${
+            location === "/settings"
+              ? "bg-white text-black"
+              : "text-white/65 hover:text-white hover:bg-white/[0.07]"
+          }`}
+        >
+          <UserCircle className="w-4 h-4 shrink-0" />
+          <span className="truncate text-sm font-medium">{displayName ?? user?.email ?? "Profile"}</span>
+        </button>
       </div>
     </div>
   );

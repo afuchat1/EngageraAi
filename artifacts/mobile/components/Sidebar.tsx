@@ -24,7 +24,6 @@ import { useColors } from '@/hooks/useColors';
 import { useAuth } from '@/hooks/useAuth';
 import { BrandMark, Wordmark } from '@/components/BrandMark';
 import { LAB_MODEL } from '@/lib/chat';
-import type { ChatMode } from '@/components/ModeSwitch';
 import { ConversationSummary, deleteConversation, listConversations } from '@/lib/conversations';
 import { useDialog } from '@/contexts/DialogContext';
 
@@ -42,8 +41,6 @@ interface Props {
   onSelectConversation: (conversation: ConversationSummary) => void;
   activeConversationId?: number;
   refreshToken: number;
-  currentMode: ChatMode;
-  onModeChange: (mode: ChatMode) => void;
 }
 
 function timeAgo(iso: string): string {
@@ -58,16 +55,6 @@ function timeAgo(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
-const NAV_ITEMS: {
-  mode: ChatMode;
-  label: string;
-  icon: React.ComponentProps<typeof Ionicons>['name'];
-  activeIcon: React.ComponentProps<typeof Ionicons>['name'];
-}[] = [
-  { mode: 'chat', label: 'Chat', icon: 'chatbubble-outline', activeIcon: 'chatbubble' },
-  { mode: 'lab',  label: 'Lab',  icon: 'flask-outline',      activeIcon: 'flask'      },
-];
-
 export function Sidebar({
   open,
   onClose,
@@ -75,13 +62,11 @@ export function Sidebar({
   onSelectConversation,
   activeConversationId,
   refreshToken,
-  currentMode,
-  onModeChange,
 }: Props) {
   const colors = useColors();
   const { show: showDialog } = useDialog();
   const insets = useSafeAreaInsets();
-  const { user, displayName, signOut } = useAuth();
+  const { user, displayName } = useAuth();
   const translateX = useSharedValue(-PANEL_WIDTH);
   const backdropOpacity = useSharedValue(0);
   const [rendered, setRendered] = useState(false);
@@ -144,11 +129,6 @@ export function Sidebar({
     ]);
   };
 
-  const switchMode = (mode: ChatMode) => {
-    onModeChange(mode);
-    onClose();
-  };
-
   const panGesture = Gesture.Pan()
     .onUpdate((e) => {
       if (e.translationX < 0) translateX.value = Math.max(-PANEL_WIDTH, e.translationX);
@@ -203,50 +183,6 @@ export function Sidebar({
             <Ionicons name="add" size={18} color={colors.primaryForeground} />
             <Text style={[styles.newChatText, { color: colors.primaryForeground }]}>New chat</Text>
           </Pressable>
-
-          {/* ── Navigation ───────────────────────────────────── */}
-          <View style={[styles.section, { borderColor: colors.border }]}>
-            <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Navigate</Text>
-            {NAV_ITEMS.map(({ mode, label, icon, activeIcon }) => {
-              const active = currentMode === mode;
-              return (
-                <Pressable
-                  key={mode}
-                  onPress={() => switchMode(mode)}
-                  style={({ pressed }) => [
-                    styles.navRow,
-                    {
-                      backgroundColor: active
-                        ? colors.card
-                        : pressed
-                        ? colors.muted
-                        : 'transparent',
-                    },
-                  ]}
-                >
-                  <Ionicons
-                    name={active ? activeIcon : icon}
-                    size={17}
-                    color={active ? colors.foreground : colors.mutedForeground}
-                  />
-                  <Text
-                    style={[
-                      styles.navLabel,
-                      {
-                        color: active ? colors.foreground : colors.mutedForeground,
-                        fontFamily: active ? 'Inter_600SemiBold' : 'Inter_400Regular',
-                      },
-                    ]}
-                  >
-                    {label}
-                  </Text>
-                  {active && (
-                    <View style={[styles.activePip, { backgroundColor: colors.primary }]} />
-                  )}
-                </Pressable>
-              );
-            })}
-          </View>
 
           {/* ── History ──────────────────────────────────────── */}
           <View style={styles.historySection}>
@@ -366,23 +302,12 @@ export function Sidebar({
           </View>
 
           {/* ── Footer ───────────────────────────────────────── */}
-          <View
-            style={[
-              styles.footer,
-              { borderColor: colors.border, paddingBottom: insets.bottom + 12 },
-            ]}
-          >
+          <View style={[styles.footer, { borderColor: colors.border, paddingBottom: insets.bottom + 12 }]}>
             <Pressable
-              onPress={() => { onClose(); router.push('/settings'); }}
+              onPress={() => { onClose(); router.push(user ? '/settings' : '/account'); }}
               style={styles.footerRow}
-            >
-              <Ionicons name="settings-outline" size={18} color={colors.foreground} />
-              <Text style={[styles.footerText, { color: colors.foreground }]}>Settings</Text>
-            </Pressable>
-
-            <Pressable
-              onPress={() => { onClose(); router.push('/account'); }}
-              style={styles.footerRow}
+              accessibilityRole="button"
+              accessibilityLabel={user ? 'Open profile and settings' : 'Sign in'}
             >
               <Ionicons
                 name={user ? 'person-circle' : 'person-circle-outline'}
@@ -393,13 +318,6 @@ export function Sidebar({
                 {user ? (displayName ?? user.email) : 'Sign in'}
               </Text>
             </Pressable>
-
-            {user && (
-              <Pressable onPress={() => signOut()} style={styles.footerRow}>
-                <Ionicons name="log-out-outline" size={18} color={colors.destructive} />
-                <Text style={[styles.footerText, { color: colors.destructive }]}>Sign out</Text>
-              </Pressable>
-            )}
           </View>
         </Animated.View>
       </GestureDetector>
@@ -445,13 +363,6 @@ const styles = StyleSheet.create({
   },
   newChatText: { fontSize: 14, fontFamily: 'Inter_700Bold' },
 
-  // Navigation section
-  section: {
-    paddingHorizontal: 16,
-    paddingBottom: 10,
-    marginTop: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
   sectionLabel: {
     fontSize: 11,
     fontFamily: 'Inter_600SemiBold',
@@ -459,18 +370,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginBottom: 4,
   },
-  navRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    borderRadius: 12,
-    marginBottom: 1,
-  },
-  navLabel: { flex: 1, fontSize: 14 },
-  activePip: { width: 6, height: 6, borderRadius: 3 },
-
   // History section
   historySection: { flex: 1, overflow: 'hidden', marginTop: 10 },
   searchRow: {

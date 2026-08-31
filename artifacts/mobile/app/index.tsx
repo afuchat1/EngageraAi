@@ -372,8 +372,6 @@ export default function ChatScreen() {
         onSelectConversation={handleSelectConversation}
         activeConversationId={conversationId}
         refreshToken={refreshToken}
-        currentMode={mode}
-        onModeChange={setMode}
       />
 
       <AudioChatModal
