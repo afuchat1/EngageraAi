@@ -1048,12 +1048,13 @@ async function callOAI(
   url: string, key: string, model: string, messages: ProviderMessage[],
   maxTokens: number, requestId: string, providerName: string,
   extraHeaders?: Record<string, string>,
+  tokenField: "max_tokens" | "max_completion_tokens" = "max_tokens",
 ): Promise<AIResult> {
   try {
     const res = await fetch(url, {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", ...(extraHeaders ?? {}) },
-      body: JSON.stringify({ model, messages, max_tokens: maxTokens }),
+      body: JSON.stringify({ model, messages, [tokenField]: maxTokens }),
       signal: AbortSignal.timeout(28_000),
     });
     if (!res.ok) {
@@ -1123,7 +1124,7 @@ async function callVisionWithFallback(
   ];
 
   // Prefer OpenAI's mature vision models when configured, then fall back to
-  // Groq's Llama 4 Scout. Both providers accept OpenAI-compatible
+  // Groq's current Qwen vision model. Both providers accept OpenAI-compatible
   // image_url content parts, including data URLs from the mobile picker and
   // developer API callers.
   if (keys.openai) {
@@ -1154,14 +1155,16 @@ async function callVisionWithFallback(
     const scout = await callOAI(
       GROQ_URL,
       keys.groq,
-      "meta-llama/llama-4-scout-17b-16e-instruct",
+      "qwen/qwen3.6-27b",
       messages,
       1024,
       requestId,
       "groq-vision",
+      undefined,
+      "max_completion_tokens",
     );
     if (scout.ok && scout.content) {
-      return { ...scout, provider: "groq-vision", model: "llama-4-scout" };
+      return { ...scout, provider: "groq-vision", model: "qwen3.6-27b" };
     }
   }
 
