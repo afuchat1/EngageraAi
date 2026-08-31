@@ -235,8 +235,24 @@ function isPrivateDataRequest(text: string): boolean {
   return asksToExpose && protectedTopic;
 }
 
+function stripPrivateReasoning(text: string): string {
+  // Reasoning-capable providers can emit private traces using different XML
+  // tags. Remove complete blocks and also remove an unmatched opening block
+  // through the end of the response so an interrupted generation cannot leak
+  // internal reasoning to a client.
+  const tags = ["thinking", "think", "analysis", "reasoning", "thought", "scratchpad", "internal"];
+  let cleaned = text;
+  for (const tag of tags) {
+    cleaned = cleaned
+      .replace(new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?<\\/${tag}>`, "gi"), "")
+      .replace(new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*$`, "i"), "")
+      .replace(new RegExp(`<\\/?${tag}\\b[^>]*>`, "gi"), "");
+  }
+  return cleaned;
+}
+
 function sanitizeAssistantContent(content: string, userText: string): string {
-  const cleaned = stripToolCalls(content)
+  const cleaned = stripPrivateReasoning(stripToolCalls(content))
     .replace(/<research_plan>[\s\S]*?<\/research_plan>/gi, "")
     .replace(/<sources>[\s\S]*?<\/sources>/gi, "")
     .replace(/<\/?answer>/gi, "")
@@ -245,7 +261,7 @@ function sanitizeAssistantContent(content: string, userText: string): string {
   if (/\b(system prompt|developer message|hidden instruction|private backend record|other users['’] data)\b/i.test(cleaned)) {
     return PRIVATE_DATA_REFUSAL;
   }
-  return cleaned;
+  return cleaned || "I’m sorry, I couldn’t produce a visible answer. Please try again.";
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1670,16 +1686,18 @@ Deno.serve(async (req: Request) => {
       // Uploaded image path
       if (hasUploadedImage && uploadedImageUrl) {
         const returnImageJson = async (content: string, mdl: string) => {
-          const fakeResult: AIResult = { ok: true, content, inputTokens: 0, outputTokens: 0 };
+          const safeContent = sanitizeAssistantContent(content, imageCaption);
+          const fakeResult: AIResult = { ok: true, content: safeContent, inputTokens: 0, outputTokens: 0 };
           const convId = await persistConversation(db, authResult, imageCaption || "[image]", fakeResult, model, conversationId, false, requestId);
-          return json({ id: requestId, model: mdl, message: { role: "assistant", content }, conversationId: convId });
+          return json({ id: requestId, model: mdl, message: { role: "assistant", content: safeContent }, conversationId: convId });
         };
         const returnTextSse = async (content: string, mdl: string) => {
-          const fakeResult: AIResult = { ok: true, content, inputTokens: 0, outputTokens: 0, provider: "groq-vision", model: mdl };
+          const safeContent = sanitizeAssistantContent(content, imageCaption);
+          const fakeResult: AIResult = { ok: true, content: safeContent, inputTokens: 0, outputTokens: 0, provider: "groq-vision", model: mdl };
           const convId = await persistConversation(db, authResult, imageCaption || "[image]", fakeResult, model, conversationId, false, requestId);
           const sseStream = new ReadableStream({ start(ctrl) {
             const enq = (f: string) => ctrl.enqueue(enc.encode(f));
-            enq(sseFrame({ type: "token", content }));
+            enq(sseFrame({ type: "token", content: safeContent }));
             enq(sseFrame({ type: "done", model: mdl, conversationId: convId }));
             enq("data: [DONE]\n\n"); ctrl.close();
           }});
@@ -1895,9 +1913,10 @@ Deno.serve(async (req: Request) => {
     // ── JSON fallback path ────────────────────────────────────────────────────
     if (hasUploadedImage && uploadedImageUrl) {
       const persistAndReturn = async (content: string, mdl: string) => {
-        const fakeResult: AIResult = { ok: true, content, inputTokens: 0, outputTokens: 0 };
+        const safeContent = sanitizeAssistantContent(content, imageCaption);
+        const fakeResult: AIResult = { ok: true, content: safeContent, inputTokens: 0, outputTokens: 0 };
         const convId = await persistConversation(db, authResult, imageCaption || "[image]", fakeResult, model, conversationId, false, requestId);
-        return json({ id: requestId, model: mdl, message: { role: "assistant", content }, conversationId: convId });
+        return json({ id: requestId, model: mdl, message: { role: "assistant", content: safeContent }, conversationId: convId });
       };
       if (imageIntent === "edit" && keys.cloudflare && keys.cloudflareAccountId) {
         const edited = await editImageCF(uploadedImageUrl, imageCaption, keys.cloudflare, keys.cloudflareAccountId, requestId);
