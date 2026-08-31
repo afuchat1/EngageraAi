@@ -3,7 +3,7 @@ import AppLayout from "@/components/layout/AppLayout";
 import { useAuth } from "@/hooks/useAuth";
 import { useLocation } from "wouter";
 import { useConfirm } from "@/hooks/useConfirm";
-import { LogOut, User, Shield, Bell } from "lucide-react";
+import { Bell, ChevronDown, Database, KeyRound, LogOut, Shield, Sparkles, User } from "lucide-react";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -40,6 +40,7 @@ export default function Settings() {
   const [, setLocation] = useLocation();
   const confirm = useConfirm();
   const [emailNotifs, setEmailNotifs] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const handleSignOut = async () => {
     const ok = await confirm({
@@ -57,7 +58,7 @@ export default function Settings() {
     <AppLayout title="Settings">
       <div className="max-w-xl">
 
-        <Section title="Account">
+        <Section title="Quick access">
           <div className="rounded-2xl bg-white/[0.03] divide-y divide-white/[0.07] px-4">
             <SettingRow
               icon={User}
@@ -69,11 +70,6 @@ export default function Settings() {
                 </span>
               }
             />
-          </div>
-        </Section>
-
-        <Section title="Preferences">
-          <div className="rounded-2xl bg-white/[0.03] divide-y divide-white/[0.07] px-4">
             <SettingRow
               icon={Bell}
               label="Email notifications"
@@ -81,6 +77,7 @@ export default function Settings() {
               action={
                 <button
                   onClick={() => setEmailNotifs((v) => !v)}
+                  aria-label={emailNotifs ? "Disable email notifications" : "Enable email notifications"}
                   className={`relative w-10 h-5.5 rounded-full transition-colors duration-200 ${
                     emailNotifs ? "bg-white" : "bg-white/20"
                   }`}
@@ -94,46 +91,113 @@ export default function Settings() {
                 </button>
               }
             />
-          </div>
-        </Section>
-
-        <Section title="Security">
-          <div className="rounded-2xl bg-white/[0.03] divide-y divide-white/[0.07] px-4">
             <SettingRow
               icon={Shield}
-              label="API Keys"
-              description="Manage your API keys from the Dashboard"
-              action={
-                <a
-                  href="/dashboard"
-                  onClick={(e) => { e.preventDefault(); setLocation("/dashboard"); }}
-                  className="text-sm text-white/60 hover:text-white underline underline-offset-4 transition-colors"
-                >
-                  Go to Dashboard
-                </a>
-              }
-            />
-          </div>
-        </Section>
-
-        <Section title="Session">
-          <div className="rounded-2xl bg-white/[0.03] divide-y divide-white/[0.07] px-4">
-            <SettingRow
-              icon={LogOut}
-              label="Sign out"
-              description="Sign out of your account on this device"
+              label="Advanced settings"
+              description="Personalization, privacy, and account controls"
               action={
                 <button
-                  onClick={handleSignOut}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-white text-black rounded-xl hover:bg-white/90 transition-colors"
+                  onClick={() => setAdvancedOpen((open) => !open)}
+                  aria-expanded={advancedOpen}
+                  aria-label={advancedOpen ? "Hide advanced settings" : "Show advanced settings"}
+                  className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-white/60 hover:text-white rounded-xl hover:bg-white/[0.07] transition-colors"
                 >
-                  <LogOut className="w-3.5 h-3.5" />
-                  Sign out
+                  {advancedOpen ? "Hide" : "Open"}
+                  <ChevronDown className={`w-4 h-4 transition-transform ${advancedOpen ? "rotate-180" : ""}`} />
                 </button>
               }
             />
           </div>
         </Section>
+
+        {advancedOpen && (
+          <>
+            <div className="mb-8 rounded-2xl border border-white/[0.08] bg-white/[0.02] px-4 py-3">
+              <div className="flex items-start gap-3">
+                <Shield className="w-4 h-4 text-white/40 mt-0.5 shrink-0" />
+                <p className="text-xs leading-relaxed text-white/40">
+                  These controls affect privacy, account access, and how Engagera personalizes responses.
+                  Review them carefully before making changes.
+                </p>
+              </div>
+            </div>
+
+            <Section title="AI & personalization">
+              <div className="rounded-2xl bg-white/[0.03] divide-y divide-white/[0.07] px-4">
+                <SettingRow
+                  icon={Sparkles}
+                  label="Cross-chat memory"
+                  description="Engagera uses relevant details from your own saved memories and previous conversations."
+                  action={
+                    <span className="text-[10px] uppercase font-mono text-white/40 tracking-wider px-2.5 py-1 bg-white/[0.05] rounded-full">
+                      Active
+                    </span>
+                  }
+                />
+                <SettingRow
+                  icon={Database}
+                  label="Conversation context"
+                  description="Only relevant excerpts are selected for a new chat; your full archive is never sent."
+                  action={
+                    <span className="text-[10px] uppercase font-mono text-white/25 tracking-wider">
+                      Private
+                    </span>
+                  }
+                />
+              </div>
+            </Section>
+
+            <Section title="Privacy & data">
+              <div className="rounded-2xl bg-white/[0.03] divide-y divide-white/[0.07] px-4">
+                <SettingRow
+                  icon={Database}
+                  label="Conversation history"
+                  description="Review or delete saved chats from the history panel."
+                  action={
+                    <button
+                      onClick={() => setLocation("/")}
+                      className="text-sm text-white/60 hover:text-white underline underline-offset-4 transition-colors"
+                    >
+                      Open Chat
+                    </button>
+                  }
+                />
+              </div>
+            </Section>
+
+            <Section title="Security & access">
+              <div className="rounded-2xl bg-white/[0.03] divide-y divide-white/[0.07] px-4">
+                <SettingRow
+                  icon={KeyRound}
+                  label="API keys"
+                  description="Create and revoke developer keys from the Dashboard."
+                  action={
+                    <button
+                      onClick={() => setLocation("/dashboard")}
+                      className="text-sm text-white/60 hover:text-white underline underline-offset-4 transition-colors"
+                    >
+                      Dashboard
+                    </button>
+                  }
+                />
+                <SettingRow
+                  icon={LogOut}
+                  label="Sign out"
+                  description="Sign out of your account on this device."
+                  action={
+                    <button
+                      onClick={handleSignOut}
+                      className="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-red-400/30 text-red-300 rounded-xl hover:bg-red-400/10 transition-colors"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      Sign out
+                    </button>
+                  }
+                />
+              </div>
+            </Section>
+          </>
+        )}
       </div>
     </AppLayout>
   );

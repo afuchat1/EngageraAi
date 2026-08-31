@@ -62,6 +62,7 @@ export default function SettingsScreen() {
   const { user, displayName, signOut } = useAuth();
   const { show: showDialog } = useDialog();
   const [clearing, setClearing] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const clearHistory = () => {
     showDialog('Clear all conversations?', 'This deletes every saved chat in Chat. This cannot be undone.', [
@@ -99,35 +100,89 @@ export default function SettingsScreen() {
         </Pressable>
       </View>
 
-      <Section title="Account">
+      <Section title="Quick access">
         {user ? (
-          <>
-            <Row icon="person-circle-outline" label={displayName ?? 'Signed in'} value={user.email ?? undefined} last />
-          </>
+          <Row
+            icon="person-circle-outline"
+            label={displayName ?? 'Signed in'}
+            value={user.email ?? undefined}
+          />
         ) : (
           <Row
             icon="log-in-outline"
             label="Sign in to start using Engagera"
             onPress={() => router.push('/account')}
-            last
           />
         )}
-      </Section>
-
-      <Section title="Data">
         <Row
-          icon="trash-outline"
-          label={clearing ? 'Clearing…' : 'Clear conversation history'}
-          onPress={clearing ? undefined : clearHistory}
-          destructive
+          icon="options-outline"
+          label="Advanced settings"
+          value={advancedOpen ? 'Open' : 'Private controls'}
+          onPress={() => setAdvancedOpen((open) => !open)}
+          right={
+            <Ionicons
+              name={advancedOpen ? 'chevron-up' : 'chevron-down'}
+              size={16}
+              color={colors.mutedForeground}
+            />
+          }
           last
         />
       </Section>
 
-      {user ? (
-        <Section title="">
-          <Row icon="log-out-outline" label="Sign out" onPress={() => signOut()} destructive last />
-        </Section>
+      {advancedOpen ? (
+        <>
+          <Section title="AI & personalization">
+            <Row
+              icon="sparkles-outline"
+              label="Cross-chat memory"
+              value={user ? 'Active' : 'Sign in required'}
+            />
+            <Row
+              icon="information-circle-outline"
+              label="How personalization works"
+              onPress={() =>
+                showDialog(
+                  'Private personalization',
+                  'Engagera uses only relevant details from your own saved memories and previous conversations. It does not share your history with other users.',
+                )
+              }
+              last
+            />
+          </Section>
+
+          <Section title="Privacy & data">
+            <Row
+              icon="trash-outline"
+              label={clearing ? 'Clearing…' : 'Clear conversation history'}
+              onPress={clearing ? undefined : clearHistory}
+              destructive
+              last
+            />
+          </Section>
+
+          {user ? (
+            <Section title="Security & access">
+              <Row
+                icon="shield-checkmark-outline"
+                label="Account security"
+                value="Managed securely"
+              />
+              <Row
+                icon="log-out-outline"
+                label="Sign out"
+                onPress={() =>
+                  showDialog('Sign out?', 'You will need to sign in again to access your account.', [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Sign out', style: 'destructive', onPress: () => signOut() },
+                  ])
+                }
+                destructive
+                last
+              />
+            </Section>
+          ) : null}
+        </>
       ) : null}
 
       <Section title="About">
