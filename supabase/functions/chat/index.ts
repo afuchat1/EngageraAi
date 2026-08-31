@@ -625,20 +625,34 @@ JSON array:`;
   } catch { /* non-fatal */ }
 }
 
-// ── Image helpers (unchanged from v12) ───────────────────────────────────────
+// ── Image helpers ────────────────────────────────────────────────────────────
 function hasImageAttachment(msgs: IncomingMessage[]): boolean {
-  const last = msgs.filter((m) => m.role === "user").at(-1);
-  if (!last || typeof last.content === "string") return false;
-  return last.content.some((p) => p.type === "image_url");
+  return msgs.some((msg) =>
+    msg.role === "user" &&
+    typeof msg.content !== "string" &&
+    msg.content.some((part) => part.type === "image_url")
+  );
 }
 
 function extractLastImageUrl(msgs: IncomingMessage[]): string | null {
-  const last = msgs.filter((m) => m.role === "user").at(-1);
-  if (!last || typeof last.content === "string") return null;
-  const part = last.content.find(
-    (p): p is { type: "image_url"; image_url: { url: string } } => p.type === "image_url",
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const msg = msgs[i];
+    if (msg.role !== "user" || typeof msg.content === "string") continue;
+    for (let j = msg.content.length - 1; j >= 0; j--) {
+      const part = msg.content[j];
+      if (part.type === "image_url") return part.image_url.url;
+    }
+  }
+  return null;
+}
+
+function lastUserHasImage(msgs: IncomingMessage[]): boolean {
+  const lastUser = msgs.filter((msg) => msg.role === "user").at(-1);
+  return Boolean(
+    lastUser &&
+    typeof lastUser.content !== "string" &&
+    lastUser.content.some((part) => part.type === "image_url"),
   );
-  return part?.image_url.url ?? null;
 }
 
 type ImageIntent = "edit" | "question" | "none";
@@ -1065,12 +1079,13 @@ async function callOAI(
   maxTokens: number, requestId: string, providerName: string,
   extraHeaders?: Record<string, string>,
   tokenField: "max_tokens" | "max_completion_tokens" = "max_tokens",
+  extraBody?: Record<string, unknown>,
 ): Promise<AIResult> {
   try {
     const res = await fetch(url, {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", ...(extraHeaders ?? {}) },
-      body: JSON.stringify({ model, messages, [tokenField]: maxTokens }),
+      body: JSON.stringify({ model, messages, [tokenField]: maxTokens, ...(extraBody ?? {}) }),
       signal: AbortSignal.timeout(28_000),
     });
     if (!res.ok) {
@@ -1128,7 +1143,12 @@ async function callVisionWithFallback(
     .map((m) => ({ role: m.role, content: m.content }));
   const userContent: ({ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } })[] = [];
   if (captionText) userContent.push({ type: "text", text: captionText });
-  userContent.push({ type: "image_url", image_url: { url: imageUrl } });
+  // For a follow-up text question, keep the image in its original prior
+  // message instead of duplicating it in the new turn. For a direct image
+  // request, attach it to the current turn as expected by vision providers.
+  if (lastUserHasImage(allMessages)) {
+    userContent.push({ type: "image_url", image_url: { url: imageUrl } });
+  }
   const systemContent = captionText
     ? "You are an advanced AI assistant with vision. Analyze the image and fulfill the user's request directly and thoroughly."
     : "You are an advanced AI assistant with vision. Analyze this image thoroughly: describe objects, people, text, colors, composition, and mood. Then ask what the user wants.";
@@ -1178,6 +1198,10 @@ async function callVisionWithFallback(
       "groq-vision",
       undefined,
       "max_completion_tokens",
+      // Qwen 3.6 can spend the entire completion budget on internal
+      // reasoning. Disable it for vision so a visible answer is always
+      // produced; private reasoning is never part of the chat response.
+      { reasoning_effort: "none", include_reasoning: false },
     );
     if (scout.ok && scout.content) {
       return { ...scout, provider: "groq-vision", model: "qwen3.6-27b" };

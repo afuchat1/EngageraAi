@@ -11,13 +11,15 @@ import { MessageActions } from '@/components/MessageActions';
 import { ClockWidget } from '@/components/ClockWidget';
 import { WeatherWidget } from '@/components/WeatherWidget';
 import { toPlainText } from '@/lib/plainText';
-import type { SearchInfo, TimeInfo, WeatherInfo } from '@/lib/chat';
+import type { ContentPart, SearchInfo, TimeInfo, WeatherInfo } from '@/lib/chat';
 
 export interface DisplayMessage {
   id: string;
   role: 'user' | 'assistant';
   text: string;
   imageUri?: string;
+  /** In-memory multimodal payload used for follow-up questions in this thread. */
+  imageContent?: ContentPart[];
   searchInfo?: SearchInfo;
   timeInfo?: TimeInfo;
   weatherInfo?: WeatherInfo;

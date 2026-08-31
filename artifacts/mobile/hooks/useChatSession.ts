@@ -272,8 +272,8 @@ export function useChatSession(model: string, contextHint?: string) {
         // At this point prev is already trimmed (above update applied).
         // Build the request history from everything still in the thread.
         const historyForRequest: ChatMessage[] = prev
-          .filter((m) => m.text.length > 0 || m.imageUri)
-          .map((m) => ({ role: m.role, content: m.text }));
+          .filter((m) => m.text.length > 0 || m.imageUri || m.imageContent)
+          .map((m) => m.imageContent ? { role: m.role, content: m.imageContent } : { role: m.role, content: m.text });
 
         if (historyForRequest.length === 0) return prev;
 
@@ -320,11 +320,21 @@ export function useChatSession(model: string, contextHint?: string) {
     const hasImage = !!pendingImage;
     const isImageReq = !hasImage && looksLikeImageRequest(text);
 
+    const imageContent = pendingImage
+      ? [
+          ...(text ? [{ type: 'text' as const, text }] : []),
+          {
+            type: 'image_url' as const,
+            image_url: { url: `data:${pendingImage.mimeType};base64,${pendingImage.base64}` },
+          },
+        ]
+      : undefined;
     const userMessage: DisplayMessage = {
       id: randomId(),
       role: 'user',
       text,
       imageUri: pendingImage?.uri,
+      imageContent,
     };
     const assistantId = randomId();
     // Best-effort guess so the placeholder can show a "creating your
@@ -334,19 +344,7 @@ export function useChatSession(model: string, contextHint?: string) {
     const historyForRequest: ChatMessage[] = [...messages, userMessage]
       .filter((m) => m.text.length > 0 || m.imageUri)
       .map((m) => {
-        if (m.role === 'user' && m.imageUri && pendingImage && m.id === userMessage.id) {
-          return {
-            role: 'user',
-            content: [
-              ...(text ? [{ type: 'text' as const, text }] : []),
-              {
-                type: 'image_url' as const,
-                image_url: { url: `data:${pendingImage.mimeType};base64,${pendingImage.base64}` },
-              },
-            ],
-          };
-        }
-        return { role: m.role, content: m.text };
+        return m.imageContent ? { role: m.role, content: m.imageContent } : { role: m.role, content: m.text };
       });
 
     setMessages((prev) => [
