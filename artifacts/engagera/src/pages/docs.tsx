@@ -457,6 +457,26 @@ export default function Docs() {
               <Callout>
                 Generated images are returned inline as a markdown image with a base64 JPEG data URI in <code className="font-mono text-[11px]">message.content</code>. Raster images include a small Engagera watermark in the bottom-right corner.
               </Callout>
+              <Callout>
+                To have Engagera read an image, send an OpenAI-compatible <code className="font-mono text-[11px]">image_url</code> content part.
+                The URL may be an HTTPS image URL or a base64 data URL. This works with both streamed and non-streamed requests.
+                <pre className="mt-3 overflow-x-auto rounded-lg border border-white/10 bg-black/30 p-3 text-[11px] leading-relaxed">{`{
+  "model": "engagera-vision",
+  "stream": false,
+  "messages": [{
+    "role": "user",
+    "content": [
+      { "type": "text", "text": "What is in this image?" },
+      {
+        "type": "image_url",
+        "image_url": {
+          "url": "data:image/jpeg;base64,<BASE64_IMAGE>"
+        }
+      }
+    ]
+  }]
+}`}</pre>
+              </Callout>
 
               <h3 id="chat-examples" className="text-sm font-semibold mb-1 scroll-mt-20 text-white/80">Code examples</h3>
               <Tabs tabs={[

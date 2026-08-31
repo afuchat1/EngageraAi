@@ -77,6 +77,7 @@ type MessageContent = string | ContentPart[];
 
 interface IncomingMessage { role: string; content: MessageContent; }
 interface ChatMessage { role: string; content: string; }
+type ProviderMessage = { role: string; content: MessageContent };
 interface AIResult {
   ok: boolean; content: string; inputTokens: number; outputTokens: number;
   provider?: string; model?: string; error?: string;
@@ -251,6 +252,22 @@ function sanitizeAssistantContent(content: string, userText: string): string {
 function getTextContent(content: MessageContent): string {
   if (typeof content === "string") return content;
   return content.find((p): p is { type: "text"; text: string } => p.type === "text")?.text ?? "";
+}
+
+function isContentPart(value: unknown): value is ContentPart {
+  if (!value || typeof value !== "object") return false;
+  const part = value as Record<string, unknown>;
+  if (part.type === "text") return typeof part.text === "string";
+  if (part.type === "image_url") {
+    const image = part.image_url;
+    return Boolean(
+      image &&
+      typeof image === "object" &&
+      typeof (image as Record<string, unknown>).url === "string" &&
+      (image as Record<string, unknown>).url,
+    );
+  }
+  return false;
 }
 
 function toChat(msgs: IncomingMessage[]): ChatMessage[] {
@@ -1028,7 +1045,7 @@ function formatSearchContext(sources: SearchSource[]): string {
 
 // ── AI Providers ──────────────────────────────────────────────────────────────
 async function callOAI(
-  url: string, key: string, model: string, messages: ChatMessage[],
+  url: string, key: string, model: string, messages: ProviderMessage[],
   maxTokens: number, requestId: string, providerName: string,
   extraHeaders?: Record<string, string>,
 ): Promise<AIResult> {
@@ -1078,28 +1095,83 @@ async function callCloudflare(
   } catch (err) { return { ok: false, content: "", inputTokens: 0, outputTokens: 0, error: String(err) }; }
 }
 
-async function callGroqVision(
-  imageUrl: string, captionText: string, allMessages: IncomingMessage[],
-  groqKey: string, requestId: string,
+async function callVisionWithFallback(
+  imageUrl: string,
+  captionText: string,
+  allMessages: IncomingMessage[],
+  keys: { openai?: string; groq?: string },
+  requestId: string,
 ): Promise<AIResult> {
-  const prior = allMessages.slice(0, -1).filter((m) => ["user", "assistant"].includes(m.role)).map((m) => ({ role: m.role, content: getTextContent(m.content) }));
+  // Keep earlier image parts when a developer sends a multi-turn vision
+  // conversation. The old path converted all earlier messages to text, which
+  // meant the model could not refer back to an image from the same thread.
+  const prior: ProviderMessage[] = allMessages
+    .slice(0, -1)
+    .filter((m) => ["user", "assistant"].includes(m.role))
+    .map((m) => ({ role: m.role, content: m.content }));
   const userContent: ({ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } })[] = [];
   if (captionText) userContent.push({ type: "text", text: captionText });
   userContent.push({ type: "image_url", image_url: { url: imageUrl } });
   const systemContent = captionText
     ? "You are an advanced AI assistant with vision. Analyze the image and fulfill the user's request directly and thoroughly."
     : "You are an advanced AI assistant with vision. Analyze this image thoroughly: describe objects, people, text, colors, composition, and mood. Then ask what the user wants.";
-  try {
-    const res = await fetch(GROQ_URL, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${groqKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "meta-llama/llama-4-scout-17b-16e-instruct", messages: [{ role: "system", content: systemContent }, ...prior, { role: "user", content: userContent }], max_tokens: 1024 }),
-      signal: AbortSignal.timeout(30_000),
-    });
-    if (!res.ok) return { ok: false, content: "", inputTokens: 0, outputTokens: 0 };
-    const data = (await res.json()) as { choices?: { message?: { content?: string | null } }[]; usage?: { prompt_tokens?: number; completion_tokens?: number } };
-    return { ok: true, content: data.choices?.[0]?.message?.content ?? "", inputTokens: data.usage?.prompt_tokens ?? 0, outputTokens: data.usage?.completion_tokens ?? 0, provider: "groq-vision", model: "llama-4-scout" };
-  } catch { return { ok: false, content: "", inputTokens: 0, outputTokens: 0 }; }
+
+  const messages: ProviderMessage[] = [
+    { role: "system", content: systemContent },
+    ...prior,
+    { role: "user", content: userContent },
+  ];
+
+  // Prefer OpenAI's mature vision models when configured, then fall back to
+  // Groq's Llama 4 Scout. Both providers accept OpenAI-compatible
+  // image_url content parts, including data URLs from the mobile picker and
+  // developer API callers.
+  if (keys.openai) {
+    const gpt4o = await callOAI(
+      OPENAI_URL,
+      keys.openai,
+      "gpt-4o",
+      messages,
+      1024,
+      requestId,
+      "openai-vision",
+    );
+    if (gpt4o.ok && gpt4o.content) return gpt4o;
+
+    const gpt4oMini = await callOAI(
+      OPENAI_URL,
+      keys.openai,
+      "gpt-4o-mini",
+      messages,
+      1024,
+      requestId,
+      "openai-vision-mini",
+    );
+    if (gpt4oMini.ok && gpt4oMini.content) return gpt4oMini;
+  }
+
+  if (keys.groq) {
+    const scout = await callOAI(
+      GROQ_URL,
+      keys.groq,
+      "meta-llama/llama-4-scout-17b-16e-instruct",
+      messages,
+      1024,
+      requestId,
+      "groq-vision",
+    );
+    if (scout.ok && scout.content) {
+      return { ...scout, provider: "groq-vision", model: "llama-4-scout" };
+    }
+  }
+
+  return {
+    ok: false,
+    content: "",
+    inputTokens: 0,
+    outputTokens: 0,
+    error: "No vision provider returned a response",
+  };
 }
 
 // ── Provider chain — OpenAI GPT-4o first, then Groq, Cerebras, Cloudflare ────
@@ -1460,7 +1532,10 @@ Deno.serve(async (req: Request) => {
     const incomingMessages = rawMessages.filter((m): m is IncomingMessage => {
       if (!m || typeof m !== "object") return false;
       const msg = m as Record<string, unknown>;
-      return ["user", "assistant", "system"].includes(msg.role as string) && (typeof msg.content === "string" || Array.isArray(msg.content));
+      const validContent =
+        typeof msg.content === "string" ||
+        (Array.isArray(msg.content) && msg.content.every(isContentPart));
+      return ["user", "assistant", "system"].includes(msg.role as string) && validContent;
     });
     if (incomingMessages.length === 0) return json({ error: "No valid messages" }, 400);
 
@@ -1611,9 +1686,15 @@ Deno.serve(async (req: Request) => {
           const edited = await editImageCF(uploadedImageUrl, imageCaption, keys.cloudflare, keys.cloudflareAccountId, requestId);
           if (edited) return returnImageJson(edited, "engagera-image");
         }
-        if (keys.groq) {
-          const visionResult = await callGroqVision(uploadedImageUrl, imageCaption, incomingMessages, keys.groq, requestId);
-          if (visionResult.ok && visionResult.content) return returnTextSse(visionResult.content, "engagera-vision");
+        const visionResult = await callVisionWithFallback(
+          uploadedImageUrl,
+          imageCaption,
+          incomingMessages,
+          keys,
+          requestId,
+        );
+        if (visionResult.ok && visionResult.content) {
+          return returnTextSse(visionResult.content, "engagera-vision");
         }
         return returnTextSse("I wasn't able to process your image right now. Please try again.", model);
       }
@@ -1819,9 +1900,15 @@ Deno.serve(async (req: Request) => {
         const edited = await editImageCF(uploadedImageUrl, imageCaption, keys.cloudflare, keys.cloudflareAccountId, requestId);
         if (edited) return persistAndReturn(edited, "engagera-image");
       }
-      if (keys.groq) {
-        const visionResult = await callGroqVision(uploadedImageUrl, imageCaption, incomingMessages, keys.groq, requestId);
-        if (visionResult.ok && visionResult.content) return persistAndReturn(visionResult.content, "engagera-vision");
+      const visionResult = await callVisionWithFallback(
+        uploadedImageUrl,
+        imageCaption,
+        incomingMessages,
+        keys,
+        requestId,
+      );
+      if (visionResult.ok && visionResult.content) {
+        return persistAndReturn(visionResult.content, "engagera-vision");
       }
       return persistAndReturn("I wasn't able to process your image right now. Please try again.", model);
     }
