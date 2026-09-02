@@ -16,7 +16,6 @@ import { Ionicons } from '@expo/vector-icons';
 import * as MediaLibrary from 'expo-media-library';
 import { File, Paths } from 'expo-file-system';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { useAuth } from '@/hooks/useAuth';
 import { streamChat } from '@/lib/chat';
@@ -127,7 +126,7 @@ export function CameraLab({ onConversationCreated }: Props) {
   const createResult = useCallback(async () => {
     if (!photo || !prompt.trim() || busy) return;
     if (!user) {
-      router.push('/account');
+      setError('Preview mode: AI processing is available after authentication.');
       return;
     }
 
@@ -186,27 +185,6 @@ export function CameraLab({ onConversationCreated }: Props) {
         <Text style={[styles.permissionBody, { color: colors.mutedForeground }]}>
           Camera Lab is a native camera experience and is available in the Android app.
         </Text>
-      </View>
-    );
-  }
-
-  if (!user) {
-    return (
-      <View style={[styles.centered, { backgroundColor: colors.background }]}>
-        <View style={[styles.permissionIcon, { backgroundColor: colors.muted }]}>
-          <Ionicons name="camera-outline" size={26} color={colors.foreground} />
-        </View>
-        <Text style={[styles.permissionTitle, { color: colors.foreground }]}>Your camera studio</Text>
-        <Text style={[styles.permissionBody, { color: colors.mutedForeground }]}>
-          Sign in to create and save AI results from your camera.
-        </Text>
-        <Pressable
-          testID="camera-sign-in-button"
-          onPress={() => router.push('/account')}
-          style={[styles.primaryButton, { backgroundColor: colors.primary }]}
-        >
-          <Text style={[styles.primaryButtonText, { color: colors.primaryForeground }]}>Sign in to begin</Text>
-        </Pressable>
       </View>
     );
   }
