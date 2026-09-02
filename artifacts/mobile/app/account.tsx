@@ -28,7 +28,7 @@ export default function AccountSheet() {
         <Pressable
           onPress={async () => {
             await signOut();
-            router.back();
+            router.replace('/account');
           }}
           style={[styles.secondaryButton, { borderColor: colors.border }]}
         >
@@ -50,7 +50,7 @@ export default function AccountSheet() {
       if (authError) {
         setError(authError.message);
       } else {
-        router.back();
+        router.replace('/');
       }
     } finally {
       setLoading(false);

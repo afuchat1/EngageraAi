@@ -33,6 +33,12 @@ import { useIsAdmin } from "@/hooks/useIsAdmin";
 const queryClient = new QueryClient();
 
 const FN_BASE = `${SUPABASE_URL}/functions/v1`;
+const PUBLIC_AUTH_ROUTES = new Set([
+  "/sign-in",
+  "/sign-up",
+  "/forgot-password",
+  "/reset-password",
+]);
 
 setAuthTokenGetter(() =>
   supabase.auth.getSession().then((r) => r.data.session?.access_token ?? null)
@@ -88,6 +94,29 @@ function AdminRoute({ component: Component }: { component: React.ComponentType<a
   return <Component />;
 }
 
+function AuthGate({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+  const [location, setLocation] = useLocation();
+  const pathname = location.split("?")[0] || "/";
+  const isPublicAuthRoute = PUBLIC_AUTH_ROUTES.has(pathname);
+
+  useEffect(() => {
+    if (!loading && !user && !isPublicAuthRoute) {
+      setLocation(`/sign-in?returnTo=${encodeURIComponent(location)}`);
+    }
+  }, [isPublicAuthRoute, loading, location, setLocation, user]);
+
+  if (loading) {
+    return <div className="min-h-screen bg-black" aria-busy="true" />;
+  }
+
+  if (!user && !isPublicAuthRoute) {
+    return null;
+  }
+
+  return <>{children}</>;
+}
+
 function Router() {
   return (
     <Switch>
@@ -133,7 +162,9 @@ function App() {
         <ConfirmProvider>
           <AlertProvider>
             <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-              <Router />
+              <AuthGate>
+                <Router />
+              </AuthGate>
             </WouterRouter>
             <Toaster />
           </AlertProvider>

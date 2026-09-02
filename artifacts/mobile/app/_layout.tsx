@@ -17,6 +17,7 @@ import {
 import { Stack, router } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import colors from '@/constants/colors';
+import { useAuth } from '@/hooks/useAuth';
 
 // Keep the provider boundary stable without requiring a native module that is
 // unavailable in the standard Expo Go client.
@@ -58,35 +59,41 @@ function IncomingUrlHandler() {
 }
 
 function RootLayoutNav() {
+  const { user, loading } = useAuth();
+
   // Always reset to the home (chat) screen on every cold start.
   // Expo Router / React Navigation persists navigation state across sessions,
   // so if the account or settings sheet was open when the app was closed,
-  // it would restore to that state on next open. We always want to land on
-  // the chat screen, not a modal sheet.
+  // it would restore to that state on next open.
   useEffect(() => {
-    router.replace('/');
-  }, []);
+    if (loading) return;
+    router.replace(user ? '/' : '/account');
+  }, [loading, user]);
+
+  if (loading) return null;
 
   return (
     <>
       <IncomingUrlHandler />
-      <Stack initialRouteName="index" screenOptions={{ headerBackTitle: 'Back' }}>
-        <Stack.Screen name="index" options={{ headerShown: false }} />
+      <Stack initialRouteName={user ? 'index' : 'account'} screenOptions={{ headerBackTitle: 'Back' }}>
+        <Stack.Protected guard={!!user}>
+          <Stack.Screen name="index" options={{ headerShown: false }} />
+          <Stack.Screen
+            name="settings"
+            options={{
+              presentation: 'formSheet',
+              sheetAllowedDetents: [0.85],
+              sheetGrabberVisible: true,
+              headerShown: false,
+              contentStyle: { backgroundColor: colors.light.background },
+            }}
+          />
+        </Stack.Protected>
         <Stack.Screen
           name="account"
           options={{
             presentation: 'formSheet',
             sheetAllowedDetents: [0.6],
-            sheetGrabberVisible: true,
-            headerShown: false,
-            contentStyle: { backgroundColor: colors.light.background },
-          }}
-        />
-        <Stack.Screen
-          name="settings"
-          options={{
-            presentation: 'formSheet',
-            sheetAllowedDetents: [0.85],
             sheetGrabberVisible: true,
             headerShown: false,
             contentStyle: { backgroundColor: colors.light.background },
