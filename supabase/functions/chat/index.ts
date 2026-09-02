@@ -1594,6 +1594,7 @@ Deno.serve(async (req: Request) => {
       useAfuBot?: boolean;
       afubot?: boolean;
       agent?: string;
+      localOnly?: boolean;
     };
     try { body = await req.json(); } catch { return json({ error: "Invalid JSON body" }, 400); }
 
@@ -1607,7 +1608,10 @@ Deno.serve(async (req: Request) => {
       useAfuBot = false,
       afubot = false,
       agent: agentId,
+      localOnly = false,
     } = body;
+    const persistChat = (...args: Parameters<typeof persistConversation>) =>
+      localOnly === true ? Promise.resolve(null) : persistConversation(...args);
     const afuBotEnabled = useAfuBot === true || afubot === true;
 
     if (!Array.isArray(rawMessages) || rawMessages.length === 0) return json({ error: "messages array is required" }, 400);
@@ -1752,13 +1756,13 @@ Deno.serve(async (req: Request) => {
         const returnImageJson = async (content: string, mdl: string) => {
           const safeContent = sanitizeAssistantContent(content, imageCaption);
           const fakeResult: AIResult = { ok: true, content: safeContent, inputTokens: 0, outputTokens: 0 };
-          const convId = await persistConversation(db, authResult, imageCaption || "[image]", fakeResult, model, conversationId, false, requestId);
+          const convId = await persistChat(db, authResult, imageCaption || "[image]", fakeResult, model, conversationId, false, requestId);
           return json({ id: requestId, model: mdl, message: { role: "assistant", content: safeContent }, conversationId: convId });
         };
         const returnTextSse = async (content: string, mdl: string) => {
           const safeContent = sanitizeAssistantContent(content, imageCaption);
           const fakeResult: AIResult = { ok: true, content: safeContent, inputTokens: 0, outputTokens: 0, provider: "groq-vision", model: mdl };
-          const convId = await persistConversation(db, authResult, imageCaption || "[image]", fakeResult, model, conversationId, false, requestId);
+          const convId = await persistChat(db, authResult, imageCaption || "[image]", fakeResult, model, conversationId, false, requestId);
           const sseStream = new ReadableStream({ start(ctrl) {
             const enq = (f: string) => ctrl.enqueue(enc.encode(f));
             enq(sseFrame({ type: "token", content: safeContent }));
@@ -1790,11 +1794,11 @@ Deno.serve(async (req: Request) => {
           const imageMarkdown = await generateImageCF(userText, keys.cloudflare, keys.cloudflareAccountId, requestId);
           if (imageMarkdown) {
             const fakeResult: AIResult = { ok: true, content: imageMarkdown, inputTokens: 0, outputTokens: 0, provider: "cloudflare-flux", model };
-            const convId = await persistConversation(db, authResult, userText, fakeResult, model, conversationId, false, requestId);
+            const convId = await persistChat(db, authResult, userText, fakeResult, model, conversationId, false, requestId);
             return json({ id: requestId, model: "engagera-image", message: { role: "assistant", content: imageMarkdown }, conversationId: convId });
           }
           const errResult: AIResult = { ok: true, content: "I wasn't able to generate that image right now. Please try again in a moment.", inputTokens: 0, outputTokens: 0 };
-          await persistConversation(db, authResult, userText, errResult, model, conversationId, false, requestId);
+          await persistChat(db, authResult, userText, errResult, model, conversationId, false, requestId);
           return json({ id: requestId, model, message: { role: "assistant", content: errResult.content }, conversationId: conversationId ? Number(conversationId) : null });
         }
       }
@@ -1935,7 +1939,7 @@ Deno.serve(async (req: Request) => {
             aiResult = { ...aiResult, content: sanitizeAssistantContent(aiResult.content, userText) };
             enq(sseFrame({ type: "token", content: aiResult.content }));
 
-            const convId = await persistConversation(db, authResult, userText, aiResult, model, conversationId, searchSources.length > 0, requestId);
+            const convId = await persistChat(db, authResult, userText, aiResult, model, conversationId, searchSources.length > 0, requestId);
 
             // Persist explicit identity facts before the completion frame so a
             // newly-started chat can use them immediately.
@@ -1979,7 +1983,7 @@ Deno.serve(async (req: Request) => {
       const persistAndReturn = async (content: string, mdl: string) => {
         const safeContent = sanitizeAssistantContent(content, imageCaption);
         const fakeResult: AIResult = { ok: true, content: safeContent, inputTokens: 0, outputTokens: 0 };
-        const convId = await persistConversation(db, authResult, imageCaption || "[image]", fakeResult, model, conversationId, false, requestId);
+        const convId = await persistChat(db, authResult, imageCaption || "[image]", fakeResult, model, conversationId, false, requestId);
         return json({ id: requestId, model: mdl, message: { role: "assistant", content: safeContent }, conversationId: convId });
       };
       if (imageIntent === "edit" && keys.cloudflare && keys.cloudflareAccountId) {
@@ -2003,7 +2007,7 @@ Deno.serve(async (req: Request) => {
       const imageMarkdown = await generateImageCF(userText, keys.cloudflare, keys.cloudflareAccountId, requestId);
       const content = imageMarkdown ?? "I wasn't able to generate that image right now. Please try again.";
       const fakeResult: AIResult = { ok: true, content, inputTokens: 0, outputTokens: 0 };
-      const convId = await persistConversation(db, authResult, userText, fakeResult, model, conversationId, false, requestId);
+      const convId = await persistChat(db, authResult, userText, fakeResult, model, conversationId, false, requestId);
       return json({ id: requestId, model: "engagera-image", message: { role: "assistant", content }, conversationId: convId });
     }
 
@@ -2036,7 +2040,7 @@ Deno.serve(async (req: Request) => {
 
       if (!jsonResult.ok) return json({ error: "AI service temporarily unavailable. Please try again." }, 503);
       jsonResult = { ...jsonResult, content: sanitizeAssistantContent(jsonResult.content, userText) };
-      const jsonConvId = await persistConversation(db, authResult, userText, jsonResult, model, conversationId, jsonSearchSources.length > 0, requestId);
+      const jsonConvId = await persistChat(db, authResult, userText, jsonResult, model, conversationId, jsonSearchSources.length > 0, requestId);
       if (userId && jsonResult.content) {
         await saveExplicitUserFacts(db, userId, userText);
         if (keys.groq) {
@@ -2068,7 +2072,7 @@ Deno.serve(async (req: Request) => {
     if (!result.ok) return json({ error: "AI service temporarily unavailable. Please try again." }, 503);
 
     const safeResult = { ...result, content: sanitizeAssistantContent(result.content, userText) };
-    const convId = await persistConversation(db, authResult, userText, safeResult, model, conversationId, enrichedSources.length > 0, requestId);
+    const convId = await persistChat(db, authResult, userText, safeResult, model, conversationId, enrichedSources.length > 0, requestId);
 
     if (userId && safeResult.ok && safeResult.content) {
       await saveExplicitUserFacts(db, userId, userText);

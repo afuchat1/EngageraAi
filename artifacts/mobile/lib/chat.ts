@@ -26,6 +26,7 @@ export interface ChatRequest {
   stream?: boolean;
   userLocation?: string;
   useAfuBot?: boolean;
+  localOnly?: boolean;
 }
 
 export interface SearchSource {

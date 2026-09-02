@@ -58,6 +58,12 @@
         }
       ],
       "expo-font",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Engagera uses your camera to create AI results from the photos you take."
+        }
+      ],
       "expo-web-browser",
       [
         "expo-image-picker",

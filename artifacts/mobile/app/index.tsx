@@ -27,9 +27,9 @@ import { ImageGenIndicator } from '@/components/ImageGenIndicator';
 import { BrandMark } from '@/components/BrandMark';
 import { ModeSwitch, type ChatMode } from '@/components/ModeSwitch';
 import { Sidebar } from '@/components/Sidebar';
-import { CHAT_MODEL, LAB_MODEL } from '@/lib/chat';
+import { CHAT_MODEL } from '@/lib/chat';
 import { fetchConversationMessages, type ConversationSummary } from '@/lib/conversations';
-import { SearchEngine } from '@/components/SearchEngine';
+import { CameraLab } from '@/components/CameraLab';
 import { useDialog } from '@/contexts/DialogContext';
 import { AudioChatModal } from '@/components/AudioChatModal';
 import { useAuth } from '@/hooks/useAuth';
@@ -101,8 +101,7 @@ export default function ChatScreen() {
 
   // ── Sessions ──────────────────────────────────────────────────────────────
   const chatSession = useChatSession(CHAT_MODEL);
-  const labSession = useChatSession(LAB_MODEL, 'research');
-  const session = mode === 'chat' ? chatSession : labSession;
+  const session = chatSession;
 
   const {
     messages,
@@ -214,23 +213,17 @@ export default function ChatScreen() {
   // ── New chat ──────────────────────────────────────────────────────────────
   const handleNewChat = useCallback(() => {
     chatSession.startNewConversation();
-    labSession.startNewConversation();
     setAnimateFromIdx(undefined);
     focusMsgIdRef.current = null;
     msgYRef.current.clear();
     setSidebarOpen(false);
-  }, [chatSession, labSession, setAnimateFromIdx]);
+  }, [chatSession, setAnimateFromIdx]);
 
   // ── Load conversation ─────────────────────────────────────────────────────
   const handleSelectConversation = useCallback(
     async (conv: ConversationSummary) => {
-      const targetMode: ChatMode =
-        conv.model === LAB_MODEL ||
-        conv.model === 'engagera-2.1' ||
-        conv.model === 'engagera-reason'
-          ? 'lab'
-          : 'chat';
-      const target = targetMode === 'lab' ? labSession : chatSession;
+      const targetMode: ChatMode = 'chat';
+      const target = chatSession;
       try {
         const history = await fetchConversationMessages(conv.id);
         const displayMessages: DisplayMessage[] = history
@@ -264,7 +257,7 @@ export default function ChatScreen() {
         showDialog('Could not open chat', 'Please check your connection and try again.');
       }
     },
-    [chatSession, labSession, setAnimateFromIdx, scrollToMsg],
+    [chatSession, setAnimateFromIdx, scrollToMsg],
   );
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -285,9 +278,9 @@ export default function ChatScreen() {
         </Pressable>
       </View>
 
-      {/* Lab — always mounted so search/AI state survives mode switches */}
-      <View style={[styles.flex, mode !== 'lab' && styles.hidden]}>
-        <SearchEngine topPad={0} />
+      {/* Camera is the native replacement for the former Lab/search surface. */}
+      <View style={[styles.flex, mode !== 'camera' && styles.hidden]}>
+        <CameraLab />
       </View>
 
       {/* Chat — always mounted for same reason */}

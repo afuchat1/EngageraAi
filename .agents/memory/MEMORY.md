@@ -16,3 +16,4 @@
 - [Inline source favicon injection](inline-source-favicons.md) — inject favicons into paragraph/li text nodes via buildSourceNameMap+processChildrenWithFavicons; processes string children only, leaves React elements untouched.
 - [Agent selector and routing](agent-selector-routing.md) — 8-agent selector chip (AGENTS array) in landing.tsx above textarea; agent passed to edge fn; research agent forces afuBotEnabled; system prompt augmented per agentId in AGENT_AUGMENTS map.
 - [Workspace dependency restore](workspace-dependency-restore.md) — a locked package can still be missing from node_modules; restore with frozen-lockfile install before changing app code.
+- [Native camera verification](native-camera-verification.md) — Expo web preview validates the bundle/UI, but Android permission and gallery behavior require a device or development build.

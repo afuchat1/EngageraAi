@@ -2,11 +2,11 @@ import React, { useRef } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useColors } from '@/hooks/useColors';
 
-export type ChatMode = 'chat' | 'lab';
+export type ChatMode = 'chat' | 'camera';
 
 const OPTIONS: { key: ChatMode; label: string }[] = [
   { key: 'chat', label: 'Chat' },
-  { key: 'lab', label: 'Lab' },
+  { key: 'camera', label: 'Camera' },
 ];
 
 const WIDTH = 156;

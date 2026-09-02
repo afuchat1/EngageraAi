@@ -23,7 +23,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { useAuth } from '@/hooks/useAuth';
 import { BrandMark, Wordmark } from '@/components/BrandMark';
-import { LAB_MODEL } from '@/lib/chat';
 import { ConversationSummary, deleteConversation, listConversations } from '@/lib/conversations';
 import { useDialog } from '@/contexts/DialogContext';
 
@@ -92,11 +91,7 @@ export function Sidebar({
     setLoading(true);
     try {
       const data = await listConversations();
-      setConversations(data.filter((conversation) =>
-        conversation.model !== LAB_MODEL &&
-        conversation.model !== 'engagera-2.1' &&
-        conversation.model !== 'engagera-reason'
-      ));
+      setConversations(data);
     } catch {
       // silently keep last known list
     } finally {
@@ -238,13 +233,7 @@ export function Sidebar({
                           ]}
                         >
                           <Ionicons
-                            name={
-                              item.model === LAB_MODEL ||
-                              item.model === 'engagera-2.1' ||
-                              item.model === 'engagera-reason'
-                                ? 'flask-outline'
-                                : 'chatbubble-outline'
-                            }
+                            name="chatbubble-outline"
                             size={15}
                             color={colors.mutedForeground}
                           />
