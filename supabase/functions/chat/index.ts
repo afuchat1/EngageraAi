@@ -715,14 +715,33 @@ function detectImageIntent(text: string): ImageIntent {
   return "question";
 }
 
-function dataUrlToBytes(dataUrl: string): Uint8Array {
-  const commaIdx = dataUrl.indexOf(",");
-  if (commaIdx === -1) throw new Error("Invalid data URL");
-  const b64 = dataUrl.slice(commaIdx + 1);
-  const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
+function base64FromDataUrl(dataUrl: string): string {
+  const match = dataUrl.match(/^data:image\/[a-z0-9.+-]+;base64,([\s\S]+)$/i);
+  if (!match) throw new Error("Image editing requires a base64 image data URL");
+  return match[1].replace(/\s/g, "");
+}
+
+async function base64FromImageUrl(imageUrl: string): Promise<string> {
+  if (imageUrl.startsWith("data:")) return base64FromDataUrl(imageUrl);
+
+  const imageResponse = await fetch(imageUrl, { signal: AbortSignal.timeout(20_000) });
+  if (!imageResponse.ok) throw new Error(`Could not download image (${imageResponse.status})`);
+  return bytesToBase64(new Uint8Array(await imageResponse.arrayBuffer()));
+}
+
+function normaliseImageBase64(value: string): string {
+  const dataUrlMatch = value.match(/^data:image\/[a-z0-9.+-]+;base64,([\s\S]+)$/i);
+  if (dataUrlMatch) return dataUrlMatch[1].replace(/\s/g, "");
+  return value.replace(/\s/g, "");
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunk = 8192;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
 }
 
 // ── Image generation ──────────────────────────────────────────────────────────
@@ -758,7 +777,8 @@ async function b64FromResponse(res: Response): Promise<string | null> {
   const ct = res.headers.get("content-type") ?? "";
   if (ct.includes("application/json")) {
     const d = (await res.json()) as { result?: { image?: string } };
-    return d?.result?.image ?? null;
+    const image = d?.result?.image;
+    return typeof image === "string" && image ? normaliseImageBase64(image) : null;
   }
   const buf = await res.arrayBuffer();
   const bytes = new Uint8Array(buf);
@@ -787,16 +807,34 @@ async function generateImageCF(prompt: string, token: string, accountId: string,
 async function editImageCF(imageDataUrl: string, prompt: string, token: string, accountId: string, requestId: string): Promise<string | null> {
   const url = `${CF_BASE}/${accountId}/ai/run/@cf/runwayml/stable-diffusion-v1-5-img2img`;
   try {
-    const bytes = dataUrlToBytes(imageDataUrl);
+    const imageB64 = await base64FromImageUrl(imageDataUrl);
     const res = await fetch(url, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt, image: Array.from(bytes), num_steps: 20, strength: 0.75, guidance: 7.5 }),
+      // Cloudflare's REST API accepts image_b64 for img2img. It is both the
+      // documented contract and much smaller than serialising every byte as
+      // a JSON number, which can exceed mobile request limits.
+      body: JSON.stringify({
+        prompt: prompt.trim(),
+        image_b64: imageB64,
+        num_steps: 20,
+        strength: 0.75,
+        guidance: 7.5,
+      }),
       signal: AbortSignal.timeout(60_000),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const detail = (await res.text()).slice(0, 500);
+      log("warn", "img2img.provider_failed", { requestId, status: res.status, detail });
+      return null;
+    }
     const b64 = await b64FromResponse(res);
-    return b64 ? `![Edited Image](data:image/png;base64,${b64})` : null;
+    if (!b64) {
+      log("warn", "img2img.empty_response", { requestId, contentType: res.headers.get("content-type") ?? "" });
+      return null;
+    }
+    log("info", "img2img.success", { requestId });
+    return `![Edited Image](data:image/png;base64,${b64})`;
   } catch (err) { log("warn", "img2img.error", { requestId, error: String(err) }); return null; }
 }
 
@@ -1771,9 +1809,20 @@ Deno.serve(async (req: Request) => {
           }});
           return new Response(sseStream, { status: 200, headers: { ...CORS, "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "X-Accel-Buffering": "no" } });
         };
-        if (imageIntent === "edit" && keys.cloudflare && keys.cloudflareAccountId) {
-          const edited = await editImageCF(uploadedImageUrl, imageCaption, keys.cloudflare, keys.cloudflareAccountId, requestId);
-          if (edited) return returnImageJson(edited, "engagera-image");
+        if (imageIntent === "edit") {
+          if (keys.cloudflare && keys.cloudflareAccountId) {
+            const edited = await editImageCF(uploadedImageUrl, imageCaption, keys.cloudflare, keys.cloudflareAccountId, requestId);
+            if (edited) return returnImageJson(edited, "engagera-image");
+          }
+          // An edit request must never silently degrade into a vision
+          // description. Surface a real request error so the client can keep
+          // its image-edit UI state and offer a retry.
+          const errorStream = new ReadableStream({ start(ctrl) {
+            ctrl.enqueue(enc.encode(sseFrame({ type: "error", error: "Image editing is temporarily unavailable. Please try again." })));
+            ctrl.enqueue(enc.encode("data: [DONE]\n\n"));
+            ctrl.close();
+          }});
+          return new Response(errorStream, { status: 502, headers: { ...CORS, "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "X-Accel-Buffering": "no" } });
         }
         const visionResult = await callVisionWithFallback(
           uploadedImageUrl,
@@ -1986,9 +2035,12 @@ Deno.serve(async (req: Request) => {
         const convId = await persistChat(db, authResult, imageCaption || "[image]", fakeResult, model, conversationId, false, requestId);
         return json({ id: requestId, model: mdl, message: { role: "assistant", content: safeContent }, conversationId: convId });
       };
-      if (imageIntent === "edit" && keys.cloudflare && keys.cloudflareAccountId) {
-        const edited = await editImageCF(uploadedImageUrl, imageCaption, keys.cloudflare, keys.cloudflareAccountId, requestId);
-        if (edited) return persistAndReturn(edited, "engagera-image");
+      if (imageIntent === "edit") {
+        if (keys.cloudflare && keys.cloudflareAccountId) {
+          const edited = await editImageCF(uploadedImageUrl, imageCaption, keys.cloudflare, keys.cloudflareAccountId, requestId);
+          if (edited) return persistAndReturn(edited, "engagera-image");
+        }
+        return json({ error: "Image editing is temporarily unavailable. Please try again.", code: "image_edit_unavailable" }, 502);
       }
       const visionResult = await callVisionWithFallback(
         uploadedImageUrl,

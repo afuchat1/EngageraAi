@@ -349,8 +349,9 @@ export default function ChatScreen() {
               onChangeText={setInputText}
               onSend={handleSend}
               image={pendingImage}
-                onImagePicked={setPendingImage}
-                onAudioChat={handleAudioChat}
+              onImagePicked={setPendingImage}
+              onAudioChat={handleAudioChat}
+              onCamera={() => setMode('camera')}
               busy={busy || lastIsPending}
               placeholder={CHAT_COPY.placeholder}
             />

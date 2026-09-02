@@ -17,6 +17,7 @@ interface Props {
   image: PendingImage | null;
   onImagePicked: (image: PendingImage | null) => void;
   onAudioChat?: () => void;
+  onCamera?: () => void;
   disabled?: boolean;
   busy?: boolean;
   placeholder?: string;
@@ -33,7 +34,7 @@ const ATTACH_OPTIONS: AttachOption[] = [
   { key: 'photo',    label: 'Photo',      icon: 'image-outline'         },
   { key: 'voice',    label: 'Voice chat', icon: 'mic-outline'           },
   { key: 'document', label: 'Document',   icon: 'document-text-outline', comingSoon: true },
-  { key: 'camera',   label: 'Camera',     icon: 'camera-outline',        comingSoon: true },
+  { key: 'camera',   label: 'Camera',     icon: 'camera-outline'           },
 ];
 
 /**
@@ -49,6 +50,7 @@ export function ChatInput({
   image,
   onImagePicked,
   onAudioChat,
+  onCamera,
   disabled,
   busy,
   placeholder = 'Message Engagera…',
@@ -63,8 +65,6 @@ export function ChatInput({
     setMenuOpen(false);
     setPicking(true);
     try {
-      // Gallery only — no camera permission is requested since capture
-      // isn't a feature of this app, keeping permissions to what's used.
       const permission = await ImagePicker.getMediaLibraryPermissionsAsync();
       if (!permission.granted) {
         const requested = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -98,6 +98,7 @@ export function ChatInput({
     if (option.comingSoon) return;
     if (option.key === 'photo') pickImage();
     if (option.key === 'voice') { setMenuOpen(false); onAudioChat?.(); }
+    if (option.key === 'camera') { setMenuOpen(false); onCamera?.(); }
   };
 
   return (

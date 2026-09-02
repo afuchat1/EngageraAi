@@ -14,6 +14,7 @@ import {
 import { CameraView, useCameraPermissions, type CameraCapturedPicture } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import * as MediaLibrary from 'expo-media-library';
+import * as ImagePicker from 'expo-image-picker';
 import { File, Paths } from 'expo-file-system';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
@@ -54,9 +55,11 @@ async function saveDataImageToGallery(dataUri: string): Promise<void> {
 function PermissionCard({
   canAskAgain,
   onRequest,
+  onGallery,
 }: {
   canAskAgain: boolean;
   onRequest: () => void;
+  onGallery: () => void;
 }) {
   const colors = useColors();
   return (
@@ -76,6 +79,14 @@ function PermissionCard({
         <Text style={[styles.primaryButtonText, { color: colors.primaryForeground }]}>
           {canAskAgain ? 'Allow camera' : 'Open settings'}
         </Text>
+      </Pressable>
+      <Pressable
+        testID="camera-gallery-fallback-button"
+        onPress={onGallery}
+        style={[styles.secondaryButton, { borderColor: colors.border }]}
+      >
+        <Ionicons name="images-outline" size={18} color={colors.foreground} />
+        <Text style={[styles.secondaryButtonText, { color: colors.foreground }]}>Choose from gallery</Text>
       </Pressable>
     </View>
   );
@@ -120,6 +131,30 @@ export function CameraLab({ onConversationCreated }: Props) {
       setPhoto({ uri: captured.uri, base64: captured.base64 });
     } catch (captureError) {
       setError(captureError instanceof Error ? captureError.message : 'Could not take the photo.');
+    }
+  }, [busy]);
+
+  const chooseFromGallery = useCallback(async () => {
+    if (busy) return;
+    setError(null);
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.78,
+        base64: true,
+        allowsEditing: false,
+      });
+      const asset = result.canceled ? undefined : result.assets[0];
+      if (!asset?.base64) {
+        if (!result.canceled) setError('Could not prepare that image. Please choose another photo.');
+        return;
+      }
+      setPhoto({ uri: asset.uri, base64: asset.base64 });
+      setResultUri(null);
+      setSaved(false);
+      setStatus('');
+    } catch (pickerError) {
+      setError(pickerError instanceof Error ? pickerError.message : 'Could not open your gallery.');
     }
   }, [busy]);
 
@@ -198,6 +233,7 @@ export function CameraLab({ onConversationCreated }: Props) {
       <View style={[styles.centered, { backgroundColor: colors.background }]}>
         <PermissionCard
           canAskAgain={permission.canAskAgain}
+          onGallery={chooseFromGallery}
           onRequest={() => {
             if (permission.canAskAgain) requestPermission();
             else Linking.openSettings().catch(() => {});
