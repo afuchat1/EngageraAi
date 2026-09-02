@@ -17,3 +17,4 @@
 - [Agent selector and routing](agent-selector-routing.md) — 8-agent selector chip (AGENTS array) in landing.tsx above textarea; agent passed to edge fn; research agent forces afuBotEnabled; system prompt augmented per agentId in AGENT_AUGMENTS map.
 - [Workspace dependency restore](workspace-dependency-restore.md) — a locked package can still be missing from node_modules; restore with frozen-lockfile install before changing app code.
 - [Native camera verification](native-camera-verification.md) — Expo web preview validates the bundle/UI, but Android permission and gallery behavior require a device or development build.
+- [Expo Go preview token](expo-go-preview-token.md) — a stale EXPO_TOKEN can cause invalid-bearer startup errors; blank it in the mobile workflow and rescan the QR.

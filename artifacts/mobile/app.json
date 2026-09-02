@@ -8,7 +8,6 @@
     "scheme": "mobile",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#000000",
-    "newArchEnabled": true,
     "updates": {
       "enabled": false
     },
@@ -80,7 +79,8 @@
           "microphonePermission": "Engagera needs microphone access for live voice chat."
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true,
@@ -91,7 +91,6 @@
         "projectId": "d7a8c8dd-d199-4a58-a1fb-432abb520bdf"
       }
     },
-    "owner": "afuchat",
-    "privacy": "public"
+    "owner": "afuchat"
   }
 }
