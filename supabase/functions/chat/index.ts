@@ -778,7 +778,13 @@ async function b64FromResponse(res: Response): Promise<string | null> {
   if (ct.includes("application/json")) {
     const d = (await res.json()) as { result?: { image?: string } };
     const image = d?.result?.image;
-    return typeof image === "string" && image ? normaliseImageBase64(image) : null;
+    if (typeof image !== "string" || !image) return null;
+    if (/^https?:\/\//i.test(image)) {
+      const imageResponse = await fetch(image, { signal: AbortSignal.timeout(20_000) });
+      if (!imageResponse.ok) return null;
+      return bytesToBase64(new Uint8Array(await imageResponse.arrayBuffer()));
+    }
+    return normaliseImageBase64(image);
   }
   const buf = await res.arrayBuffer();
   const bytes = new Uint8Array(buf);
@@ -805,21 +811,22 @@ async function generateImageCF(prompt: string, token: string, accountId: string,
 }
 
 async function editImageCF(imageDataUrl: string, prompt: string, token: string, accountId: string, requestId: string): Promise<string | null> {
-  const url = `${CF_BASE}/${accountId}/ai/run/@cf/runwayml/stable-diffusion-v1-5-img2img`;
+  const url = `${CF_BASE}/${accountId}/ai/run`;
   try {
     const imageB64 = await base64FromImageUrl(imageDataUrl);
     const res = await fetch(url, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      // Cloudflare's REST API accepts image_b64 for img2img. It is both the
-      // documented contract and much smaller than serialising every byte as
-      // a JSON number, which can exceed mobile request limits.
+      // Cloudflare's current account-level image editing model uses the
+      // generic /ai/run endpoint. The input image is a base64 string inside
+      // input.images, and the result is a short-lived image URL.
       body: JSON.stringify({
-        prompt: prompt.trim(),
-        image_b64: imageB64,
-        num_steps: 20,
-        strength: 0.75,
-        guidance: 7.5,
+        model: "openai/gpt-image-1.5",
+        input: {
+          prompt: prompt.trim(),
+          images: [imageB64],
+          quality: "medium",
+        },
       }),
       signal: AbortSignal.timeout(60_000),
     });
